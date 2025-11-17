@@ -5,7 +5,7 @@
 
 import { NextRequest, NextResponse } from 'next/server';
 import { successResponse, errorResponse, ErrorCodes, getStatusCode, StatusCodes } from '@/lib/api-response';
-import { v4 as uuidv4 } from 'uuid';
+import uuidv4 from '@/lib/uuid';
 
 export interface ApiHandlerOptions {
   requireAuth?: boolean;
@@ -22,7 +22,7 @@ export function apiHandler(
 ) {
   return async (req: NextRequest) => {
     try {
-      const requestId = uuidv4();
+  const requestId = uuidv4();
       const method = req.method;
 
       // Check method if specified
