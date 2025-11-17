@@ -1,0 +1,1345 @@
+// This is your Prisma schema file,
+// learn more about it in the docs: https://pris.ly/d/prisma-schema
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+// ==================== ADMIN & AUTH ====================
+
+model AdminUser {
+  id                 String  @id @default(cuid())
+  email              String  @unique
+  username           String?
+  password           String
+  firstname          String?
+  lastname           String?
+  preferedLanguage   String?
+  blocked            Boolean @default(false)
+  isActive           Boolean @default(false)
+  registrationToken  String?
+  resetPasswordToken String?
+
+  roles     AdminRole[] @relation("AdminUserRoles")
+  createdAt DateTime    @default(now())
+  updatedAt DateTime    @updatedAt
+
+  @@map("admin_users")
+}
+
+model AdminRole {
+  id          String  @id @default(cuid())
+  code        String  @unique
+  name        String
+  description String?
+
+  users       AdminUser[]       @relation("AdminUserRoles")
+  permissions AdminPermission[]
+  createdAt   DateTime          @default(now())
+  updatedAt   DateTime          @updatedAt
+
+  @@map("admin_roles")
+}
+
+model AdminPermission {
+  id               String  @id @default(cuid())
+  action           String
+  subject          String?
+  actionParameters Json    @default("{}")
+  conditions       Json    @default("[]")
+  properties       Json    @default("{}")
+
+  roleId String
+  role   AdminRole @relation(fields: [roleId], references: [id], onDelete: Cascade)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@map("admin_permissions")
+}
+
+model ApiToken {
+  id          String    @id @default(cuid())
+  name        String
+  description String    @default("")
+  accessKey   String    @unique
+  type        String    @default("read-only") // read-only, full-access, custom
+  expiresAt   DateTime?
+  lastUsedAt  DateTime?
+  lifespan    BigInt?
+
+  permissions ApiTokenPermission[]
+  createdAt   DateTime             @default(now())
+  updatedAt   DateTime             @updatedAt
+
+  @@map("api_tokens")
+}
+
+model ApiTokenPermission {
+  id     String @id @default(cuid())
+  action String
+
+  tokenId String
+  token   ApiToken @relation(fields: [tokenId], references: [id], onDelete: Cascade)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@map("api_token_permissions")
+}
+
+model TransferToken {
+  id          String    @id @default(cuid())
+  name        String
+  description String    @default("")
+  accessKey   String    @unique
+  expiresAt   DateTime?
+  lastUsedAt  DateTime?
+  lifespan    BigInt?
+
+  permissions TransferTokenPermission[]
+  createdAt   DateTime                  @default(now())
+  updatedAt   DateTime                  @updatedAt
+
+  @@map("transfer_tokens")
+}
+
+model TransferTokenPermission {
+  id     String @id @default(cuid())
+  action String
+
+  tokenId String
+  token   TransferToken @relation(fields: [tokenId], references: [id], onDelete: Cascade)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@map("transfer_token_permissions")
+}
+
+// ==================== HOTEL MANAGEMENT ====================
+
+model Room {
+  id          String  @id @default(cuid())
+  name        String
+  description String?
+  roomNumber  String  @unique
+  status      String  @default("available") // available, occupied, maintenance
+  price       Int
+  capacity    Int
+
+  amenities Amenity[]
+  beds      Bed[]
+  bookings  Booking[]
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@map("rooms")
+}
+
+model Amenity {
+  id          String  @id @default(cuid())
+  name        String
+  description String?
+  icon        String?
+
+  rooms     Room[]
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@map("amenities")
+}
+
+model Bed {
+  id      String @id @default(cuid())
+  type    String
+  bedSize String
+  size    Int
+
+  roomId String
+  room   Room   @relation(fields: [roomId], references: [id], onDelete: Cascade)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@map("beds")
+}
+
+model FloorPlan {
+  id            String  @id @default(cuid())
+  floorNumber   Int
+  numberOfRooms Int
+  description   String?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@map("floor_plans")
+}
+
+// ==================== CUSTOMERS & BOOKINGS ====================
+
+model Customer {
+  id          String  @id @default(cuid())
+  firstName   String
+  lastName    String
+  email       String  @unique
+  phone       String
+  nationality String?
+  street      String?
+  city        String?
+  state       String?
+  zip         Int?
+
+  bookings         Booking[]
+  games            Game[]
+  paymentDetails   PaymentDetail[]
+  gymMemberships   GymMembership[]
+  sportMemberships SportMembership[]
+  orders           Order[]
+  orderHeaders     OrderHeader[]
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@map("customers")
+}
+
+model Booking {
+  id         String   @id @default(cuid())
+  bookingId  String   @unique
+  customerId String
+  customer   Customer @relation(fields: [customerId], references: [id], onDelete: Cascade)
+
+  roomId String
+  room   Room   @relation(fields: [roomId], references: [id])
+
+  checkin     DateTime
+  checkout    DateTime
+  timeIn      String?
+  timeOut     String?
+  nights      Int
+  guests      Int
+  isShortRest Boolean  @default(false)
+
+  totalPrice    Int
+  bookingStatus String @default("pending")
+
+  paymentId String?
+  payment   Payment? @relation(fields: [paymentId], references: [id])
+
+  restaurantId String?
+  restaurant   Restaurant? @relation(fields: [restaurantId], references: [id])
+
+  barAndClubId String?
+  barAndClub   BarAndClub? @relation(fields: [barAndClubId], references: [id])
+
+  bookingItems  BookingItem[]
+  drinks        Drink[]
+  foodItems     FoodItem[]
+  hotelServices HotelService[]
+  productCounts ProductCount[]
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@map("bookings")
+}
+
+model BookingItem {
+  id         String @id @default(cuid())
+  name       String
+  quantity   Int
+  amountPaid Int
+  status     String @default("pending") // pending, confirmed, in_progress, completed, cancelled
+
+  bookingId String
+  booking   Booking @relation(fields: [bookingId], references: [id], onDelete: Cascade)
+
+  orderId String?
+  order   Order?  @relation(fields: [orderId], references: [id])
+
+  barAndClubId String?
+  barAndClub   BarAndClub? @relation(fields: [barAndClubId], references: [id])
+
+  drinkTypeId String?
+  drinkType   DrinkType? @relation(fields: [drinkTypeId], references: [id])
+
+  foodTypeId String?
+  foodType   FoodType? @relation(fields: [foodTypeId], references: [id])
+
+  menuCategoryId String?
+  menuCategory   MenuCategory? @relation(fields: [menuCategoryId], references: [id])
+
+  paymentTypeId String?
+  paymentType   PaymentType? @relation(fields: [paymentTypeId], references: [id])
+
+  drinks           Drink[]
+  foodItems        FoodItem[]
+  games            Game[]
+  gymMemberships   GymMembership[]
+  sportMemberships SportMembership[]
+  hotelServices    HotelService[]
+  productCounts    ProductCount[]
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@map("booking_items")
+}
+
+model CheckIn {
+  id           String    @id @default(cuid())
+  checkInTime  DateTime
+  checkOutTime DateTime?
+
+  employeeSummaryId String?
+  employeeSummary   EmployeeSummary? @relation(fields: [employeeSummaryId], references: [id])
+
+  gymMembershipId String?
+  gymMembership   GymMembership? @relation(fields: [gymMembershipId], references: [id])
+
+  sportMembershipId String?
+  sportMembership   SportMembership? @relation(fields: [sportMembershipId], references: [id])
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@map("check_ins")
+}
+
+// ==================== RESTAURANT & BAR ====================
+
+model Restaurant {
+  id          String  @id @default(cuid())
+  name        String
+  location    String
+  description String?
+  openTime    String?
+  closeTime   String?
+
+  activeOrders    Int @default(0)
+  completedOrders Int @default(0)
+  amountSold      Int @default(0)
+
+  foodItems      FoodItem[]
+  menuCategories MenuCategory[]
+  bookings       Booking[]
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@map("restaurants")
+}
+
+model BarAndClub {
+  id          String  @id @default(cuid())
+  name        String
+  location    String
+  description String?
+  openTime    String?
+  closeTime   String?
+  happyHours  String?
+  entryFees   Int?
+
+  activeOrders    Int @default(0)
+  completedOrders Int @default(0)
+  amountSold      Int @default(0)
+  debt            Int @default(0)
+
+  drinks       Drink[]
+  bookings     Booking[]
+  bookingItems BookingItem[]
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@map("bar_and_clubs")
+}
+
+// ==================== INVENTORY MANAGEMENT ====================
+
+model InventoryType {
+  id          String  @id @default(cuid())
+  typeName    String  @unique
+  description String?
+  category    String? // e.g., "drinks", "supplies", "equipment", "linens"
+
+  inventoryItems InventoryItem[]
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@map("inventory_types")
+}
+
+model InventoryItem {
+  id            String    @id @default(cuid())
+  name          String
+  description   String?
+  sku           String    @unique
+  category      String
+  itemType      String? // drink, supply, equipment, linens, etc.
+  quantity      Int       @default(0)
+  reorderLevel  Int       @default(10)
+  maxQuantity   Int?
+  unitPrice     Decimal   @db.Decimal(10, 2)
+  location      String? // storage location
+  supplier      String?
+  lastRestocked DateTime?
+  expiry        DateTime?
+
+  inventoryTypeId String
+  inventoryType   InventoryType @relation(fields: [inventoryTypeId], references: [id], onDelete: Cascade)
+
+  movements    InventoryMovement[]
+  reservations InventoryReservation[]
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@map("inventory_items")
+}
+
+model InventoryMovement {
+  id           String  @id @default(cuid())
+  movementType String // "in", "out", "adjustment", "loss"
+  quantity     Int
+  reason       String?
+  reference    String? // booking ID, order ID, etc.
+
+  inventoryItemId String
+  inventoryItem   InventoryItem @relation(fields: [inventoryItemId], references: [id], onDelete: Cascade)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@map("inventory_movements")
+}
+
+// ==================== FOOD & DRINKS ====================
+
+model FoodType {
+  id          String  @id @default(cuid())
+  typeName    String  @unique
+  description String?
+
+  foodItems    FoodItem[]
+  bookingItems BookingItem[]
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@map("food_types")
+}
+
+model FoodItem {
+  id           String  @id @default(cuid())
+  name         String
+  description  String?
+  image        String?
+  price        Decimal @db.Decimal(10, 2)
+  availability Boolean @default(true)
+
+  foodTypeId String
+  foodType   FoodType @relation(fields: [foodTypeId], references: [id], onDelete: Cascade)
+
+  menuCategoryId String
+  menuCategory   MenuCategory @relation(fields: [menuCategoryId], references: [id], onDelete: Cascade)
+
+  restaurantId String?
+  restaurant   Restaurant? @relation(fields: [restaurantId], references: [id])
+
+  bookingId String?
+  booking   Booking? @relation(fields: [bookingId], references: [id])
+
+  bookingItems  BookingItem[]
+  productCounts ProductCount[]
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@map("food_items")
+}
+
+model MenuCategory {
+  id           String  @id @default(cuid())
+  categoryName String
+  description  String?
+
+  foodItems    FoodItem[]
+  bookingItems BookingItem[]
+  restaurant   Restaurant?   @relation(fields: [restaurantId], references: [id])
+  restaurantId String?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@map("menu_categories")
+}
+
+model DrinkType {
+  id          String  @id @default(cuid())
+  typeName    String  @unique
+  description String?
+
+  drinks       Drink[]
+  bookingItems BookingItem[]
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@map("drink_types")
+}
+
+model Drink {
+  id              String  @id @default(cuid())
+  name            String
+  description     String?
+  image           String?
+  price           Int
+  type            String?
+  availability    Boolean @default(true)
+  quantity        Int     @default(0)
+  barStock        Int     @default(0)
+  restaurantStock Int     @default(0)
+  sold            Int     @default(0)
+  supplied        Int     @default(0)
+  threshold       Int     @default(10)
+
+  drinkTypeId String
+  drinkType   DrinkType @relation(fields: [drinkTypeId], references: [id], onDelete: Cascade)
+
+  barAndClubId String?
+  barAndClub   BarAndClub? @relation(fields: [barAndClubId], references: [id])
+
+  bookingId String?
+  booking   Booking? @relation(fields: [bookingId], references: [id])
+
+  bookingItems  BookingItem[]
+  productCounts ProductCount[]
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@map("drinks")
+}
+
+// ==================== ORDERS & PAYMENTS ====================
+
+model Order {
+  id         String   @id @default(cuid())
+  customerId String
+  customer   Customer @relation(fields: [customerId], references: [id], onDelete: Cascade)
+
+  paymentTypeId String
+  paymentType   PaymentType @relation(fields: [paymentTypeId], references: [id])
+
+  paymentId String?
+  payment   Payment? @relation(fields: [paymentId], references: [id])
+
+  orderHeaderId String?
+  orderHeader   OrderHeader? @relation(fields: [orderHeaderId], references: [id])
+
+  total       Int
+  orderStatus String @default("Active")
+
+  bookingItems BookingItem[]
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@map("orders")
+}
+
+model Payment {
+  id            String @id @default(cuid())
+  transactionID String @unique
+  paymentMethod String
+  paymentStatus String @default("pending") // pending, completed, failed
+  totalPrice    Int
+
+  paymentDetailId String?
+  paymentDetails  PaymentDetail? @relation(fields: [paymentDetailId], references: [id])
+
+  bookings Booking[]
+  orders   Order[]
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@map("payments")
+}
+
+model PaymentType {
+  id          String  @id @default(cuid())
+  type        String  @unique // cash, card, bank_transfer, mobile_payment
+  description String?
+
+  bookingItems   BookingItem[]
+  expenses       Expense[]
+  gymMemberships GymMembership[]
+  orders         Order[]
+  orderPayments  OrderPayment[]
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@map("payment_types")
+}
+
+model PaymentDetail {
+  id          String  @id @default(cuid())
+  paymentID   String  @unique
+  bankName    String?
+  bankAccount BigInt?
+
+  customerId String
+  customer   Customer @relation(fields: [customerId], references: [id], onDelete: Cascade)
+
+  payments Payment[]
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@map("payment_details")
+}
+
+// ==================== ENHANCED ORDER SYSTEM ====================
+
+model Department {
+  id          String  @id @default(cuid())
+  code        String  @unique
+  name        String
+  description String?
+  isActive    Boolean @default(true)
+
+  orderDepartments OrderDepartment[]
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@map("departments")
+}
+
+model DiscountRule {
+  id                  String    @id @default(cuid())
+  code                String    @unique
+  name                String
+  description         String?
+  type                String    @default("percentage") // percentage, fixed, tiered
+  value               Decimal   @db.Decimal(10, 2) // percentage (0-100) or fixed amount
+  maxUsagePerCustomer Int?
+  maxTotalUsage       Int?
+  currentUsage        Int       @default(0)
+  minOrderAmount      Int? // minimum order total to apply
+  applicableDepts     String    @default("[]") // JSON array of department codes
+  isActive            Boolean   @default(true)
+  startDate           DateTime?
+  endDate             DateTime?
+
+  orderDiscounts OrderDiscount[]
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@map("discount_rules")
+}
+
+model OrderHeader {
+  id          String   @id @default(cuid())
+  orderNumber String   @unique
+  customerId  String
+  customer    Customer @relation(fields: [customerId], references: [id], onDelete: Cascade)
+
+  departmentCode String? // Primary department (can span multiple)
+  status         String  @default("pending") // pending, processing, fulfilled, completed, cancelled
+
+  subtotal      Int @default(0)
+  discountTotal Int @default(0)
+  tax           Int @default(0)
+  total         Int @default(0)
+
+  notes String?
+
+  lines        OrderLine[]
+  departments  OrderDepartment[]
+  discounts    OrderDiscount[]
+  payments     OrderPayment[]
+  fulfillments OrderFulfillment[]
+  reservations InventoryReservation[]
+  legacyOrders Order[]
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([customerId])
+  @@index([status])
+  @@index([createdAt])
+  @@map("order_headers")
+}
+
+model OrderLine {
+  id         String @id @default(cuid())
+  lineNumber Int
+
+  orderHeaderId String
+  orderHeader   OrderHeader @relation(fields: [orderHeaderId], references: [id], onDelete: Cascade)
+
+  departmentCode String
+  productId      String // Could be FoodItem, Drink, HotelService, etc.
+  productType    String // food, drink, service, membership, game, etc.
+  productName    String
+
+  quantity     Int
+  unitPrice    Int
+  unitDiscount Int @default(0)
+  lineTotal    Int // quantity * unitPrice - unitDiscount
+
+  status String @default("pending") // pending, processing, fulfilled, cancelled
+
+  fulfillments OrderFulfillment[]
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([orderHeaderId])
+  @@index([departmentCode])
+  @@map("order_lines")
+}
+
+model OrderDepartment {
+  id String @id @default(cuid())
+
+  orderHeaderId String
+  orderHeader   OrderHeader @relation(fields: [orderHeaderId], references: [id], onDelete: Cascade)
+
+  departmentId String
+  department   Department @relation(fields: [departmentId], references: [id])
+
+  status          String  @default("pending") // pending, processing, fulfilled, completed
+  departmentNotes String?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@unique([orderHeaderId, departmentId])
+  @@index([departmentId])
+  @@map("order_departments")
+}
+
+model OrderDiscount {
+  id String @id @default(cuid())
+
+  orderHeaderId String
+  orderHeader   OrderHeader @relation(fields: [orderHeaderId], references: [id], onDelete: Cascade)
+
+  discountRuleId String?
+  discountRule   DiscountRule? @relation(fields: [discountRuleId], references: [id])
+
+  discountType   String // percentage, fixed, employee, bulk
+  discountCode   String? // Promo code or employee ID
+  description    String?
+  discountAmount Int
+  appliedAt      DateTime @default(now())
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([orderHeaderId])
+  @@map("order_discounts")
+}
+
+model OrderPayment {
+  id String @id @default(cuid())
+
+  orderHeaderId String
+  orderHeader   OrderHeader @relation(fields: [orderHeaderId], references: [id], onDelete: Cascade)
+
+  amount               Int
+  paymentMethod        String // cash, card, bank_transfer, mobile_payment, etc.
+  paymentStatus        String  @default("pending") // pending, completed, failed, refunded
+  transactionReference String?
+
+  paymentTypeId String?
+  paymentType   PaymentType? @relation(fields: [paymentTypeId], references: [id])
+
+  processedAt DateTime?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([orderHeaderId])
+  @@index([paymentStatus])
+  @@map("order_payments")
+}
+
+model OrderFulfillment {
+  id String @id @default(cuid())
+
+  orderHeaderId String
+  orderHeader   OrderHeader @relation(fields: [orderHeaderId], references: [id], onDelete: Cascade)
+
+  orderLineId String?
+  orderLine   OrderLine? @relation(fields: [orderLineId], references: [id], onDelete: SetNull)
+
+  status            String // pending, in_progress, fulfilled, cancelled
+  fulfilledQuantity Int    @default(0)
+
+  fulfilledAt DateTime?
+  notes       String?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([orderHeaderId])
+  @@index([status])
+  @@map("order_fulfillments")
+}
+
+model InventoryReservation {
+  id String @id @default(cuid())
+
+  inventoryItemId String
+  inventoryItem   InventoryItem @relation(fields: [inventoryItemId], references: [id], onDelete: Cascade)
+
+  orderHeaderId String
+  orderHeader   OrderHeader? @relation(fields: [orderHeaderId], references: [id], onDelete: Cascade)
+
+  quantity Int
+  status   String @default("reserved") // reserved, confirmed, released, consumed
+
+  reservedAt  DateTime  @default(now())
+  confirmedAt DateTime?
+  releasedAt  DateTime?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([inventoryItemId])
+  @@index([orderHeaderId])
+  @@map("inventory_reservations")
+}
+
+// ==================== GAMES & ENTERTAINMENT ====================
+
+model Game {
+  id         String @id @default(cuid())
+  count      Int
+  amountPaid Int
+  amountOwed Int
+  gameStatus String
+
+  customerId String
+  customer   Customer @relation(fields: [customerId], references: [id], onDelete: Cascade)
+
+  userId String?
+  user   PluginUsersPermissionsUser? @relation(fields: [userId], references: [id])
+
+  bookingItems  BookingItem[]
+  productCounts ProductCount[]
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@map("games")
+}
+
+// ==================== GYM & SPORTS ====================
+
+model GymAndSport {
+  id          String  @id @default(cuid())
+  name        String
+  description String?
+  openTime    String?
+  closeTime   String?
+
+  sessions         GymAndSportSession[]
+  memberships      GymMembership[]
+  sportMemberships SportMembership[]
+  membershipPlans  MembershipPlan[]
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@map("gym_and_sports")
+}
+
+model GymAndSportSession {
+  id          String   @id @default(cuid())
+  sessionName String
+  sessionTime DateTime
+  sessionFee  Int
+
+  gymAndSports GymAndSport[]
+  schedules    Schedule[]
+  users        PluginUsersPermissionsUser[]
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@map("gym_and_sport_sessions")
+}
+
+model GymMembership {
+  id               String   @id @default(cuid())
+  joinedDate       DateTime
+  expiryDate       DateTime
+  emergencyContact String?
+  isActive         Boolean  @default(true)
+  profilePhoto     String?
+
+  customerId String
+  customer   Customer @relation(fields: [customerId], references: [id], onDelete: Cascade)
+
+  gymAndSports  GymAndSport[]
+  paymentType   PaymentType?  @relation(fields: [paymentTypeId], references: [id])
+  paymentTypeId String?
+
+  membershipPlans MembershipPlan[]
+  checkIns        CheckIn[]
+  bookingItems    BookingItem[]
+  productCounts   ProductCount[]
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@map("gym_memberships")
+}
+
+model SportMembership {
+  id               String   @id @default(cuid())
+  joinedDate       DateTime
+  expiryDate       DateTime
+  emergencyContact String?
+  isActive         Boolean  @default(true)
+
+  customerId String
+  customer   Customer @relation(fields: [customerId], references: [id], onDelete: Cascade)
+
+  gymAndSports  GymAndSport[]
+  checkIns      CheckIn[]
+  bookingItems  BookingItem[]
+  productCounts ProductCount[]
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@map("sport_memberships")
+}
+
+model MembershipPlan {
+  id                  String   @id @default(cuid())
+  name                String
+  description         String?
+  price               Int
+  durationMonths      Int
+  maxCheckinsPerMonth Int?
+  discountAmount      Int?
+  accessToClasses     Boolean?
+  isActive            Boolean  @default(true)
+
+  gymAndSports   GymAndSport[]
+  gymMemberships GymMembership[]
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@map("membership_plans")
+}
+
+// ==================== EMPLOYEE & MANAGEMENT ====================
+
+model PluginUsersPermissionsUser {
+  id        String  @id @default(cuid())
+  username  String  @unique
+  email     String  @unique
+  password  String
+  firstname String?
+  lastname  String?
+  blocked   Boolean @default(false)
+
+  employeeOrders  EmployeeOrder[]
+  employeeRecords EmployeeRecord[]
+  employeeSummary EmployeeSummary?
+  expenses        Expense[]
+  games           Game[]
+  sessions        GymAndSportSession[]
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@map("users_permissions_users")
+}
+
+model EmployeeOrder {
+  id             String   @id @default(cuid())
+  dateIssued     DateTime
+  total          Int
+  discountAmount Int
+  amountPaid     Int
+
+  userId String
+  user   PluginUsersPermissionsUser @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  hotelServiceId String?
+  hotelService   HotelService? @relation(fields: [hotelServiceId], references: [id])
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@map("employee_orders")
+}
+
+model EmployeeRecord {
+  id            String   @id @default(cuid())
+  date          DateTime
+  debts         Int
+  fines         Int
+  shortage      Int
+  salaryAdvance Int
+  description   String?
+
+  userId String
+  user   PluginUsersPermissionsUser @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@map("employee_records")
+}
+
+model EmployeeSummary {
+  id                   String    @id @default(cuid())
+  position             String?
+  employmentDate       DateTime?
+  salary               Int
+  debtShortage         Decimal   @db.Decimal(10, 2)
+  finesDebits          Decimal   @db.Decimal(10, 2)
+  orderDiscountTotal   Decimal   @db.Decimal(10, 2)
+  salaryAdvanced       Decimal   @db.Decimal(10, 2)
+  salaryAdvancedStatus String    @default("pending") // pending, approved, rejected, settled
+
+  userId String                     @unique
+  user   PluginUsersPermissionsUser @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  checkIns CheckIn[]
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@map("employee_summaries")
+}
+
+// ==================== PROJECTS & EXPENSES ====================
+
+model Project {
+  id          String   @id @default(cuid())
+  name        String
+  description String?
+  startDate   DateTime
+  endDate     DateTime
+  budget      Int
+
+  expenses Expense[]
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@map("projects")
+}
+
+model Expense {
+  id       String   @id @default(cuid())
+  name     String
+  date     DateTime
+  amount   Int
+  receipts String?
+
+  paymentTypeId String
+  paymentType   PaymentType @relation(fields: [paymentTypeId], references: [id])
+
+  userId String
+  user   PluginUsersPermissionsUser @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  projects Project[]
+  vendors  Vendor[]
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@map("expenses")
+}
+
+model Vendor {
+  id          String  @id @default(cuid())
+  name        String
+  address     String?
+  email       String?
+  phone       String?
+  description String?
+
+  expenses Expense[]
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@map("vendors")
+}
+
+// ==================== UTILITIES & MISCELLANEOUS ====================
+
+model HotelService {
+  id                 String  @id @default(cuid())
+  name               String
+  serviceDescription String?
+  price              Int
+
+  bookingId String?
+  booking   Booking? @relation(fields: [bookingId], references: [id])
+
+  bookingItems   BookingItem[]
+  employeeOrders EmployeeOrder[]
+  productCounts  ProductCount[]
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@map("hotel_services")
+}
+
+model ProductCount {
+  id           String @id @default(cuid())
+  name         String
+  productCount Int
+  totalAmount  Int
+
+  bookingId String?
+  booking   Booking? @relation(fields: [bookingId], references: [id])
+
+  drinkId String?
+  drink   Drink?  @relation(fields: [drinkId], references: [id])
+
+  foodItemId String?
+  foodItem   FoodItem? @relation(fields: [foodItemId], references: [id])
+
+  gameId String?
+  game   Game?   @relation(fields: [gameId], references: [id])
+
+  hotelServiceId String?
+  hotelService   HotelService? @relation(fields: [hotelServiceId], references: [id])
+
+  gymMembershipId String?
+  gymMembership   GymMembership? @relation(fields: [gymMembershipId], references: [id])
+
+  sportMembershipId String?
+  sportMembership   SportMembership? @relation(fields: [sportMembershipId], references: [id])
+
+  bookingItemId String?
+  bookingItem   BookingItem? @relation(fields: [bookingItemId], references: [id])
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@map("product_counts")
+}
+
+model Schedule {
+  id          String   @id @default(cuid())
+  sessionId   String
+  sessionDate DateTime
+
+  sessions GymAndSportSession? @relation(fields: [sessionId], references: [id], onDelete: Cascade)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@map("schedules")
+}
+
+model PromoCoupon {
+  id                 String    @id @default(cuid())
+  couponCode         String    @unique
+  description        String?
+  discountPercentage Int?
+  maxUsage           Int?
+  currentUsage       Int       @default(0)
+  expiryDate         DateTime?
+  isActive           Boolean   @default(true)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@map("promo_coupons")
+}
+
+model JobApplication {
+  id            String    @id @default(cuid())
+  fullName      String
+  email         String
+  phone         String
+  dob           DateTime?
+  gender        String?
+  position      String
+  otherPosition String?
+  address       String?
+  skills        String?
+  resume        String?
+  coverLetter   String?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@map("job_applications")
+}
+
+model Article {
+  id          String  @id @default(cuid())
+  title       String
+  slug        String  @unique
+  description String?
+  cover       String?
+  blocks      Json?
+
+  authorId String
+  author   Author @relation(fields: [authorId], references: [id], onDelete: Cascade)
+
+  categoryId String
+  category   Category @relation(fields: [categoryId], references: [id])
+
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
+  publishedAt DateTime?
+
+  @@map("articles")
+}
+
+model Author {
+  id     String  @id @default(cuid())
+  name   String
+  email  String?
+  avatar String?
+
+  articles Article[]
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@map("authors")
+}
+
+model Category {
+  id          String  @id @default(cuid())
+  name        String
+  slug        String  @unique
+  description String?
+
+  articles Article[]
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@map("categories")
+}
+
+model Slider {
+  id       String  @id @default(cuid())
+  title    String
+  image    String?
+  link     String?
+  order    Int     @default(0)
+  isActive Boolean @default(true)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@map("sliders")
+}
+
+model Carousel {
+  id      String  @id @default(cuid())
+  title   String
+  sliders String? // JSON array of slider references
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@map("carousels")
+}
+
+model About {
+  id     String @id @default(cuid())
+  title  String
+  blocks Json?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@map("abouts")
+}
+
+model Service {
+  id          String  @id @default(cuid())
+  title       String
+  description String?
+  icon        String?
+  blocks      Json?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@map("services")
+}
+
+model Global {
+  id              String  @id @default(cuid())
+  siteName        String
+  siteDescription String
+  favicon         String?
+  isVatActive     Boolean @default(false)
+  defaultSeo      Json?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@map("globals")
+}
+
+model OrganisationInfo {
+  id        String  @id @default(cuid())
+  name      String
+  address   String?
+  email     String?
+  phone     String?
+  website   String?
+  logoDark  String?
+  logoLight String?
+  facebook  String?
+  instagram String?
+  twitter   String?
+  youTube   String?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@map("organisation_infos")
+}
+
+model SpecialInfo {
+  id       String  @id @default(cuid())
+  title    String
+  content  String?
+  type     String? // notice, warning, info, etc
+  isActive Boolean @default(true)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@map("special_infos")
+}
