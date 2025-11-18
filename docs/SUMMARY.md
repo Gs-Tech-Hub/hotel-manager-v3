@@ -1,0 +1,39 @@
+# Summary (TOC)
+
+- Quick start
+  - getting-started/00_START_HERE.md
+  - getting-started/SETUP_DEPLOYMENT.md
+  - ../README.md
+- API
+  - api/API_GUIDE.md
+  - api/API_DEVELOPMENT_BLUEPRINT.md
+  - api/API_IMPLEMENTATION.md
+- Architecture & System Overview
+  - architecture/ARCHITECTURE.md
+  - architecture/SYSTEM_SUMMARY.md
+- Implementation Phases
+  - phases/PHASE1_SUMMARY.md
+  - phases/PHASE1_SCHEMA_IMPLEMENTATION.md
+  - phases/PHASE2_SERVICE_LAYER.md
+  - phases/PHASE3A_API_ROUTES.md
+  - phases/PHASE3A_COMPLETION_CHECKLIST.md
+  - phases/PHASE3A_COMPLETION_SUMMARY.md
+  - phases/PHASE3A_FINAL_SUMMARY.md
+  - phases/PHASE3A_TESTING_GUIDE.md
+  - phases/PHASE3C_COMPLETE.md
+  - phases/PHASE4_VALIDATION_PLANNING.md
+- Inventory & Operations
+  - inventory/INVENTORY_GUIDE.md
+  - inventory/INVENTORY_IMPLEMENTATION.md
+  - inventory/INVENTORY_QUICK_REFERENCE.md
+- Roles & Access
+  - roles/ROLES_AND_ACCESS.md
+  - roles/ROLES_QUICK_REFERENCE.md
+  - roles/ROLES_SERVER_VS_FRONTEND.md
+  - roles/ROLES_VISUAL_GUIDE.md
+- Implementation Artifacts
+  - implementation/IMPLEMENTATION_CHECKLIST.md
+  - implementation/IMPLEMENTATION_SUMMARY.md
+  - implementation/EXECUTIVE_SUMMARY.md
+  - implementation/VISUAL_COMPLETION_REPORT.md
+
