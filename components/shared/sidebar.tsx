@@ -8,7 +8,6 @@ import {
 	Settings,
 	Users,
 	BarChart3,
-	FolderKanban,
 	ChevronLeft,
 	ChevronRight,
 	FileText,
@@ -19,6 +18,10 @@ import {
 	HelpCircle,
 	LogIn,
 	AlertCircle,
+	BookOpen,
+	CheckSquare,
+	DoorOpen,
+	BookMarked,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 
@@ -47,20 +50,31 @@ const sidebarGroups = [
 		],
 	},
 	{
-		title: "Pages",
+		title: "Hotel Management",
 		items: [
 			{
-				title: "Users",
-				href: "/dashboard/users",
-				icon: Users,
-				badge: "12",
-			},
-			{
-				title: "Projects",
-				href: "/dashboard/projects",
-				icon: FolderKanban,
+				title: "Rooms",
+				href: "/dashboard/rooms",
+				icon: DoorOpen,
 				badge: null,
 			},
+			{
+				title: "Bookings",
+				href: "/dashboard/bookings",
+				icon: BookMarked,
+				badge: null,
+			},
+			{
+				title: "Customers",
+				href: "/dashboard/customers",
+				icon: Users,
+				badge: null,
+			},
+		],
+	},
+	{
+		title: "Pages",
+		items: [
 			{
 				title: "Documents",
 				href: "/dashboard/documents",
@@ -112,6 +126,29 @@ const sidebarGroups = [
 				title: "Help",
 				href: "/dashboard/help",
 				icon: HelpCircle,
+				badge: null,
+			},
+		],
+	},
+	{
+		title: "Resources",
+		items: [
+			{
+				title: "Documentation",
+				href: "/dashboard/documentation",
+				icon: BookOpen,
+				badge: null,
+			},
+			{
+				title: "Implementation",
+				href: "/dashboard/implementation-guide",
+				icon: CheckSquare,
+				badge: null,
+			},
+			{
+				title: "Quick Reference",
+				href: "/dashboard/quick-reference",
+				icon: FileText,
 				badge: null,
 			},
 		],

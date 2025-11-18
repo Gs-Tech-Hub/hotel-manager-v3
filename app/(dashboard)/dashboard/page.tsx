@@ -6,6 +6,7 @@ import {
 	DollarSign,
 	Users,
 } from "lucide-react";
+import { DocumentationWidget } from "@/components/admin/documentation/documentation-widget";
 
 const stats = [
 	{
@@ -56,6 +57,12 @@ export default function DashboardPage() {
 				<p className="text-muted-foreground text-lg">
 					Welcome back! Here&apos;s an overview of your data.
 				</p>
+			</div>
+
+			{/* Documentation Widget */}
+			<div className="border-t pt-8 mt-8">
+				<h2 className="text-2xl font-bold mb-6">Implementation Resources</h2>
+				<DocumentationWidget />
 			</div>
 
 			{/* Stats Grid */}
