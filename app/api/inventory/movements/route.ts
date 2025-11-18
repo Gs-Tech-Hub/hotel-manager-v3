@@ -6,7 +6,7 @@
  * Record a new inventory movement
  */
 
-import { NextRequest, NextResponse } from 'next/server';
+import { NextRequest } from 'next/server';
 import { inventoryMovementService } from '@/services/inventory.service';
 import { sendSuccess, sendError } from '@/lib/api-handler';
 import { ErrorCodes } from '@/lib/api-response';

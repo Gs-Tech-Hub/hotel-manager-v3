@@ -11,7 +11,6 @@ import { NextRequest, NextResponse } from 'next/server';
 import { prisma } from '@/lib/prisma';
 import { extractUserContext, loadUserWithRoles, hasAnyRole } from '@/lib/user-context';
 import { successResponse, errorResponse, ErrorCodes, getStatusCode } from '@/lib/api-response';
-import { DiscountService } from '@/services/discount.service';
 
 /**
  * POST /api/discounts
@@ -63,7 +62,6 @@ export async function POST(request: NextRequest) {
       startDate,
       endDate,
       minOrderAmount,
-      maxUsageTotal,
       maxUsagePerCustomer,
       applicableDepts,
     } = body;

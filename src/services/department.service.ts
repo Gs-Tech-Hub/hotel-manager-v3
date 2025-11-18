@@ -48,7 +48,7 @@ export class DepartmentService extends BaseService<IDepartment> {
   /**
    * Get all departments
    */
-  async getAllDepartments(ctx?: UserContext) {
+  async getAllDepartments() {
     try {
       const departments = await (prisma as any).department.findMany({
         where: { isActive: true },
@@ -306,7 +306,7 @@ export class DepartmentService extends BaseService<IDepartment> {
       });
 
       // Update fulfillment record
-      const fulfillment = await (prisma as any).orderFulfillment.updateMany({
+      await (prisma as any).orderFulfillment.updateMany({
         where: { orderLineId, status: 'in_progress' },
         data: {
           status: 'fulfilled',

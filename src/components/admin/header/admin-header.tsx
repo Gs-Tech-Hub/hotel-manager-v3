@@ -2,7 +2,6 @@
 
 import React from 'react'
 import { Search, Bell, User } from 'lucide-react'
-import { cn } from '@/lib/cn'
 
 export function AdminHeader() {
   return (

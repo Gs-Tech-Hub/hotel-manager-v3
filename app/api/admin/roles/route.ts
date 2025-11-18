@@ -5,7 +5,7 @@
  * Admin only
  */
 
-import { NextRequest, NextResponse } from 'next/server';
+import { NextRequest } from 'next/server';
 import { roleManagementService } from '@/services/role-management.service';
 import { extractUserContext, isAdmin } from '@/lib/user-context';
 import { sendSuccess, sendError, validateBody } from '@/lib/api-handler';

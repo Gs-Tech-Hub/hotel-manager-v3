@@ -15,7 +15,7 @@
  * Create a new drink
  */
 
-import { NextRequest, NextResponse } from 'next/server';
+import { NextRequest } from 'next/server';
 import { drinkService } from '@/services/food-drink.service';
 import { sendSuccess, sendError, getQueryParams } from '@/lib/api-handler';
 import { ErrorCodes } from '@/lib/api-response';
@@ -23,7 +23,7 @@ import { ErrorCodes } from '@/lib/api-response';
 export async function GET(req: NextRequest) {
   try {
     const params = getQueryParams(req);
-    const { page = 1, limit = 10, search, status } = params;
+    const { page = 1, limit = 10, search } = params;
     const availability = req.nextUrl.searchParams.get('availability');
     const drinkTypeId = req.nextUrl.searchParams.get('drinkTypeId');
     const lowStock = req.nextUrl.searchParams.get('lowStock');

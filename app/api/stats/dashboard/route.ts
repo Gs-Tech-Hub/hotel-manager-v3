@@ -3,7 +3,7 @@
  * Get dashboard statistics
  */
 
-import { NextRequest, NextResponse } from 'next/server';
+import { NextRequest } from 'next/server';
 import { roomService } from '@/services/room.service';
 import { customerService } from '@/services/customer.service';
 import { bookingService } from '@/services/booking.service';
@@ -11,7 +11,7 @@ import { orderService } from '@/services/order.service';
 import { sendSuccess, sendError } from '@/lib/api-handler';
 import { ErrorCodes } from '@/lib/api-response';
 
-export async function GET(req: NextRequest) {
+export async function GET(_req: NextRequest) {
   try {
     const [roomStats, customerStats, bookingStats, orderStats] = await Promise.all([
       roomService.getOccupancyStats(),

@@ -6,7 +6,6 @@
 import { BaseService } from './base.service';
 import { IInventoryItem, IInventoryType, IInventoryMovement } from '../types/entities';
 import { prisma } from '../lib/prisma';
-import { Prisma } from '@prisma/client';
 import { normalizeError } from '@/lib/errors';
 
 // Helper mappers

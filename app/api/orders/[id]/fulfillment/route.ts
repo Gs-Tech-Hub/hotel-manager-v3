@@ -9,7 +9,6 @@ import { NextRequest, NextResponse } from 'next/server';
 import { prisma } from '@/lib/prisma';
 import { extractUserContext, loadUserWithRoles, hasAnyRole } from '@/lib/user-context';
 import { successResponse, errorResponse, ErrorCodes, getStatusCode } from '@/lib/api-response';
-import { DepartmentService } from '@/services/department.service';
 
 /**
  * GET /api/orders/[id]/fulfillment
@@ -178,9 +177,9 @@ export async function POST(
     }
 
     // Update line item and create fulfillment record
-    const updatedLine = await prisma.$transaction(async (tx: any) => {
+    await prisma.$transaction(async (tx: any) => {
       // Update line item status
-      const updated = await tx.orderLine.update({
+      await tx.orderLine.update({
         where: { id: lineItemId },
         data: {
           status,
@@ -214,8 +213,6 @@ export async function POST(
           });
         }
       }
-
-      return updated;
     });
 
     // Fetch updated order

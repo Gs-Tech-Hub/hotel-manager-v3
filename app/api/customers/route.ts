@@ -8,7 +8,7 @@
  * - search: string
  */
 
-import { NextRequest, NextResponse } from 'next/server';
+import { NextRequest } from 'next/server';
 import { customerService } from '@/services/customer.service';
 import { sendSuccess, sendError, getQueryParams } from '@/lib/api-handler';
 import { ErrorCodes } from '@/lib/api-response';

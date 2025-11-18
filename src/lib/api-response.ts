@@ -3,7 +3,7 @@
  * Consistent response formatting and error handling
  */
 
-import { ApiResponse, ApiError, ApiResult } from '../types/api';
+import { ApiResponse, ApiError } from '../types/api';
 
 /**
  * Create a successful API response

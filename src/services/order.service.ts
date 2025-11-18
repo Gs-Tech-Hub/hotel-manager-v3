@@ -4,9 +4,8 @@
  */
 
 import { BaseService } from './base.service';
-import { IOrderHeader, IOrderLine, IOrderDiscount, IOrderPayment } from '../types/entities';
+import type { IOrderHeader } from '../types/entities';
 import { prisma } from '../lib/prisma';
-import { Prisma } from '@prisma/client';
 import { normalizeError } from '@/lib/errors';
 import { UserContext, requireRoleOrOwner, requireRole } from '@/lib/authorization';
 import { errorResponse, ErrorCodes } from '@/lib/api-response';
@@ -32,7 +31,7 @@ export class OrderService extends BaseService<IOrderHeader> {
     }>;
     discounts?: string[]; // Promo codes/rule IDs
     notes?: string;
-  }, ctx?: UserContext) {
+  }, _ctx?: UserContext) {
     try {
       // Validate customer exists
       const customer = await prisma.customer.findUnique({ where: { id: data.customerId } });
