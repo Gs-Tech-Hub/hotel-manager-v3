@@ -1,12 +1,6 @@
 "use client";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-import {
-	Activity,
-	CreditCard,
-	DollarSign,
-	Users,
-} from "lucide-react";
-import { DocumentationWidget } from "@/components/admin/documentation/documentation-widget";
+import { Activity, CreditCard, DollarSign, Users } from "lucide-react";
 
 const stats = [
 	{
@@ -59,11 +53,7 @@ export default function DashboardPage() {
 				</p>
 			</div>
 
-			{/* Documentation Widget */}
-			<div className="border-t pt-8 mt-8">
-				<h2 className="text-2xl font-bold mb-6">Implementation Resources</h2>
-				<DocumentationWidget />
-			</div>
+			{/* NOTE: Documentation moved to a dedicated Docs page */}
 
 			{/* Stats Grid */}
 			<div className="grid gap-6 md:grid-cols-2 xl:grid-cols-4">

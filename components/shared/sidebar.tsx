@@ -22,6 +22,9 @@ import {
 	CheckSquare,
 	DoorOpen,
 	BookMarked,
+	ShoppingCart,
+	Utensils,
+	Coffee,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 
@@ -68,6 +71,35 @@ const sidebarGroups = [
 				title: "Customers",
 				href: "/dashboard/customers",
 				icon: Users,
+				badge: null,
+			},
+		],
+	},
+	{
+		title: "POS",
+		items: [
+			{
+				title: "Orders",
+				href: "/dashboard/pos/orders",
+				icon: ShoppingCart,
+				badge: null,
+			},
+			{
+				title: "Food",
+				href: "/dashboard/pos/food",
+				icon: Utensils,
+				badge: null,
+			},
+			{
+				title: "Drinks",
+				href: "/dashboard/pos/drinks",
+				icon: Coffee,
+				badge: null,
+			},
+			{
+				title: "Departments",
+				href: "/dashboard/pos/departments",
+				icon: BookMarked,
 				badge: null,
 			},
 		],
@@ -134,21 +166,9 @@ const sidebarGroups = [
 		title: "Resources",
 		items: [
 			{
-				title: "Documentation",
-				href: "/dashboard/documentation",
+				title: "Docs",
+				href: "/dashboard/docs",
 				icon: BookOpen,
-				badge: null,
-			},
-			{
-				title: "Implementation",
-				href: "/dashboard/implementation-guide",
-				icon: CheckSquare,
-				badge: null,
-			},
-			{
-				title: "Quick Reference",
-				href: "/dashboard/quick-reference",
-				icon: FileText,
 				badge: null,
 			},
 		],
