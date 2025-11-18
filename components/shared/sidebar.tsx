@@ -75,35 +75,41 @@ const sidebarGroups = [
 			},
 		],
 	},
-	{
-		title: "POS",
-		items: [
 			{
-				title: "Orders",
-				href: "/dashboard/pos/orders",
-				icon: ShoppingCart,
-				badge: null,
+				title: "POS",
+				items: [
+					{
+						title: "Orders",
+								href: "/pos/orders",
+						icon: ShoppingCart,
+						badge: null,
+					},
+					{
+						title: "Food",
+						href: "/pos/food",
+						icon: Utensils,
+						badge: null,
+					},
+					{
+						title: "Drinks",
+						href: "/pos/drinks",
+						icon: Coffee,
+						badge: null,
+					},
+							{
+								title: "POS Terminals",
+								href: "/pos-terminals",
+								icon: ShoppingCart,
+								badge: null,
+							},
+					{
+						title: "Departments",
+						href: "/pos/departments",
+						icon: BookMarked,
+						badge: null,
+					},
+				],
 			},
-			{
-				title: "Food",
-				href: "/dashboard/pos/food",
-				icon: Utensils,
-				badge: null,
-			},
-			{
-				title: "Drinks",
-				href: "/dashboard/pos/drinks",
-				icon: Coffee,
-				badge: null,
-			},
-			{
-				title: "Departments",
-				href: "/dashboard/pos/departments",
-				icon: BookMarked,
-				badge: null,
-			},
-		],
-	},
 	{
 		title: "Pages",
 		items: [

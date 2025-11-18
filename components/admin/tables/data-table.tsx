@@ -345,14 +345,14 @@ export function TableFilterBar({
 			{filters.map((filter) => (
 				<Select
 					key={filter.key}
-					value={filter.value}
-					onValueChange={(value) => onFilterChange(filter.key, value)}
+					value={filter.value === '' ? "__all__" : filter.value}
+					onValueChange={(value) => onFilterChange(filter.key, value === "__all__" ? "" : value)}
 				>
 					<SelectTrigger className="w-40">
 						<SelectValue placeholder={filter.label} />
 					</SelectTrigger>
 					<SelectContent>
-						<SelectItem value="">All {filter.label}</SelectItem>
+						<SelectItem value="__all__">All {filter.label}</SelectItem>
 						{filter.options.map((option) => (
 							<SelectItem key={option.value} value={option.value}>
 								{option.label}
