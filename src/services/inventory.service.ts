@@ -334,11 +334,33 @@ export class InventoryItemService extends BaseService<IInventoryItem> {
    * Reserve inventory for order (NEW - ORDER SYSTEM)
    * Atomic operation to prevent overselling
    */
-  async reserveForOrder(inventoryItemId: string, quantity: number, orderId: string) {
+  async reserveForOrder(inventoryItemId: string, quantity: number, orderId: string, departmentCode?: string) {
     try {
       const item = await prisma.inventoryItem.findUnique({ where: { id: inventoryItemId } });
-      if (!item || item.quantity < quantity) {
+      if (!item) {
+        return { success: false, message: 'Item not found' };
+      }
+
+      // If department context is provided, ensure the item category aligns with department rules
+      if (departmentCode) {
+        const expectedCategory = departmentCode === 'RESTAURANT' ? 'food' : departmentCode === 'BAR_CLUB' ? 'drink' : null;
+        if (expectedCategory && item.category !== expectedCategory) {
+          return { success: false, message: `Item '${item.name}' is not allocated to department ${departmentCode}` };
+        }
+      }
+
+      if (item.quantity < quantity) {
         return { success: false, message: 'Insufficient inventory' };
+      }
+
+      // Idempotent reservation: if a reservation exists for this order+item, update quantity instead of creating duplicate
+      const existing = await (prisma as any).inventoryReservation.findFirst({ where: { inventoryItemId, orderHeaderId: orderId } });
+      if (existing) {
+        const updated = await (prisma as any).inventoryReservation.update({
+          where: { id: existing.id },
+          data: { quantity: existing.quantity + quantity, status: 'reserved' },
+        });
+        return { success: true, reservation: updated };
       }
 
       const reservation = await (prisma as any).inventoryReservation.create({
@@ -403,10 +425,17 @@ export class InventoryItemService extends BaseService<IInventoryItem> {
   /**
    * Check availability including reservations (NEW - ORDER SYSTEM)
    */
-  async checkAvailabilityWithReservations(itemId: string, quantity: number): Promise<boolean> {
+  async checkAvailabilityWithReservations(itemId: string, quantity: number, departmentCode?: string): Promise<boolean> {
     try {
       const item = await prisma.inventoryItem.findUnique({ where: { id: itemId } });
       if (!item) return false;
+      // If department context is provided, enforce category mapping
+      if (departmentCode) {
+        const expectedCategory = departmentCode === 'RESTAURANT' ? 'food' : departmentCode === 'BAR_CLUB' ? 'drink' : null;
+        if (expectedCategory && item.category !== expectedCategory) {
+          return false;
+        }
+      }
 
       const reserved = await (prisma as any).inventoryReservation.aggregate({
         _sum: { quantity: true },

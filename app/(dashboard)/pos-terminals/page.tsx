@@ -8,6 +8,7 @@ import { useEffect, useState } from "react"
 type Terminal = {
   id: string
   name: string
+  slug?: string
   departmentCode?: string
   status?: string
   today?: { count: number; total: number }
@@ -72,7 +73,7 @@ export default function POSTerminalsIndex() {
                   )}
                 </div>
                 <div className="flex gap-2">
-                  <Link href={`/pos-terminals/${encodeURIComponent(t.name.toLowerCase().replace(/\s+/g, '-').replace(/[^a-z0-9\-]/g, ''))}/checkout`} className="px-3 py-2 bg-sky-600 text-white rounded">Open</Link>
+                  <Link href={`/pos-terminals/${encodeURIComponent(t.slug ?? t.name.toLowerCase().replace(/\s+/g, '-').replace(/[^a-z0-9\-]/g, ''))}/checkout`} className="px-3 py-2 bg-sky-600 text-white rounded">Open</Link>
                 </div>
               </div>
             </div>

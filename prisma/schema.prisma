@@ -628,6 +628,26 @@ model Department {
   @@map("departments")
 }
 
+// POS Terminals (point-of-sale devices / logical terminals)
+model Terminal {
+  id           String    @id @default(cuid())
+  name         String
+  slug         String    @unique
+
+  // optional relation to Department (if a terminal is bound to a department)
+  departmentId String?
+  department   Department? @relation(fields: [departmentId], references: [id], onDelete: SetNull)
+
+  status   String  @default("offline") // online, offline, maintenance
+  metadata Json?   @default("{}")
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@map("terminals")
+  @@index([slug])
+}
+
 model DiscountRule {
   id                  String    @id @default(cuid())
   code                String    @unique

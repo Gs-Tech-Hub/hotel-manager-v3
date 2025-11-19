@@ -5,6 +5,7 @@
 
 import { BaseService } from './base.service';
 import { IDepartment } from '../types/entities';
+import { inventoryItemService } from './inventory.service';
 import { prisma } from '../lib/prisma';
 import { UserContext, requireRole } from '@/lib/authorization';
 import { errorResponse, ErrorCodes } from '@/lib/api-response';
@@ -362,6 +363,38 @@ export class DepartmentService extends BaseService<IDepartment> {
     } catch (error) {
       console.error('Error fetching department inventory:', error);
       return errorResponse(ErrorCodes.INTERNAL_ERROR, 'Failed to fetch inventory');
+    }
+  }
+
+  /**
+   * Get department menu derived from inventory items
+   * Returns menu-like items { id, inventoryId, name, price, type, available }
+   */
+  async getDepartmentMenu(departmentCode: string) {
+    try {
+      // Map department to inventory category
+      const category = departmentCode === 'RESTAURANT' ? 'food' : departmentCode === 'BAR_CLUB' ? 'drink' : null;
+      if (!category) {
+        return errorResponse(ErrorCodes.VALIDATION_ERROR, 'Department does not expose a menu');
+      }
+
+      // Use inventory service to fetch items by category
+      const items = await inventoryItemService.getByCategory(category);
+
+      // Map inventory items to menu shape
+      const menu = items.map((it: any) => ({
+        id: `menu-${it.id}`,
+        inventoryId: it.id,
+        name: it.name,
+        price: typeof it.unitPrice === 'object' && typeof it.unitPrice.toNumber === 'function' ? it.unitPrice.toNumber() : Number(it.unitPrice),
+        type: category,
+        available: it.quantity > 0,
+      }));
+
+      return menu;
+    } catch (error) {
+      console.error('Error building department menu:', error);
+      return errorResponse(ErrorCodes.INTERNAL_ERROR, 'Failed to fetch department menu');
     }
   }
 }

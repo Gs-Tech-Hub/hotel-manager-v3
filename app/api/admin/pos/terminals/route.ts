@@ -1,13 +1,22 @@
 import { NextResponse } from 'next/server'
 
+function slugify(name: string) {
+  return name
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, '-')
+    .replace(/(^-|-$)/g, '')
+}
+
 export async function GET() {
   try {
     // Mock terminal list with inline today's summary (count + total)
-    const terminals = [
+    const base = [
       { id: 'term-1', name: 'Front Desk - Restaurant', departmentCode: 'restaurant', status: 'online', today: { count: 24, total: 342.5 } },
       { id: 'term-2', name: 'Bar - Main Bar', departmentCode: 'bar', status: 'online', today: { count: 13, total: 198.75 } },
       { id: 'term-3', name: 'Poolside - Cafe', departmentCode: 'pool', status: 'offline', today: { count: 7, total: 62.0 } },
     ]
+
+    const terminals = base.map((t) => ({ ...t, slug: slugify(t.name) }))
 
     return NextResponse.json({ success: true, data: terminals })
   } catch (err) {

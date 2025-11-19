@@ -23,8 +23,7 @@ import {
 	DoorOpen,
 	BookMarked,
 	ShoppingCart,
-	Utensils,
-	Coffee,
+
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 
@@ -73,18 +72,19 @@ const sidebarGroups = [
 				icon: Users,
 				badge: null,
 			},
-			{
-				title: "Restaurants",
-				href: "/dashboard/departments/restaurants",
-				icon: Utensils,
-				badge: null,
-			},
-			{
-				title: "Bars",
-				href: "/dashboard/departments/bars",
-				icon: Coffee,
-				badge: null,
-			},
+							{
+								title: "Departments",
+								href: "/departments",
+								icon: BookOpen,
+								badge: null,
+							},
+								{
+									title: "Inventory",
+									href: "/inventory",
+									icon: Database,
+									badge: null,
+								},
+
 		],
 	},
 				{
@@ -247,9 +247,67 @@ export function Sidebar({ onMobileClose }: SidebarProps) {
 						{/* Group Items */}
 						<div className="space-y-2">
 							{group.items.map((item) => {
-								const isActive = pathname === item.href;
 								const Icon = item.icon;
 
+								if ('children' in item && Array.isArray((item as any).children)) {
+									const isParentActive = pathname === item.href || pathname.startsWith(item.href + "/");
+									return (
+										<div key={item.href}>
+											<Link
+												href={item.href}
+												onClick={handleLinkClick}
+												className={cn(
+													"group flex items-center gap-3 rounded-xl px-3 py-3 text-sm font-medium transition-all duration-200 hover:bg-muted",
+													isParentActive
+														? "bg-primary text-primary-foreground shadow-md hover:bg-primary/90"
+														: "text-muted-foreground hover:text-foreground",
+													isCollapsed && "justify-center px-3 py-4",
+												)}
+												title={isCollapsed ? item.title : undefined}
+											>
+												{Icon && (
+													<Icon
+														className={cn(
+															"transition-all duration-200",
+															isCollapsed ? "h-5 w-5" : "h-4 w-4",
+															isParentActive && !isCollapsed && "text-primary-foreground",
+														)}
+													/>
+												)}
+												{!isCollapsed && <span className="group-hover:translate-x-0.5 transition-transform duration-200">{item.title}</span>}
+											</Link>
+
+											{/* Children links */}
+											{!isCollapsed && (
+												<div className="mt-2 space-y-1 pl-8">
+													{(item as any).children.map((child: any) => {
+														const isActiveChild = pathname === child.href;
+														const ChildIcon = child.icon;
+														return (
+															<Link
+																key={child.href}
+																href={child.href}
+																onClick={handleLinkClick}
+																className={cn(
+																	"group flex items-center gap-2 rounded px-2 py-2 text-sm transition-all duration-150 hover:bg-muted",
+																	isActiveChild
+																		? "bg-primary/90 text-primary-foreground"
+																		: "text-muted-foreground hover:text-foreground",
+																)}
+																>
+																{ChildIcon && <ChildIcon className="h-3 w-3" />}
+																<span>{child.title}</span>
+																</Link>
+															);
+														})}
+												</div>
+											)}
+										</div>
+									);
+								}
+
+								// default single item
+								const isActive = pathname === item.href;
 								return (
 									<Link
 										key={item.href}
@@ -264,13 +322,15 @@ export function Sidebar({ onMobileClose }: SidebarProps) {
 										)}
 										title={isCollapsed ? item.title : undefined}
 									>
-										<Icon
-											className={cn(
-												"transition-all duration-200",
-												isCollapsed ? "h-5 w-5" : "h-4 w-4",
-												isActive && !isCollapsed && "text-primary-foreground",
-											)}
-										/>
+										{Icon && (
+											<Icon
+												className={cn(
+													"transition-all duration-200",
+													isCollapsed ? "h-5 w-5" : "h-4 w-4",
+													isActive && !isCollapsed && "text-primary-foreground",
+												)}
+											/>
+										)}
 										{!isCollapsed && (
 											<span className="group-hover:translate-x-0.5 transition-transform duration-200">
 												{item.title}
@@ -278,7 +338,7 @@ export function Sidebar({ onMobileClose }: SidebarProps) {
 										)}
 									</Link>
 								);
-							})}
+								})}
 						</div>
 					</div>
 				))}
