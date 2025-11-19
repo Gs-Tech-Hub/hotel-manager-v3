@@ -14,8 +14,11 @@ export default function POSCheckoutShell({ terminalId }: { terminalId?: string }
   const [receipt, setReceipt] = useState<any | null>(null)
   const [products, setProducts] = useState<POSProduct[]>([])
   const [loadingProducts, setLoadingProducts] = useState(false)
-  const [selectedTerminal, setSelectedTerminal] = useState<string | null>(terminalId ?? null)
   const [terminalError, setTerminalError] = useState<string | null>(null)
+  const [salesSummary, setSalesSummary] = useState<{ count: number; total: number } | null>(null)
+  const [loadingSummary, setLoadingSummary] = useState(false)
+  const [summaryError, setSummaryError] = useState<string | null>(null)
+  const [summaryRefreshKey, setSummaryRefreshKey] = useState(0)
 
   const categories = [
     { id: 'foods', name: 'Foods' },
@@ -54,7 +57,7 @@ export default function POSCheckoutShell({ terminalId }: { terminalId?: string }
     ;(async () => {
       try {
         const payload = {
-          terminalId: selectedTerminal ?? terminalId ?? null,
+          terminalId: effectiveTerminalId ?? null,
           items: cart,
           subtotal,
           tax,
@@ -108,32 +111,25 @@ export default function POSCheckoutShell({ terminalId }: { terminalId?: string }
     { id: 'term-3', name: 'Poolside - Cafe', departmentCode: 'pool' },
   ]
 
-  // Persist selected terminal in localStorage for convenience
-  useEffect(() => {
-    try {
-      if (!terminalId) {
-        const saved = localStorage.getItem('pos.selectedTerminal')
-        if (saved) setSelectedTerminal(saved)
-      }
-    } catch (err) {
-      // ignore local storage errors
-    }
-  }, [terminalId])
+  // Helper: slugify terminal names for human-friendly routes
+  const slugify = (s: string) =>
+    s
+      .toString()
+      .toLowerCase()
+      .trim()
+      .replace(/\s+/g, '-')
+      .replace(/[^a-z0-9\-]/g, '')
+
+  // Resolve the incoming terminalId route param which may be an id or a slugified name.
+  // Prefer exact id match; otherwise try to match slugified terminal name.
+  const resolvedTerminal = terminals.find((t) => t.id === terminalId) ?? terminals.find((t) => slugify(t.name) === (terminalId ?? ''))
+  const effectiveTerminalId = resolvedTerminal?.id ?? terminalId ?? ''
+  const effectiveTerminalName = resolvedTerminal?.name ?? terminalId ?? '—'
 
   useEffect(() => {
-    try {
-      if (selectedTerminal) localStorage.setItem('pos.selectedTerminal', selectedTerminal)
-      else localStorage.removeItem('pos.selectedTerminal')
-    } catch (err) {
-      // ignore
-    }
-  }, [selectedTerminal])
-
-  useEffect(() => {
-    // If a terminal is selected, fetch its department menu
-    const code = terminals.find((t) => t.id === (selectedTerminal ?? terminalId))?.departmentCode
+    // If a terminal is provided via the route param, fetch its department menu
+    const code = terminals.find((t) => t.id === effectiveTerminalId)?.departmentCode
     if (!code) {
-      // no terminal selected; clear products
       setProducts([])
       return
     }
@@ -165,7 +161,60 @@ export default function POSCheckoutShell({ terminalId }: { terminalId?: string }
     return () => {
       mounted = false
     }
-  }, [selectedTerminal, terminalId])
+  }, [effectiveTerminalId])
+
+  useEffect(() => {
+    // fetch sales summary for today for the resolved terminal id
+    const tId = effectiveTerminalId ?? ''
+    let mounted = true
+    const fetchSummary = async () => {
+      if (!tId) {
+        setSalesSummary(null)
+        return
+      }
+      setLoadingSummary(true)
+      setSummaryError(null)
+      try {
+        // primary endpoint
+        const res = await fetch(`/api/admin/pos/sales-summary?terminalId=${encodeURIComponent(tId)}`)
+        if (res.ok) {
+          const json = await res.json()
+          if (mounted && json && json.success && json.data) {
+            setSalesSummary({ count: Number(json.data.count || 0), total: Number(json.data.total || 0) })
+            return
+          }
+        }
+
+        // fallback to mock endpoint
+        const mock = await fetch(`/api/mock/sales-summary?terminalId=${encodeURIComponent(tId)}`)
+        if (mock.ok) {
+          const mj = await mock.json()
+          if (mounted && mj && mj.success && mj.data) {
+            setSalesSummary({ count: Number(mj.data.count || 0), total: Number(mj.data.total || 0) })
+            return
+          }
+        }
+
+        if (mounted) {
+          setSummaryError('No summary available')
+          setSalesSummary(null)
+        }
+      } catch (err) {
+        console.error('Failed to fetch sales summary', err)
+        if (mounted) {
+          setSummaryError('Failed to load sales summary')
+          setSalesSummary(null)
+        }
+      } finally {
+        mounted && setLoadingSummary(false)
+      }
+    }
+
+    fetchSummary()
+    return () => {
+      mounted = false
+    }
+  }, [effectiveTerminalId, summaryRefreshKey])
 
   return (
     <div className="space-y-4">
@@ -173,16 +222,7 @@ export default function POSCheckoutShell({ terminalId }: { terminalId?: string }
         <div className="lg:col-span-2 space-y-4">
           <div className="flex items-center gap-3">
             <label className="text-sm font-medium">Terminal:</label>
-            <select
-              value={selectedTerminal ?? ''}
-              onChange={(e) => setSelectedTerminal(e.target.value || null)}
-              className="border rounded px-2 py-1"
-            >
-              <option value="">-- Select Terminal --</option>
-              {terminals.map((t) => (
-                <option key={t.id} value={t.id}>{t.name}</option>
-              ))}
-            </select>
+            <div className="px-2 py-1">{effectiveTerminalName}</div>
             {loadingProducts && <div className="text-sm text-muted-foreground">Loading menu...</div>}
             {terminalError && <div className="text-sm text-red-600">{terminalError}</div>}
           </div>
@@ -211,6 +251,47 @@ export default function POSCheckoutShell({ terminalId }: { terminalId?: string }
         </div>
 
         <div>
+          <div className="mb-4 p-3 border rounded bg-white shadow-sm">
+            <div className="flex items-center justify-between">
+              <div>
+                <div className="text-xs text-muted-foreground">Today's Sales</div>
+                <div className="text-lg font-semibold">{effectiveTerminalName}</div>
+              </div>
+              <div>
+                <button
+                  onClick={() => {
+                    // trigger refresh for the summary
+                    setSummaryRefreshKey((k) => k + 1)
+                  }}
+                  className="text-sm text-sky-600 underline"
+                >
+                  Refresh
+                </button>
+              </div>
+            </div>
+
+            <div className="mt-3">
+              {loadingSummary ? (
+                <div className="text-sm text-muted-foreground">Loading summary...</div>
+              ) : summaryError ? (
+                <div className="text-sm text-red-600">{summaryError}</div>
+              ) : salesSummary ? (
+                <div className="flex gap-4">
+                  <div className="text-sm">
+                    <div className="text-2xl font-bold">{salesSummary.count}</div>
+                    <div className="text-xs text-muted-foreground">transactions</div>
+                  </div>
+                  <div className="text-sm">
+                    <div className="text-2xl font-bold">{new Intl.NumberFormat(undefined, { style: 'currency', currency: 'USD' }).format(salesSummary.total)}</div>
+                    <div className="text-xs text-muted-foreground">gross</div>
+                  </div>
+                </div>
+              ) : (
+                <div className="text-sm text-muted-foreground">No data</div>
+              )}
+            </div>
+          </div>
+
           <POSCart items={cart} onRemove={handleRemove} onQty={handleQty} />
           <div className="mt-4">
             <button onClick={() => setShowPayment(true)} disabled={cart.length === 0} className="w-full py-2 bg-emerald-600 text-white rounded">Proceed to Payment</button>
