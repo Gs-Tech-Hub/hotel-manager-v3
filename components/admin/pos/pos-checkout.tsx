@@ -108,6 +108,27 @@ export default function POSCheckoutShell({ terminalId }: { terminalId?: string }
     { id: 'term-3', name: 'Poolside - Cafe', departmentCode: 'pool' },
   ]
 
+  // Persist selected terminal in localStorage for convenience
+  useEffect(() => {
+    try {
+      if (!terminalId) {
+        const saved = localStorage.getItem('pos.selectedTerminal')
+        if (saved) setSelectedTerminal(saved)
+      }
+    } catch (err) {
+      // ignore local storage errors
+    }
+  }, [terminalId])
+
+  useEffect(() => {
+    try {
+      if (selectedTerminal) localStorage.setItem('pos.selectedTerminal', selectedTerminal)
+      else localStorage.removeItem('pos.selectedTerminal')
+    } catch (err) {
+      // ignore
+    }
+  }, [selectedTerminal])
+
   useEffect(() => {
     // If a terminal is selected, fetch its department menu
     const code = terminals.find((t) => t.id === (selectedTerminal ?? terminalId))?.departmentCode
@@ -168,7 +189,25 @@ export default function POSCheckoutShell({ terminalId }: { terminalId?: string }
 
           <POSCategorySelector categories={categories} selectedId={category ?? undefined} onSelect={(id) => setCategory(id)} />
 
-          <POSProductGrid products={loadingProducts ? sampleProducts : (products.length ? products : sampleProducts)} onAdd={handleAdd} />
+          {/* determine displayed products: prefer fetched products, fall back to sample */}
+          {(() => {
+            const source = products.length ? products : sampleProducts
+            let displayed = source
+            if (category) {
+              const mapCategoryToType: Record<string, string> = { foods: 'food', drinks: 'drink', retail: 'retail' }
+              const t = mapCategoryToType[category]
+              if (t) {
+                displayed = source.filter((p: any) => {
+                  // fetched menu items include a `type` field; sample items do not — handle both
+                  // @ts-ignore
+                  if (p.type) return p.type === t
+                  // fallback: infer by name keywords
+                  return t === 'drink' ? /coffee|espresso|tea|water|juice|soda/i.test(p.name) : /croissant|sandwich|salad|burger|wrap|pastry/i.test(p.name) || t === 'retail'
+                })
+              }
+            }
+            return <POSProductGrid products={loadingProducts ? sampleProducts : displayed} onAdd={handleAdd} />
+          })()}
         </div>
 
         <div>
