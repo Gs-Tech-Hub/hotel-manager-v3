@@ -2,8 +2,15 @@
 
 import { useState, useEffect } from "react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-import { Loader2 } from "lucide-react";
+import { Loader2, Utensils, Coffee, Activity, Gamepad, BookOpen } from "lucide-react";
 import Link from "next/link";
+
+const iconForType: Record<string, any> = {
+    restaurants: Utensils,
+    bars: Coffee,
+    gyms: Activity,
+    games: Gamepad,
+}
 
 export default function PosDepartmentsPage() {
     const [deps, setDeps] = useState<any[]>([]);
@@ -41,18 +48,25 @@ export default function PosDepartmentsPage() {
                 </Card>
             ) : (
                 <div className="grid gap-4">
-                    {deps.map((d) => (
-                        <Link key={d.code} href={`/dashboard/pos/departments/${d.code}`}>
-                            <Card className="cursor-pointer hover:bg-accent transition-colors">
-                                <CardHeader>
-                                    <CardTitle>{d.name}</CardTitle>
-                                </CardHeader>
-                                <CardContent>
-                                    <div className="text-sm text-muted-foreground">Code: {d.code}</div>
-                                </CardContent>
-                            </Card>
-                        </Link>
-                    ))}
+                    {deps.map((d) => {
+                        const key = (d.type || d.code || '').toString().toLowerCase()
+                        const Icon = iconForType[key] ?? BookOpen
+                        return (
+                            <Link key={d.code} href={`/dashboard/pos/departments/${d.code}`}>
+                                <Card className="cursor-pointer hover:bg-accent transition-colors">
+                                    <CardHeader>
+                                        <div className="flex items-center gap-3">
+                                            <div className="p-2 bg-muted rounded-md"><Icon className="h-5 w-5" /></div>
+                                            <CardTitle>{d.name}</CardTitle>
+                                        </div>
+                                    </CardHeader>
+                                    <CardContent>
+                                        <div className="text-sm text-muted-foreground">Code: {d.code}</div>
+                                    </CardContent>
+                                </Card>
+                            </Link>
+                        )
+                    })}
                 </div>
             )}
         </div>

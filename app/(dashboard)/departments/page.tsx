@@ -9,11 +9,14 @@ type Department = {
   code: string
   name: string
   description?: string
+  type?: string
+  icon?: string
   totalOrders?: number
   pendingOrders?: number
 }
 
-const iconForCode: Record<string, any> = {
+// Prefer mapping by department.type (these values come from the prisma model)
+const iconForType: Record<string, any> = {
   restaurants: Utensils,
   bars: Coffee,
   gyms: Activity,
@@ -59,7 +62,8 @@ export default function DepartmentsPage() {
 
       <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-6">
         {departments.map((d) => {
-          const Icon = iconForCode[d.code] ?? BookOpen
+          const key = (d.type || d.code || '').toString().toLowerCase()
+          const Icon = iconForType[key] ?? BookOpen
           return (
             <Link
               key={d.code}

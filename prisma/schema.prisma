@@ -618,9 +618,17 @@ model Department {
   code        String  @unique
   name        String
   description String?
+  slug        String? @unique
+  type        String? @default("general") // restaurants, bars, gyms, games, etc.
+  icon        String? // optional icon name or asset path
+  image       String? // optional hero/thumbnail image
+  referenceType String? // optional reference: Restaurant, BarAndClub, GymAndSport
+  referenceId   String? // optional id of referenced entity
+  metadata    Json?   @default("{}")
   isActive    Boolean @default(true)
 
   orderDepartments OrderDepartment[]
+  terminals Terminal[]
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt

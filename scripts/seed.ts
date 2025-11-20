@@ -146,7 +146,11 @@ async function main() {
       // Create lines in a transaction and compute totals
       await prisma.$transaction(async (tx) => {
         let subtotal = 0;
+        // Ensure each order line has a lineNumber (incremental per order)
+        let lineNumber = 1;
         for (const ld of linesData) {
+          // assign a lineNumber if missing
+          if (ld.lineNumber == null) ld.lineNumber = lineNumber++;
           await tx.orderLine.create({ data: ld });
           subtotal += ld.lineTotal;
         }

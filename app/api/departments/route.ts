@@ -16,22 +16,13 @@ import { successResponse, errorResponse, ErrorCodes, getStatusCode } from '@/lib
  */
 export async function GET(request: NextRequest) {
   try {
-    // Get user context
+    // Extract user context if present. Departments listing is public, so
+    // we don't require authentication here — but we still load full roles
+    // when headers are provided to allow role-aware responses elsewhere.
     const ctx = extractUserContext(request);
-    if (!ctx.userId) {
-      return NextResponse.json(
-        errorResponse(ErrorCodes.UNAUTHORIZED, 'Not authenticated'),
-        { status: getStatusCode(ErrorCodes.UNAUTHORIZED) }
-      );
-    }
-
-    // Load full user with roles - anyone can view departments
-    const userWithRoles = await loadUserWithRoles(ctx.userId);
-    if (!userWithRoles) {
-      return NextResponse.json(
-        errorResponse(ErrorCodes.UNAUTHORIZED, 'Not authenticated'),
-        { status: getStatusCode(ErrorCodes.UNAUTHORIZED) }
-      );
+    let userWithRoles = null as any | null
+    if (ctx?.userId) {
+      userWithRoles = await loadUserWithRoles(ctx.userId);
     }
 
     // Query all active departments

@@ -2,6 +2,22 @@
 
 import { useEffect, useState } from 'react'
 import { useRouter } from 'next/navigation'
+import { Utensils, Coffee, Activity, Gamepad, BookOpen } from 'lucide-react'
+
+type DepartmentInfo = {
+  code: string
+  name: string
+  description?: string
+  type?: string
+  icon?: string
+}
+
+const iconForType: Record<string, any> = {
+  restaurants: Utensils,
+  bars: Coffee,
+  gyms: Activity,
+  games: Gamepad,
+}
 
 type MenuItem = {
   id: string
@@ -16,6 +32,7 @@ export default function DepartmentDetail({ params }: { params: { code: string } 
   const [menu, setMenu] = useState<MenuItem[]>([])
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
+  const [department, setDepartment] = useState<DepartmentInfo | null>(null)
   const router = useRouter()
 
   const fetchMenu = async () => {
@@ -35,12 +52,36 @@ export default function DepartmentDetail({ params }: { params: { code: string } 
     }
   }
 
-  useEffect(() => { fetchMenu() }, [code])
+  const fetchDepartment = async () => {
+    try {
+      const res = await fetch(`/api/departments/${encodeURIComponent(code)}`)
+      if (!res.ok) throw new Error(`Failed to fetch department (${res.status})`)
+      const json = await res.json()
+      const data = json.data || json
+      setDepartment(data || null)
+    } catch (err) {
+      console.error('Failed to load department', err)
+    }
+  }
+
+  useEffect(() => { fetchMenu(); fetchDepartment() }, [code])
 
   return (
     <div className="space-y-6">
       <div className="flex items-center justify-between">
-        <h1 className="text-2xl font-bold">Department: {code}</h1>
+        <div className="flex items-center gap-4">
+          <div className="p-2 bg-muted rounded-md">
+            {(() => {
+              const key = (department?.type || department?.code || code || '').toString().toLowerCase()
+              const Icon = iconForType[key] ?? BookOpen
+              return <Icon className="h-6 w-6" />
+            })()}
+          </div>
+          <div>
+            <h1 className="text-2xl font-bold">{department?.name || code}</h1>
+            {department?.description && <div className="text-sm text-muted-foreground">{department.description}</div>}
+          </div>
+        </div>
         <div>
           <button onClick={() => router.back()} className="px-3 py-1 border rounded text-sm">Back</button>
         </div>
