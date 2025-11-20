@@ -372,14 +372,33 @@ export class DepartmentService extends BaseService<IDepartment> {
    */
   async getDepartmentMenu(departmentCode: string) {
     try {
-      // Map department to inventory category
-      const category = departmentCode === 'RESTAURANT' ? 'food' : departmentCode === 'BAR_CLUB' ? 'drink' : null;
+      // Resolve department row if possible to determine its logical type
+      let category: string | null = null
+      try {
+        const dept = await (prisma as any).department.findUnique({ where: { code: departmentCode } })
+        if (dept) {
+          // Prefer department.type values (e.g., 'restaurants', 'bars')
+          const t = (dept.type || '').toString().toLowerCase()
+          if (t.includes('restaurant') || t.includes('restaurants')) category = 'food'
+          else if (t.includes('bar') || t.includes('bars')) category = 'drink'
+        }
+      } catch (e) {
+        // ignore, we'll fallback to direct string mapping
+      }
+
+      // Fallback mapping for legacy department codes
       if (!category) {
-        return errorResponse(ErrorCodes.VALIDATION_ERROR, 'Department does not expose a menu');
+        const up = (departmentCode || '').toString().toUpperCase()
+        if (up === 'RESTAURANT' || up === 'RESTAURANT_DEPT') category = 'food'
+        else if (up === 'BAR_CLUB' || up === 'BAR' || up === 'BAR_AND_CLUBS') category = 'drink'
+      }
+
+      if (!category) {
+        return errorResponse(ErrorCodes.VALIDATION_ERROR, 'Department does not expose a menu')
       }
 
       // Use inventory service to fetch items by category
-      const items = await inventoryItemService.getByCategory(category);
+      const items = await inventoryItemService.getByCategory(category)
 
       // Map inventory items to menu shape
       const menu = items.map((it: any) => ({
