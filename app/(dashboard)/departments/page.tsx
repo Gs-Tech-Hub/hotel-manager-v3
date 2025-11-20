@@ -1,7 +1,7 @@
 "use client"
 
 import Link from 'next/link'
-import { useEffect, useState } from 'react'
+import React, { useEffect, useState } from 'react'
 import { Utensils, Coffee, Activity, Gamepad, BookOpen } from 'lucide-react'
 
 type Department = {
@@ -13,6 +13,9 @@ type Department = {
   icon?: string
   totalOrders?: number
   pendingOrders?: number
+  referenceType?: string | null
+  referenceId?: string | null
+  metadata?: any
 }
 
 // Prefer mapping by department.type (these values come from the prisma model)
@@ -37,7 +40,15 @@ export default function DepartmentsPage() {
       const json = await res.json()
       if (!json) throw new Error('Invalid response')
       const data = json.data || json // handle legacy shapes
-      setDepartments(data || [])
+      // Keep only canonical/top-level departments (exclude per-entity sections)
+      const canonical = (data || []).filter((dd: any) => {
+        // prefer explicit reference fields, otherwise fall back to code pattern
+        if (dd.referenceType) return false
+        if (dd.metadata && dd.metadata.section) return false
+        if (typeof dd.code === 'string' && dd.code.includes(':')) return false
+        return true
+      })
+      setDepartments(canonical || [])
     } catch (err: any) {
       console.error('Failed to load departments', err)
       setError(err?.message || 'Failed to load departments')
@@ -74,7 +85,7 @@ export default function DepartmentsPage() {
                 <div className="flex items-start gap-4 flex-1">
                   <div className="p-2 bg-muted rounded-md">
                     <Icon className="h-6 w-6 text-foreground" />
-                  </div>
+                   </div>
                   <div>
                     <h3 className="text-lg font-semibold">{d.name}</h3>
                     {d.description ? (

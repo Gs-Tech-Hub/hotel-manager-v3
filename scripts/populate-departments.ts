@@ -80,24 +80,107 @@ async function main() {
       await upsertDepartment(d.code, d.name, { description: d.description, type: d.type, icon: (d as any).icon, metadata: (d as any).metadata })
     }
 
+    // --- Legacy migration: merge old department codes into canonical 'restaurant' ---
+    // If a legacy code like 'REST' exists, move its relations to the canonical 'restaurant'
+    try {
+      const legacy = await prisma.department.findFirst({ where: { code: { in: ['REST', 'RESTAURANT'] } } })
+      const canonicalRestaurant = await prisma.department.findUnique({ where: { code: 'restaurant' } })
+      if (legacy && canonicalRestaurant && legacy.id !== canonicalRestaurant.id) {
+        console.log(`Migrating legacy department ${legacy.code} -> restaurant`)
+        // Reassign order_departments
+        await prisma.orderDepartment.updateMany({ where: { departmentId: legacy.id }, data: { departmentId: canonicalRestaurant.id } })
+        // Reassign terminals
+        await prisma.terminal.updateMany({ where: { departmentId: legacy.id }, data: { departmentId: canonicalRestaurant.id } })
+        // Delete legacy department
+        await prisma.department.delete({ where: { id: legacy.id } })
+        console.log(`Legacy department ${legacy.code} migrated and removed.`)
+      }
+    } catch (err) {
+      console.warn('Legacy department migration failed:', err)
+    }
+
     // Optionally, create departments for each Restaurant/Bar entity
     // Commented by default — uncomment if you want one department per entity
-    /*
-    const restaurants = await prisma.restaurant.findMany()
+    // Create departments for each Restaurant and Bar entity with common sections.
+    // This supports multiple sections per physical restaurant/bar (e.g., main dining, kitchen, pool-side bar).
+    // If there are no Restaurant/Bar entries, create a couple of sample ones so
+    // we can create per-entity department sections for demonstration/testing.
+    let restaurants = await prisma.restaurant.findMany()
+    if (!restaurants || restaurants.length === 0) {
+      console.log('No restaurants found — seeding sample Restaurant entries')
+      const sampleR = [
+        { name: 'The Grand Dining', location: 'Lobby', description: 'Main hotel restaurant' },
+        { name: 'Seaside Grill', location: 'Pool Level', description: 'Casual pool-side dining' },
+      ]
+      for (const r of sampleR) {
+        const exists = await prisma.restaurant.findFirst({ where: { name: r.name } })
+        if (!exists) await prisma.restaurant.create({ data: r })
+      }
+      restaurants = await prisma.restaurant.findMany()
+    }
     for (const r of restaurants) {
-      await upsertDepartment(`restaurant:${r.id}`, r.name, { description: r.description || undefined, type: 'restaurant', referenceType: 'Restaurant', referenceId: r.id })
+      // Main dining department
+      await upsertDepartment(`restaurant:${r.id}:main`, `${r.name} — Main`, {
+        description: r.description || undefined,
+        type: 'restaurants',
+        referenceType: 'Restaurant',
+        referenceId: r.id,
+        metadata: { section: 'main' },
+      })
+
+      // Kitchen (fulfillment department)
+      await upsertDepartment(`restaurant:${r.id}:kitchen`, `${r.name} — Kitchen`, {
+        description: `Kitchen / back-of-house for ${r.name}`,
+        type: 'kitchen',
+        referenceType: 'Restaurant',
+        referenceId: r.id,
+        metadata: { section: 'kitchen', fulfillment: true },
+      })
     }
 
-    const bars = await prisma.barAndClub.findMany()
+    let bars = await prisma.barAndClub.findMany()
+    if (!bars || bars.length === 0) {
+      console.log('No bars found — seeding sample BarAndClub entries')
+      const sampleB = [
+        { name: 'Moonlight Bar', location: 'Rooftop', description: 'Rooftop bar and lounge' },
+        { name: 'Lagoon Pool Bar', location: 'Pool', description: 'Pool-side drinks and snacks' },
+      ]
+      for (const b of sampleB) {
+        const exists = await prisma.barAndClub.findFirst({ where: { name: b.name } })
+        if (!exists) await prisma.barAndClub.create({ data: b })
+      }
+      bars = await prisma.barAndClub.findMany()
+    }
     for (const b of bars) {
-      await upsertDepartment(`bar:${b.id}`, b.name, { description: b.description || undefined, type: 'bar', referenceType: 'BarAndClub', referenceId: b.id })
+      // Main bar
+      await upsertDepartment(`bar:${b.id}:main`, `${b.name} — Bar`, {
+        description: b.description || undefined,
+        type: 'bars',
+        referenceType: 'BarAndClub',
+        referenceId: b.id,
+        metadata: { section: 'main' },
+      })
+
+      // Pool-side bar
+      await upsertDepartment(`bar:${b.id}:poolside`, `${b.name} — Pool-side`, {
+        description: `Pool-side service for ${b.name}`,
+        type: 'bars',
+        referenceType: 'BarAndClub',
+        referenceId: b.id,
+        metadata: { section: 'pool-side' },
+      })
+
+      // Club / late-night section
+      await upsertDepartment(`bar:${b.id}:club`, `${b.name} — Club`, {
+        description: `Club / late-night area for ${b.name}`,
+        type: 'bars',
+        referenceType: 'BarAndClub',
+        referenceId: b.id,
+        metadata: { section: 'club' },
+      })
     }
 
-    const gyms = await prisma.gymAndSport.findMany()
-    for (const g of gyms) {
-      await upsertDepartment(`gym:${g.id}`, g.name, { description: g.description || undefined, type: 'gym', referenceType: 'GymAndSport', referenceId: g.id })
-    }
-    */
+    // Optionally create per-gym departments (left as single department by default)
 
     console.log('Departments upsert complete')
   } catch (err) {

@@ -1,74 +1,42 @@
 "use client";
 
-import { useState, useEffect } from "react";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-import { Loader2, Utensils, Coffee, Activity, Gamepad, BookOpen } from "lucide-react";
 import Link from "next/link";
 
-const iconForType: Record<string, any> = {
-    restaurants: Utensils,
-    bars: Coffee,
-    gyms: Activity,
-    games: Gamepad,
-}
-
 export default function PosDepartmentsPage() {
-    const [deps, setDeps] = useState<any[]>([]);
-    const [isLoading, setIsLoading] = useState(true);
-
-    useEffect(() => {
-        const fetchDeps = async () => {
-            try {
-                const res = await fetch('/api/departments');
-                const data = await res.json();
-                if (data.success) setDeps(data.data.items || []);
-            } catch (e) {
-                console.error(e);
-            } finally {
-                setIsLoading(false);
-            }
-        };
-        fetchDeps();
-    }, []);
-
+    // POS should not duplicate department management. Provide quick links to POS-specific pages
+    // and a link to the centralized departments management.
     return (
         <div className="space-y-8">
             <div>
-                <h1 className="text-3xl font-bold">Departments</h1>
-                <p className="text-muted-foreground">Restaurant, Bar and other service departments.</p>
+                <h1 className="text-3xl font-bold">POS — Administration</h1>
+                <p className="text-muted-foreground">This area contains POS-specific tools. Department management is centralized.</p>
             </div>
 
-            {isLoading ? (
-                <div className="flex items-center justify-center py-12">
-                    <Loader2 className="h-8 w-8 animate-spin text-muted-foreground" />
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                <div className="border rounded p-4">
+                    <h2 className="font-semibold text-lg">Terminals</h2>
+                    <p className="text-sm text-muted-foreground">Manage POS terminals and their allowed items.</p>
+                    <div className="mt-3">
+                        <Link href="/dashboard/pos-terminals" className="text-sky-600">Open POS Terminals</Link>
+                    </div>
                 </div>
-            ) : deps.length === 0 ? (
-                <Card>
-                    <CardContent className="py-12 text-center text-muted-foreground">No departments found</CardContent>
-                </Card>
-            ) : (
-                <div className="grid gap-4">
-                    {deps.map((d) => {
-                        const key = (d.type || d.code || '').toString().toLowerCase()
-                        const Icon = iconForType[key] ?? BookOpen
-                        return (
-                            <Link key={d.code} href={`/dashboard/pos/departments/${d.code}`}>
-                                <Card className="cursor-pointer hover:bg-accent transition-colors">
-                                    <CardHeader>
-                                        <div className="flex items-center gap-3">
-                                            <div className="p-2 bg-muted rounded-md"><Icon className="h-5 w-5" /></div>
-                                            <CardTitle>{d.name}</CardTitle>
-                                        </div>
-                                    </CardHeader>
-                                    <CardContent>
-                                        <div className="text-sm text-muted-foreground">Code: {d.code}</div>
-                                    </CardContent>
-                                </Card>
-                            </Link>
-                        )
-                    })}
+
+                <div className="border rounded p-4">
+                    <h2 className="font-semibold text-lg">Orders</h2>
+                    <p className="text-sm text-muted-foreground">View and manage POS orders.</p>
+                    <div className="mt-3">
+                        <Link href="/dashboard/orders" className="text-sky-600">Open Orders</Link>
+                    </div>
                 </div>
-            )}
+
+                <div className="border rounded p-4 col-span-full">
+                    <h2 className="font-semibold text-lg">Departments (centralized)</h2>
+                    <p className="text-sm text-muted-foreground">Department creation and configuration is handled in the Departments area.</p>
+                    <div className="mt-3">
+                        <Link href="/departments" className="text-sky-600">Open Departments</Link>
+                    </div>
+                </div>
+            </div>
         </div>
-    );
+    )
 }
