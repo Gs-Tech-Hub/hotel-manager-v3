@@ -630,6 +630,11 @@ model Department {
   orderDepartments OrderDepartment[]
   terminals Terminal[]
 
+  // transfers where this department is the source
+  transfersFrom DepartmentTransfer[] @relation("DepartmentTransferFrom")
+  // transfers where this department is the destination
+  transfersTo DepartmentTransfer[] @relation("DepartmentTransferTo")
+
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
@@ -853,6 +858,49 @@ model InventoryReservation {
   @@index([inventoryItemId])
   @@index([orderHeaderId])
   @@map("inventory_reservations")
+}
+
+// ==================== DEPARTMENT STOCK TRANSFERS ====================
+
+model DepartmentTransfer {
+  id String @id @default(cuid())
+
+  fromDepartmentId String
+  fromDepartment   Department @relation("DepartmentTransferFrom", fields: [fromDepartmentId], references: [id], onDelete: Cascade)
+
+  toDepartmentId String
+  toDepartment   Department @relation("DepartmentTransferTo", fields: [toDepartmentId], references: [id], onDelete: Cascade)
+
+  status String @default("pending") // pending, approved, completed, cancelled
+  notes  String?
+
+  createdBy String?
+
+  items DepartmentTransferItem[]
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([fromDepartmentId])
+  @@index([toDepartmentId])
+  @@map("department_transfers")
+}
+
+model DepartmentTransferItem {
+  id String @id @default(cuid())
+
+  transferId String
+  transfer   DepartmentTransfer @relation(fields: [transferId], references: [id], onDelete: Cascade)
+
+  productType String // e.g., 'drink', 'inventoryItem'
+  productId   String
+  quantity    Int
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([transferId])
+  @@map("department_transfer_items")
 }
 
 // ==================== GAMES & ENTERTAINMENT ====================

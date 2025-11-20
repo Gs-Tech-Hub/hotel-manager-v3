@@ -178,6 +178,10 @@ export default function DepartmentDetail(/* { params }: { params: { code: string
                   <div>
                     <a href={`/departments/${encodeURIComponent(c.code)}`} className="text-sm text-sky-600">Open</a>
                   </div>
+                  <div>
+                    {/* Quick transfer link: opens transfer creation page with pre-filled destination */}
+                    <a href={`/departments/${encodeURIComponent(String(department?.code || code || ''))}/transfer?to=${encodeURIComponent(c.code)}`} className="text-sm text-amber-600">Transfer</a>
+                  </div>
                 </div>
               </div>
             ))}
