@@ -151,6 +151,21 @@ async function main() {
     }
   }
 
+  // Ensure per-department balances for housekeeping are initialized
+  const hkItems = await prisma.inventoryItem.findMany({ where: { sku: { in: toiletries.map((t) => t.sku) } } })
+  for (const item of hkItems) {
+    await (prisma as any).departmentInventory.upsert({
+      where: { departmentId_inventoryItemId: { departmentId: hkDept.id, inventoryItemId: item.id } },
+      update: {},
+      create: {
+        departmentId: hkDept.id,
+        inventoryItemId: item.id,
+        quantity: item.quantity,
+        unitPrice: item.unitPrice as any,
+      },
+    })
+  }
+
   console.log('Inventory seed complete.')
 }
 

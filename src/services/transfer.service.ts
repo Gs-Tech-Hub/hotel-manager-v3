@@ -60,15 +60,60 @@ export class TransferService {
 
             await (tx as any).drink.update({ where: { id: it.productId }, data: updateData })
           } else {
-            // For generic inventory items (inventoryItem), we'd need to adjust inventoryItem.quantity and create movements.
+            // For generic inventory items (inventoryItem) adjust per-department balances via DepartmentInventory
             if (it.productType === 'inventoryItem') {
-              const item = await (tx as any).inventoryItem.findUnique({ where: { id: it.productId } })
-              if (!item) throw new Error(`Inventory item not found: ${it.productId}`)
-              if (item.quantity < it.quantity) throw new Error(`Insufficient inventory for ${item.name}`)
+              // source department inventory record
+              const fromRecord = await (tx as any).departmentInventory.findUnique({
+                where: { departmentId_inventoryItemId: { departmentId: transfer.fromDepartmentId, inventoryItemId: it.productId } },
+              })
+              if (!fromRecord) throw new Error(`No inventory record for department ${transfer.fromDepartmentId} and item ${it.productId}`)
+              if (fromRecord.quantity < it.quantity) throw new Error(`Insufficient inventory for ${fromRecord.id}`)
 
-              // Simple: decrement source and increment destination are not modelled per-department in inventoryItem. This is a placeholder.
-              // Real implementation requires per-department stock records or dedicated location field.
-              await (tx as any).inventoryItem.update({ where: { id: it.productId }, data: { quantity: item.quantity - it.quantity } })
+              // decrement source
+              await (tx as any).departmentInventory.update({
+                where: { departmentId_inventoryItemId: { departmentId: transfer.fromDepartmentId, inventoryItemId: it.productId } },
+                data: { quantity: { decrement: it.quantity } },
+              })
+
+              // increment destination (create if missing)
+              const toRecord = await (tx as any).departmentInventory.findUnique({
+                where: { departmentId_inventoryItemId: { departmentId: transfer.toDepartmentId, inventoryItemId: it.productId } },
+              })
+              if (toRecord) {
+                await (tx as any).departmentInventory.update({
+                  where: { departmentId_inventoryItemId: { departmentId: transfer.toDepartmentId, inventoryItemId: it.productId } },
+                  data: { quantity: { increment: it.quantity } },
+                })
+              } else {
+                await (tx as any).departmentInventory.create({
+                  data: {
+                    departmentId: transfer.toDepartmentId,
+                    inventoryItemId: it.productId,
+                    quantity: it.quantity,
+                  },
+                })
+              }
+
+              // record movements for the inventory item
+              await tx.inventoryMovement.create({
+                data: {
+                  movementType: 'out',
+                  quantity: it.quantity,
+                  reason: 'transfer-out',
+                  reference: transferId,
+                  inventoryItemId: it.productId,
+                },
+              })
+
+              await tx.inventoryMovement.create({
+                data: {
+                  movementType: 'in',
+                  quantity: it.quantity,
+                  reason: 'transfer-in',
+                  reference: transferId,
+                  inventoryItemId: it.productId,
+                },
+              })
             } else {
               throw new Error(`Unsupported productType: ${it.productType}`)
             }

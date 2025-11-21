@@ -401,6 +401,9 @@ model InventoryItem {
   movements    InventoryMovement[]
   reservations InventoryReservation[]
 
+  // per-department inventory balances
+  departmentInventories DepartmentInventory[]
+
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
@@ -421,6 +424,28 @@ model InventoryMovement {
   updatedAt DateTime @updatedAt
 
   @@map("inventory_movements")
+}
+
+model DepartmentInventory {
+  id String @id @default(cuid())
+
+  departmentId String
+  department   Department @relation(fields: [departmentId], references: [id], onDelete: Cascade)
+
+  inventoryItemId String
+  inventoryItem   InventoryItem @relation(fields: [inventoryItemId], references: [id], onDelete: Cascade)
+
+  quantity Int @default(0)
+  reserved Int @default(0)
+  unitPrice Decimal? @db.Decimal(10, 2)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@unique([departmentId, inventoryItemId])
+  @@index([departmentId])
+  @@index([inventoryItemId])
+  @@map("department_inventories")
 }
 
 // ==================== FOOD & DRINKS ====================
@@ -634,6 +659,9 @@ model Department {
   transfersFrom DepartmentTransfer[] @relation("DepartmentTransferFrom")
   // transfers where this department is the destination
   transfersTo DepartmentTransfer[] @relation("DepartmentTransferTo")
+
+  // per-department inventory records
+  departmentInventories DepartmentInventory[]
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
