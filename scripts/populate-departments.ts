@@ -52,6 +52,7 @@ async function main() {
     // Canonical hotel departments. These should align with the domain models
     // (e.g., restaurants, bar_and_clubs, gym_and_sports) and also include
     // operational departments used by the hotel (housekeeping, front-desk, etc.).
+    // Canonical departments used in seeds. Keep other departments commented for reference.
     const canonicalDepartments: Array<{
       code: string
       name: string
@@ -63,17 +64,17 @@ async function main() {
       { code: 'bar-and-clubs', name: 'Bar & Clubs', description: 'Bar and club services', type: 'bars', icon: 'cocktail' },
       { code: 'gym', name: 'Gym & Fitness', description: 'Gym and sport facilities', type: 'gyms', icon: 'dumbbell' },
       { code: 'games', name: 'Games & Entertainment', description: 'Arcade, pool, and entertainment', type: 'games', icon: 'gamepad' },
-      { code: 'housekeeping', name: 'Housekeeping', description: 'Room cleaning and linen services', type: 'housekeeping', icon: 'broom' },
-      { code: 'front-desk', name: 'Front Desk', description: 'Guest arrivals, departures and reception', type: 'front-desk', icon: 'concierge-bell' },
-      { code: 'spa', name: 'Spa', description: 'Spa and wellness services', type: 'spa', icon: 'spa' },
+      { code: 'housekeeping', name: 'Housekeeping', description: 'Room cleaning and toiletries', type: 'housekeeping', icon: 'broom' },
       { code: 'laundry', name: 'Laundry', description: 'Laundry and dry-cleaning services', type: 'laundry', icon: 'tshirt' },
-      { code: 'kitchen', name: 'Kitchen', description: 'Kitchen and food preparation', type: 'kitchen', icon: 'kitchen' },
-      { code: 'maintenance', name: 'Maintenance', description: 'Building and facilities maintenance', type: 'maintenance', icon: 'tools' },
       { code: 'security', name: 'Security', description: 'Safety and security operations', type: 'security', icon: 'shield-alt' },
-      { code: 'events', name: 'Events', description: 'Event planning and conference services', type: 'events', icon: 'calendar-alt' },
-      { code: 'concierge', name: 'Concierge', description: 'Guest services and concierge', type: 'concierge', icon: 'user-tie' },
-      { code: 'accounting', name: 'Accounting', description: 'Finance, billing and accounts', type: 'accounting', icon: 'calculator' },
-      { code: 'sales', name: 'Sales & Marketing', description: 'Sales, marketing and promotions', type: 'sales', icon: 'bullhorn' },
+      // commented out for later reference:
+      // { code: 'front-desk', name: 'Front Desk', description: 'Guest arrivals, departures and reception', type: 'front-desk', icon: 'concierge-bell' },
+      // { code: 'spa', name: 'Spa', description: 'Spa and wellness services', type: 'spa', icon: 'spa' },
+      // { code: 'maintenance', name: 'Maintenance', description: 'Building and facilities maintenance', type: 'maintenance', icon: 'tools' },
+      // { code: 'events', name: 'Events', description: 'Event planning and conference services', type: 'events', icon: 'calendar-alt' },
+      // { code: 'concierge', name: 'Concierge', description: 'Guest services and concierge', type: 'concierge', icon: 'user-tie' },
+      // { code: 'accounting', name: 'Accounting', description: 'Finance, billing and accounts', type: 'accounting', icon: 'calculator' },
+      // { code: 'sales', name: 'Sales & Marketing', description: 'Sales, marketing and promotions', type: 'sales', icon: 'bullhorn' },
     ]
 
     for (const d of canonicalDepartments) {
@@ -119,7 +120,7 @@ async function main() {
       restaurants = await prisma.restaurant.findMany()
     }
     for (const r of restaurants) {
-      // Main dining department
+      // Main dining department only (no kitchen section)
       await upsertDepartment(`restaurant:${r.id}:main`, `${r.name} — Main`, {
         description: r.description || undefined,
         type: 'restaurants',
@@ -127,23 +128,15 @@ async function main() {
         referenceId: r.id,
         metadata: { section: 'main' },
       })
-
-      // Kitchen (fulfillment department)
-      await upsertDepartment(`restaurant:${r.id}:kitchen`, `${r.name} — Kitchen`, {
-        description: `Kitchen / back-of-house for ${r.name}`,
-        type: 'kitchen',
-        referenceType: 'Restaurant',
-        referenceId: r.id,
-        metadata: { section: 'kitchen', fulfillment: true },
-      })
     }
 
+    // Ensure Bar sections exist per BarAndClub entity (create sample bars if none)
     let bars = await prisma.barAndClub.findMany()
     if (!bars || bars.length === 0) {
       console.log('No bars found — seeding sample BarAndClub entries')
       const sampleB = [
-        { name: 'Moonlight Bar', location: 'Rooftop', description: 'Rooftop bar and lounge' },
-        { name: 'Lagoon Pool Bar', location: 'Pool', description: 'Pool-side drinks and snacks' },
+        { name: 'Main Hotel Bar', location: 'Lobby', description: 'Main hotel bar' },
+        { name: 'Poolside Bar', location: 'Pool', description: 'Pool-side bar' },
       ]
       for (const b of sampleB) {
         const exists = await prisma.barAndClub.findFirst({ where: { name: b.name } })
@@ -151,34 +144,18 @@ async function main() {
       }
       bars = await prisma.barAndClub.findMany()
     }
+
     for (const b of bars) {
-      // Main bar
-      await upsertDepartment(`bar:${b.id}:main`, `${b.name} — Bar`, {
+      await upsertDepartment(`bar:${b.id}:main`, `${b.name} — Main`, {
         description: b.description || undefined,
         type: 'bars',
         referenceType: 'BarAndClub',
         referenceId: b.id,
         metadata: { section: 'main' },
       })
-
-      // Pool-side bar
-      await upsertDepartment(`bar:${b.id}:poolside`, `${b.name} — Pool-side`, {
-        description: `Pool-side service for ${b.name}`,
-        type: 'bars',
-        referenceType: 'BarAndClub',
-        referenceId: b.id,
-        metadata: { section: 'pool-side' },
-      })
-
-      // Club / late-night section
-      await upsertDepartment(`bar:${b.id}:club`, `${b.name} — Club`, {
-        description: `Club / late-night area for ${b.name}`,
-        type: 'bars',
-        referenceType: 'BarAndClub',
-        referenceId: b.id,
-        metadata: { section: 'club' },
-      })
     }
+
+    // Bars and other low-priority departments removed from this simplified seed
 
     // Optionally create per-gym departments (left as single department by default)
 

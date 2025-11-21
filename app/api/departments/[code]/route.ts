@@ -6,20 +6,39 @@ import { successResponse, errorResponse, ErrorCodes, getStatusCode } from '@/lib
 export async function GET(request: NextRequest, { params }: { params: Promise<{ code: string }> }) {
   try {
     const { code } = await params
+    // Normalize/decode the incoming code param. Some clients double-encode
+    // path segments (e.g. % -> %25) which leads to mismatches against stored
+    // department codes (which contain ':' characters). Decode repeatedly
+    // until stable (max 3 iterations) to be robust against double-encoding.
+    let lookupCode = code
+    try {
+      for (let i = 0; i < 3; i++) {
+        const decoded = decodeURIComponent(lookupCode)
+        if (decoded === lookupCode) break
+        lookupCode = decoded
+      }
+    } catch (e) {
+      // ignore decode errors and fall back to raw code
+      lookupCode = code
+    }
 
     // allow public reads but include role/context if provided
     const ctx = extractUserContext(request)
     let userWithRoles = null as any | null
     if (ctx?.userId) userWithRoles = await loadUserWithRoles(ctx.userId)
 
-    const dept = await (prisma as any).department.findUnique({
-      where: { code },
-      include: { orderDepartments: { select: { id: true, status: true } } },
-    })
+    const dept = await (prisma as any).department.findUnique({ where: { code: lookupCode } })
 
     if (!dept) {
       return NextResponse.json(errorResponse(ErrorCodes.NOT_FOUND, 'Department not found'), { status: getStatusCode(ErrorCodes.NOT_FOUND) })
     }
+
+    // Use counts instead of including the full relation to keep the response
+    // lightweight and avoid potential engine fetch issues.
+    const totalOrders = await (prisma as any).orderDepartment.count({ where: { departmentId: dept.id } })
+    const pendingOrders = await (prisma as any).orderDepartment.count({ where: { departmentId: dept.id, status: 'pending' } })
+    const processingOrders = await (prisma as any).orderDepartment.count({ where: { departmentId: dept.id, status: 'processing' } })
+    const fulfilledOrders = await (prisma as any).orderDepartment.count({ where: { departmentId: dept.id, status: 'fulfilled' } })
 
     const payload = {
       id: dept.id,
@@ -34,10 +53,10 @@ export async function GET(request: NextRequest, { params }: { params: Promise<{ 
       referenceId: dept.referenceId,
       metadata: dept.metadata || {},
       isActive: dept.isActive,
-      totalOrders: dept.orderDepartments.length,
-      pendingOrders: dept.orderDepartments.filter((od: any) => od.status === 'pending').length,
-      processingOrders: dept.orderDepartments.filter((od: any) => od.status === 'processing').length,
-      fulfilledOrders: dept.orderDepartments.filter((od: any) => od.status === 'fulfilled').length,
+      totalOrders,
+      pendingOrders,
+      processingOrders,
+      fulfilledOrders,
     }
 
     return NextResponse.json(successResponse(payload))

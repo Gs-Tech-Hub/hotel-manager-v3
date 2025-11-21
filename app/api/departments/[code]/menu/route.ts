@@ -8,7 +8,23 @@ export async function GET(
   try {
     const { code } = await params
 
-    const menu = await departmentService.getDepartmentMenu(code)
+    // Normalize/decode the incoming code param like other department routes.
+    // Some clients double-encode path segments which leads to mismatches
+    // against stored department codes (which may contain ':' characters).
+    // Decode repeatedly until stable (max 3 iterations) to be robust.
+    let lookupCode = code
+    try {
+      for (let i = 0; i < 3; i++) {
+        const decoded = decodeURIComponent(lookupCode)
+        if (decoded === lookupCode) break
+        lookupCode = decoded
+      }
+    } catch (e) {
+      // ignore decode errors and fall back to raw code
+      lookupCode = code
+    }
+
+    const menu = await departmentService.getDepartmentMenu(lookupCode)
     if (!menu) return NextResponse.json({ success: false, error: 'No menu available' }, { status: 404 })
 
     // If errorResponse shape returned (object with error), forward it
