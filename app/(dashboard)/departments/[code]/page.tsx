@@ -3,6 +3,7 @@
 import { useEffect, useState } from 'react'
 import { useRouter, useParams } from 'next/navigation'
 import { Utensils, Coffee, Activity, Gamepad, BookOpen } from 'lucide-react'
+import { useMemo } from 'react'
 
 type DepartmentInfo = {
   code: string
@@ -42,6 +43,7 @@ export default function DepartmentDetail(/* { params }: { params: { code: string
   const [error, setError] = useState<string | null>(null)
   const [department, setDepartment] = useState<DepartmentInfo | null>(null)
   const [children, setChildren] = useState<ChildDept[]>([])
+ 
   const router = useRouter()
 
   const fetchMenu = async () => {
@@ -119,6 +121,9 @@ export default function DepartmentDetail(/* { params }: { params: { code: string
     }
   }
 
+  
+
+
   useEffect(() => { fetchMenu(); fetchDepartment() }, [code])
 
   return (
@@ -179,8 +184,7 @@ export default function DepartmentDetail(/* { params }: { params: { code: string
                     <a href={`/departments/${encodeURIComponent(c.code)}`} className="text-sm text-sky-600">Open</a>
                   </div>
                   <div>
-                    {/* Quick transfer link: opens transfer creation page with pre-filled destination */}
-                    <a href={`/departments/${encodeURIComponent(String(department?.code || code || ''))}/transfer?to=${encodeURIComponent(c.code)}`} className="text-sm text-amber-600">Transfer</a>
+                    <a href={`/departments/${encodeURIComponent(c.code)}`} className="text-sm text-sky-600">Open</a>
                   </div>
                 </div>
               </div>
@@ -188,6 +192,7 @@ export default function DepartmentDetail(/* { params }: { params: { code: string
           </div>
         </div>
       )}
+    
     </div>
   )
 }

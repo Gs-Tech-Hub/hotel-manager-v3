@@ -20,6 +20,7 @@ export default function InventoryPage() {
   const [selectedDept, setSelectedDept] = useState<string | null>(null)
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
+  
 
   const fetchItems = async (dept?: string | null) => {
     setLoading(true)
@@ -63,7 +64,8 @@ export default function InventoryPage() {
       <div className="flex items-center justify-between">
         <h1 className="text-2xl font-bold">Inventory</h1>
         <div>
-          <button onClick={() => fetchItems(selectedDept)} className="px-3 py-1 border rounded text-sm">Refresh</button>
+          <button onClick={() => fetchItems(selectedDept)} className="px-3 py-1 border rounded text-sm mr-2">Refresh</button>
+          <Link href={selectedDept ? `/inventory/transfer?source=${encodeURIComponent(selectedDept)}` : '#'} className={`px-3 py-1 border rounded text-sm ${!selectedDept ? 'opacity-60 pointer-events-none' : ''}`}>Transfer</Link>
         </div>
       </div>
 
@@ -75,9 +77,11 @@ export default function InventoryPage() {
           <label className="text-sm mr-2">Filter by department</label>
           <select value={selectedDept ?? ''} onChange={(e) => setSelectedDept(e.target.value || null)} className="border px-2 py-1">
             <option value="">All Departments</option>
-            {departments.map((d) => (
-              <option key={d.code} value={d.code}>{d.name} ({d.code})</option>
-            ))}
+            {departments
+              .filter((d) => !String(d.code).includes(':')) // only top-level departments
+              .map((d) => (
+                <option key={d.code} value={d.code}>{d.name} ({d.code})</option>
+              ))}
           </select>
         </div>
       </div>
@@ -110,6 +114,7 @@ export default function InventoryPage() {
           </tbody>
         </table>
       </div>
+      
     </div>
   )
 }
