@@ -49,6 +49,7 @@ async function upsertDepartment(
 
 type SeedOptions = {
   perEntity?: boolean // when false, do not create per-restaurant/bar departments
+  allowSampleEntities?: boolean // when true, create sample Restaurant/Bar entries if none exist (dev only)
 }
 
 async function main(opts: SeedOptions = { perEntity: true }) {
@@ -107,13 +108,13 @@ async function main(opts: SeedOptions = { perEntity: true }) {
   // Optionally, create departments for each Restaurant/Bar entity
   // Controlled by opts.perEntity. When perEntity is false we skip creating
   // per-entity departments and keep only the canonical 'restaurant' and 'bar-and-clubs' departments.
-  if (opts.perEntity !== false) {
+    if (opts.perEntity !== false) {
       // Create departments for each Restaurant and Bar entity with common sections.
       // This supports multiple sections per physical restaurant/bar (e.g., main dining, kitchen, pool-side bar).
       // If there are no Restaurant/Bar entries, create a couple of sample ones so
       // we can create per-entity department sections for demonstration/testing.
       let restaurants = await prisma.restaurant.findMany()
-      if (!restaurants || restaurants.length === 0) {
+      if ((!restaurants || restaurants.length === 0) && opts.allowSampleEntities) {
         console.log('No restaurants found — seeding sample Restaurant entries')
         const sampleR = [
           { name: 'The Grand Dining', location: 'Lobby', description: 'Main hotel restaurant' },
@@ -138,7 +139,7 @@ async function main(opts: SeedOptions = { perEntity: true }) {
 
       // Ensure Bar sections exist per BarAndClub entity (create sample bars if none)
       let bars = await prisma.barAndClub.findMany()
-      if (!bars || bars.length === 0) {
+      if ((!bars || bars.length === 0) && opts.allowSampleEntities) {
         console.log('No bars found — seeding sample BarAndClub entries')
         const sampleB = [
           { name: 'Main Hotel Bar', location: 'Lobby', description: 'Main hotel bar' },

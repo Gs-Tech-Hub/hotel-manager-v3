@@ -1,6 +1,7 @@
 import { PrismaClient } from '@prisma/client';
 import bcrypt from 'bcryptjs';
 import { seedDepartments } from './populate-departments';
+import { seedInventoryFromMenu } from './seed-inventory-from-menu';
 
 const prisma = new PrismaClient();
 
@@ -247,14 +248,16 @@ async function runDemoSeeds() {
   }
 
   // Create a simple order linked to demo customer (best-effort — some DBs may have schema differences)
-  try {
-    const orderHeaderExisting = await prisma.orderHeader.findFirst({ where: { customerId: customer.id } });
-    if (!orderHeaderExisting) {
-      // Ensure a department exists
-      let department = await prisma.department.findFirst({ where: { code: 'REST' } });
-      if (!department) {
-        department = await prisma.department.create({ data: { code: 'REST', name: 'Restaurant', description: 'Restaurant department' } });
-      }
+      try {
+        const orderHeaderExisting = await prisma.orderHeader.findFirst({ where: { customerId: customer.id } });
+        if (!orderHeaderExisting) {
+          // Prefer canonical restaurant codes; avoid creating legacy 'REST' department
+          let department = await prisma.department.findFirst({ where: { code: 'restaurant:main' } });
+          if (!department) department = await prisma.department.findFirst({ where: { code: 'restaurant' } });
+          if (!department) {
+            // Last resort: create canonical 'restaurant' department (do not create 'REST')
+            department = await prisma.department.create({ data: { code: 'restaurant', name: 'Restaurant', description: 'Restaurant department' } });
+          }
 
       // Pick a food and a drink if available
       const pizza = await prisma.foodItem.findFirst({ where: { name: 'Margherita Pizza' } });
@@ -322,14 +325,27 @@ async function main() {
 
     // 2) create canonical departments (delegated to populate-departments)
     try {
-      const perEntity = process.env.PER_ENTITY !== 'false' && process.env.SEED_PER_ENTITY !== 'false';
-      await seedDepartments({ perEntity });
+      // Default to not creating per-entity departments unless explicitly requested.
+      // This prevents development/demo code from creating many per-entity sections in production.
+      const perEntity = process.env.PER_ENTITY === 'true' || process.env.SEED_PER_ENTITY === 'true';
+      const allowSampleEntities = process.env.SEED_ALLOW_SAMPLE === 'true'; // must be explicitly set to allow sample entity creation
+      await seedDepartments({ perEntity, allowSampleEntities });
     } catch (err) {
       console.warn('populate-departments failed (continuing):', err);
     }
 
     // 3) run demo seeds (food, drinks, example order)
     await runDemoSeeds();
+
+    // 4) Optionally sync inventory from menu -> inventory items & department inventory
+    if (process.env.SEED_SYNC_MENU_INVENTORY === 'true') {
+      try {
+        console.log('Syncing inventory from menu (SEED_SYNC_MENU_INVENTORY=true)')
+        await seedInventoryFromMenu()
+      } catch (err) {
+        console.warn('seed-inventory-from-menu failed (continuing):', err)
+      }
+    }
 
     console.log('All seeds completed successfully.');
   } catch (err) {

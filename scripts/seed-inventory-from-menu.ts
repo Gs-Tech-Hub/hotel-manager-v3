@@ -89,3 +89,6 @@ async function main() {
 }
 
 if (require.main === module) main()
+
+// Export for programmatic use from master seed
+export { main as seedInventoryFromMenu }
