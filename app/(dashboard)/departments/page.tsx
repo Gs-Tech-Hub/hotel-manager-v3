@@ -98,15 +98,15 @@ export default function DepartmentsPage() {
                 </div>
 
                 <div className="flex flex-col items-end justify-center gap-2">
-                  <div className="text-sm">Orders <span className="font-medium">{d.totalOrders ?? 0}</span></div>
-                  <div className="flex items-center gap-2">
+                  {/* <div className="text-sm">Orders <span className="font-medium">{d.totalOrders ?? 0}</span></div> */}
+                  {/* <div className="flex items-center gap-2">
                     {d.pendingOrders && d.pendingOrders > 0 ? (
                       <div className="text-xs bg-amber-100 text-amber-800 px-2 py-1 rounded">{d.pendingOrders} pending</div>
                     ) : (
                       <div className="text-xs text-muted-foreground">No pending</div>
                     )}
                     <div className="text-sm text-sky-600 font-medium">Open →</div>
-                  </div>
+                  </div> */}
                 </div>
               </div>
             </Link>

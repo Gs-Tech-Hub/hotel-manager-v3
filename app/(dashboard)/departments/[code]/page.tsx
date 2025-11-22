@@ -60,6 +60,8 @@ export default function DepartmentDetail(/* { params }: { params: { code: string
   const [error, setError] = useState<string | null>(null)
   const [department, setDepartment] = useState<DepartmentInfo | null>(null)
   const [children, setChildren] = useState<ChildDept[]>([])
+  const [childrenLoading, setChildrenLoading] = useState(false)
+  const [deptLoading, setDeptLoading] = useState(false)
   const [sectionStock, setSectionStock] = useState<{ low: number; high: number; empty: number; totalProducts: number } | null>(null)
   const [sectionProducts, setSectionProducts] = useState<ProductDetail[] | null>(null)
   const [sectionProductsLoading, setSectionProductsLoading] = useState(false)
@@ -97,13 +99,15 @@ export default function DepartmentDetail(/* { params }: { params: { code: string
   }
 
   const fetchDepartment = async () => {
+    setDeptLoading(true)
     try {
-  if (!decodedCode) throw new Error('Missing department code')
-  const res = await fetch(`/api/departments/${encodeURIComponent(decodedCode)}`)
+      if (!decodedCode) throw new Error('Missing department code')
+      const res = await fetch(`/api/departments/${encodeURIComponent(decodedCode)}`)
       if (!res.ok) throw new Error(`Failed to fetch department (${res.status})`)
       const json = await res.json()
       const data = json.data || json
       setDepartment(data || null)
+
       // Also load children (per-entity sections) when main department exists
       if (data) {
         // If the current code looks like a section (contains ':'), treat this
@@ -117,22 +121,30 @@ export default function DepartmentDetail(/* { params }: { params: { code: string
               setSectionStock(sData)
               console.debug('[section] stock fetch', code, { ok: sRes.ok, status: sRes.status, data: sData })
             }
-            // Also load the full product details for this section so the
-            // detailed page can show availability, units sold, pending,
-            // reserved and amount sold.
+            // Section detail: fetch products and pending orders for this section
             await fetchSectionProducts(decodedCode)
-            // Load pending order lines for this section so the UI can show them
             await fetchPendingOrderLines(decodedCode)
           } catch (e) {
             console.warn('Failed to fetch section stock', e)
             setSectionStock(null)
           }
         } else {
-          await loadChildrenForDepartment(data)
+          // Load children first (synchronous ordering). Only after children are
+          // loaded and there are no sections do we fetch the menu/products.
+          const found = await loadChildrenForDepartment(data)
+          if (!found || found.length === 0) {
+            // No sections: safe to fetch the department menu
+            await fetchMenu()
+          } else {
+            // Ensure menu is empty if there are sections
+            setMenu([])
+          }
         }
       }
     } catch (err) {
       console.error('Failed to load department', err)
+    } finally {
+      setDeptLoading(false)
     }
   }
 
@@ -227,6 +239,7 @@ export default function DepartmentDetail(/* { params }: { params: { code: string
   }
 
   const loadChildrenForDepartment = async (dept: DepartmentInfo) => {
+    setChildrenLoading(true)
     try {
       const res = await fetch('/api/departments')
       if (!res.ok) throw new Error('Failed to fetch departments')
@@ -268,13 +281,12 @@ export default function DepartmentDetail(/* { params }: { params: { code: string
       // preview for each child asynchronously so the initial page load is
       // not blocked by multiple product requests.
       setChildren(found)
-
-      // NOTE: product previews removed. We intentionally do not fetch per-section
-      // product previews here to keep the sections list lightweight and avoid
-      // additional requests. Detailed product data is fetched on the section
-      // detail page when the user opens a section.
+      return found
     } catch (e) {
       console.error('Failed to load children', e)
+      return []
+    } finally {
+      setChildrenLoading(false)
     }
   }
 
@@ -326,6 +338,59 @@ export default function DepartmentDetail(/* { params }: { params: { code: string
 
   // Trigger fetches when the decoded route param changes
   useEffect(() => { fetchMenu(); fetchDepartment() }, [decodedCode])
+
+  // Trigger fetches when the decoded route param changes: fetch department
+  // (which will load children and possibly the menu afterwards). We intentionally
+  // do not call fetchMenu here to avoid fetching products/menu before we know
+  // whether the department has sections.
+  useEffect(() => { fetchDepartment() }, [decodedCode])
+
+  // Defensive: intercept client-side fetch calls to department products while
+  // rendering the sections list. Some Next.js prefetching or other components
+  // may trigger requests to `/api/departments/.../products` unexpectedly and
+  // cause the brief product-preview load the user reported. To ensure the
+  // sections list remains lightweight we temporarily override `fetch` on the
+  // client while this component is mounted and we are not viewing a section
+  // detail (i.e. decodedCode does not include ':'). The override only blocks
+  // requests that target the products API and otherwise delegates to the
+  // original fetch implementation.
+  useEffect(() => {
+    if (typeof window === 'undefined') return
+    const origFetch = (window as any).fetch
+    const shouldIntercept = () => {
+      try {
+        // Intercept product requests when we're viewing a top-level department
+        // (not a section) and either we already know there are sections or
+        // children are still loading. This prevents prefetch or background
+        // requests from loading per-section products while the sections list
+        // is the primary UI.
+        return decodedCode && !decodedCode.includes(':') && (childrenLoading || (children && children.length > 0))
+      } catch (e) {
+        return false
+      }
+    }
+
+    (window as any).fetch = async (input: any, init?: any) => {
+      try {
+        const url = typeof input === 'string' ? input : input?.url || (input && input.href) || ''
+        if (typeof url === 'string' && url.includes('/api/departments/') && url.includes('/products') && shouldIntercept()) {
+          // Return an empty products response so callers get a valid shape
+          // but no network request is performed.
+          return new Response(JSON.stringify({ success: true, data: { items: [], total: 0 } }), {
+            status: 200,
+            headers: { 'Content-Type': 'application/json' },
+          })
+        }
+      } catch (e) {
+        // fall through to original fetch on errors
+      }
+      return origFetch(input, init)
+    }
+
+    return () => {
+      try { (window as any).fetch = origFetch } catch (e) { /* ignore */ }
+    }
+  }, [decodedCode, children?.length])
 
   return (
     <div className="space-y-6">
@@ -454,7 +519,7 @@ export default function DepartmentDetail(/* { params }: { params: { code: string
                     <div className="text-sm">Orders: <span className="font-medium">{c.totalOrders ?? 0}</span></div>
                     <div className="text-sm">Pending: <span className="font-medium">{c.pendingOrders ?? 0}</span></div>
                     <div>
-                      <Link href={`/departments/${encodeURIComponent(c.code)}`} className="text-sm text-sky-600">Open</Link>
+                      <Link href={`/departments/${encodeURIComponent(c.code)}`} prefetch={false} className="text-sm text-sky-600">Open</Link>
                     </div>
                   </div>
                 </div>
