@@ -104,10 +104,10 @@ async function main(opts: SeedOptions = { perEntity: true }) {
       console.warn('Legacy department migration failed:', err)
     }
 
-    // Optionally, create departments for each Restaurant/Bar entity
-    // Controlled by opts.perEntity. When perEntity is false we skip creating
-    // per-entity departments and keep only the canonical 'restaurant' and 'bar-and-clubs' departments.
-    if (opts.perEntity !== false) {
+  // Optionally, create departments for each Restaurant/Bar entity
+  // Controlled by opts.perEntity. When perEntity is false we skip creating
+  // per-entity departments and keep only the canonical 'restaurant' and 'bar-and-clubs' departments.
+  if (opts.perEntity !== false) {
       // Create departments for each Restaurant and Bar entity with common sections.
       // This supports multiple sections per physical restaurant/bar (e.g., main dining, kitchen, pool-side bar).
       // If there are no Restaurant/Bar entries, create a couple of sample ones so
@@ -160,8 +160,31 @@ async function main(opts: SeedOptions = { perEntity: true }) {
           metadata: { section: 'main' },
         })
       }
-    }
+    } else {
+      // If caller requested no per-entity departments, remove any existing per-entity
+      // department codes (restaurant:<id>:*, bar:<id>:*) and create a single default
+      // section for restaurant and bar (global sections not tied to an entity).
+      try {
+        console.log('Removing existing per-entity departments (restaurant:<id> / bar:<id>)')
+        await prisma.department.deleteMany({ where: { OR: [{ code: { startsWith: 'restaurant:' } }, { code: { startsWith: 'bar:' } }] } })
+      } catch (err) {
+        console.warn('Failed to remove per-entity departments:', err)
+      }
 
+      // Ensure a single default restaurant section exists
+      await upsertDepartment('restaurant:main', 'Restaurant — Main', {
+        description: 'Default restaurant section',
+        type: 'restaurants',
+        metadata: { section: 'main' },
+      })
+
+      // Ensure a single default bar section exists
+      await upsertDepartment('bar:main', 'Bar — Main', {
+        description: 'Default bar section',
+        type: 'bars',
+        metadata: { section: 'main' },
+      })
+    }
     console.log('Departments upsert complete')
   } catch (err) {
     console.error('populate-departments error', err)
