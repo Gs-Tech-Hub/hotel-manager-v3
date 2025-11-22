@@ -2,6 +2,7 @@
 
 import { useEffect, useState } from 'react'
 import { useRouter, useParams } from 'next/navigation'
+import Link from 'next/link'
 import { Utensils, Coffee, Activity, Gamepad, BookOpen } from 'lucide-react'
 import { useMemo } from 'react'
 
@@ -119,7 +120,9 @@ export default function DepartmentDetail(/* { params }: { params: { code: string
             // Also load the full product details for this section so the
             // detailed page can show availability, units sold, pending,
             // reserved and amount sold.
-            fetchSectionProducts(decodedCode)
+            await fetchSectionProducts(decodedCode)
+            // Load pending order lines for this section so the UI can show them
+            await fetchPendingOrderLines(decodedCode)
           } catch (e) {
             console.warn('Failed to fetch section stock', e)
             setSectionStock(null)
@@ -266,33 +269,10 @@ export default function DepartmentDetail(/* { params }: { params: { code: string
       // not blocked by multiple product requests.
       setChildren(found)
 
-      // Fire-and-forget product previews (limit pageSize to 4). Update each
-      // child as results arrive. This keeps the sections list responsive.
-      for (const c of found) {
-        ;(async () => {
-          try {
-            const pRes = await fetch(`/api/departments/${encodeURIComponent(dept.code)}/products?details=true&section=${encodeURIComponent(c.code)}&pageSize=4`)
-            if (!pRes.ok) return
-            const pj = await pRes.json()
-            const items = (pj.data?.items || pj.items || []) as any[]
-            const products = items.map((it) => ({
-              id: it.id,
-              name: it.name,
-              type: it.type,
-              available: it.available,
-              unitPrice: it.unitPrice,
-              unitsSold: it.unitsSold || 0,
-              amountSold: it.amountSold || 0,
-              pendingQuantity: it.pendingQuantity || 0,
-              reservedQuantity: it.reservedQuantity || 0,
-            }))
-
-            setChildren((prev) => prev.map((x) => (x.code === c.code ? { ...x, products } : x)))
-          } catch (e) {
-            // ignore individual child product failures
-          }
-        })()
-      }
+      // NOTE: product previews removed. We intentionally do not fetch per-section
+      // product previews here to keep the sections list lightweight and avoid
+      // additional requests. Detailed product data is fetched on the section
+      // detail page when the user opens a section.
     } catch (e) {
       console.error('Failed to load children', e)
     }
@@ -373,7 +353,7 @@ export default function DepartmentDetail(/* { params }: { params: { code: string
         </div>
       </div>
 
-      {loading && <div className="text-sm text-muted-foreground">Loading menu...</div>}
+      {loading && <div className="text-sm text-muted-foreground">Loading ...</div>}
       {error && <div className="text-sm text-red-600">{error}</div>}
 
       <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
@@ -424,16 +404,25 @@ export default function DepartmentDetail(/* { params }: { params: { code: string
                           <td className="px-2 py-2">{p.pendingQuantity ?? 0}</td>
                           <td className="px-2 py-2">{p.amountSold ? new Intl.NumberFormat(undefined, { style: 'currency', currency: 'USD' }).format(Number(p.amountSold)) : '-'}</td>
                           <td className="px-2 py-2">
-                            {p.pendingQuantity && p.pendingQuantity > 0 ? (
-                              <button
-                                onClick={() => openPendingModal(p.name)}
-                                className="px-2 py-1 text-sm bg-amber-100 text-amber-800 rounded"
-                              >
-                                View / Fulfill ({p.pendingQuantity})
-                              </button>
-                            ) : (
-                              <div className="text-sm text-muted-foreground">—</div>
-                            )}
+                            <div className="flex items-center gap-2">
+                              {/* Link to the canonical detail page for the product type */}
+                              {p.type === 'drink' ? (
+                                <Link href={`/dashboard/pos/drinks/${encodeURIComponent(p.id)}`} className="px-2 py-1 bg-sky-600 text-white rounded text-sm">Open</Link>
+                              ) : p.type === 'food' ? (
+                                <Link href={`/dashboard/pos/food/${encodeURIComponent(p.id)}`} className="px-2 py-1 bg-sky-600 text-white rounded text-sm">Open</Link>
+                              ) : (
+                                <Link href={`/inventory/${encodeURIComponent(p.id)}`} className="px-2 py-1 bg-sky-600 text-white rounded text-sm">Open</Link>
+                              )}
+
+                              {p.pendingQuantity && p.pendingQuantity > 0 ? (
+                                <button
+                                  onClick={() => openPendingModal(p.name)}
+                                  className="px-2 py-1 text-sm bg-amber-100 text-amber-800 rounded"
+                                >
+                                  View / Fulfill ({p.pendingQuantity})
+                                </button>
+                              ) : null}
+                            </div>
                           </td>
                         </tr>
                       ))
@@ -465,7 +454,7 @@ export default function DepartmentDetail(/* { params }: { params: { code: string
                     <div className="text-sm">Orders: <span className="font-medium">{c.totalOrders ?? 0}</span></div>
                     <div className="text-sm">Pending: <span className="font-medium">{c.pendingOrders ?? 0}</span></div>
                     <div>
-                      <a href={`/departments/${encodeURIComponent(c.code)}`} className="text-sm text-sky-600">Open</a>
+                      <Link href={`/departments/${encodeURIComponent(c.code)}`} className="text-sm text-sky-600">Open</Link>
                     </div>
                   </div>
                 </div>
