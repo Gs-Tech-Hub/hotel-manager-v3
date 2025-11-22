@@ -51,6 +51,9 @@ type ChildDept = DepartmentInfo & {
 
 export default function DepartmentDetail(/* { params }: { params: { code: string } } */) {
   const { code } = useParams() as { code?: string }
+  // Route param may be percent-encoded (e.g. 'restaurant%3Amain').
+  // Normalize by decoding once so checks like includes(':') work.
+  const decodedCode = useMemo(() => (code ? decodeURIComponent(code) : ''), [code])
   const [menu, setMenu] = useState<MenuItem[]>([])
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
@@ -59,15 +62,27 @@ export default function DepartmentDetail(/* { params }: { params: { code: string
   const [sectionStock, setSectionStock] = useState<{ low: number; high: number; empty: number; totalProducts: number } | null>(null)
   const [sectionProducts, setSectionProducts] = useState<ProductDetail[] | null>(null)
   const [sectionProductsLoading, setSectionProductsLoading] = useState(false)
+  const [pendingModalOpen, setPendingModalOpen] = useState(false)
+  const [pendingModalProduct, setPendingModalProduct] = useState<string | null>(null)
+  const [pendingModalItems, setPendingModalItems] = useState<any[] | null>(null)
+  const [pendingModalLoading, setPendingModalLoading] = useState(false)
  
   const router = useRouter()
+
+  const [pendingOrderLines, setPendingOrderLines] = useState<any[] | null>(null)
+  const [pendingOrderLinesLoading, setPendingOrderLinesLoading] = useState(false)
 
   const fetchMenu = async () => {
     setLoading(true)
     setError(null)
     try {
-      if (!code) throw new Error('Missing department code')
-      const res = await fetch(`/api/departments/${encodeURIComponent(code)}/menu`)
+      // Skip menu fetch when viewing a section (sections have colon in code)
+      if (!decodedCode) throw new Error('Missing department code')
+      if (decodedCode.includes(':')) {
+        setMenu([])
+        return
+      }
+      const res = await fetch(`/api/departments/${encodeURIComponent(decodedCode)}/menu`)
       if (!res.ok) throw new Error(`Failed to fetch menu (${res.status})`)
       const json = await res.json()
       if (!json?.success) throw new Error(json?.error || 'Invalid response')
@@ -82,8 +97,8 @@ export default function DepartmentDetail(/* { params }: { params: { code: string
 
   const fetchDepartment = async () => {
     try {
-      if (!code) throw new Error('Missing department code')
-      const res = await fetch(`/api/departments/${encodeURIComponent(code)}`)
+  if (!decodedCode) throw new Error('Missing department code')
+  const res = await fetch(`/api/departments/${encodeURIComponent(decodedCode)}`)
       if (!res.ok) throw new Error(`Failed to fetch department (${res.status})`)
       const json = await res.json()
       const data = json.data || json
@@ -92,9 +107,9 @@ export default function DepartmentDetail(/* { params }: { params: { code: string
       if (data) {
         // If the current code looks like a section (contains ':'), treat this
         // as a section detail page and load the section's stock summary.
-        if (code.includes(':')) {
+        if (decodedCode.includes(':')) {
           try {
-            const sRes = await fetch(`/api/departments/${encodeURIComponent(code)}/stock`)
+            const sRes = await fetch(`/api/departments/${encodeURIComponent(decodedCode)}/stock`)
             if (sRes.ok) {
               const sj = await sRes.json()
               const sData = sj?.data || sj || null
@@ -104,7 +119,7 @@ export default function DepartmentDetail(/* { params }: { params: { code: string
             // Also load the full product details for this section so the
             // detailed page can show availability, units sold, pending,
             // reserved and amount sold.
-            fetchSectionProducts(code)
+            fetchSectionProducts(decodedCode)
           } catch (e) {
             console.warn('Failed to fetch section stock', e)
             setSectionStock(null)
@@ -133,7 +148,7 @@ export default function DepartmentDetail(/* { params }: { params: { code: string
 
       // Primary attempt: call products on the parent department and pass
       // the section param so the server calculates per-section stats.
-      let url = `/api/departments/${encodeURIComponent(parent)}/products?details=true&section=${encodeURIComponent(sectionCode)}&pageSize=100`
+  let url = `/api/departments/${encodeURIComponent(parent)}/products?details=true&section=${encodeURIComponent(sectionCode)}&pageSize=100`
       let res = await fetch(url)
 
       // Fallback: if parent-based call fails, try calling against the
@@ -168,6 +183,43 @@ export default function DepartmentDetail(/* { params }: { params: { code: string
       setSectionProducts([])
     } finally {
       setSectionProductsLoading(false)
+    }
+  }
+
+  const fetchPendingOrderLines = async (sectionCode: string) => {
+    setPendingOrderLinesLoading(true)
+    setPendingOrderLines(null)
+    try {
+      // Use the department orders endpoint to obtain orderHeader ids and lines
+      const res = await fetch(`/api/departments/${encodeURIComponent(sectionCode)}/orders?status=pending&limit=200`)
+      if (!res.ok) {
+        setPendingOrderLines([])
+        return
+      }
+      const j = await res.json()
+      const orders = j.data?.orders || j.orders || []
+      const lines: any[] = []
+      for (const o of orders) {
+        const hdr = o.orderHeader || o.order || o
+        const lns = o.lines || []
+        for (const l of lns) {
+          lines.push({
+            id: l.id,
+            productName: l.productName || l.name,
+            quantity: l.quantity,
+            orderHeaderId: hdr?.id,
+            orderNumber: hdr?.orderNumber,
+            customerName: hdr?.customer?.name || hdr?.customerName || null,
+            status: l.status || 'pending'
+          })
+        }
+      }
+      setPendingOrderLines(lines)
+    } catch (e) {
+      console.error('fetchPendingOrderLines error', e)
+      setPendingOrderLines([])
+    } finally {
+      setPendingOrderLinesLoading(false)
     }
   }
 
@@ -234,10 +286,54 @@ export default function DepartmentDetail(/* { params }: { params: { code: string
     }
   }
 
+  const refreshPendingForModal = async (productName: string | null) => {
+    if (!productName) return
+    setPendingModalLoading(true)
+    setPendingModalItems(null)
+    try {
+  if (!decodedCode) throw new Error('Missing section code')
+  // Fetch department-level orders with pending status and filter lines
+  const res = await fetch(`/api/departments/${encodeURIComponent(decodedCode)}/orders?status=pending&limit=200`)
+      if (!res.ok) throw new Error('Failed to load pending orders')
+      const j = await res.json()
+      const orders = j.data?.orders || j.orders || []
+      const matches: any[] = []
+      for (const o of orders) {
+        const hdr = o.orderHeader || o.order || o
+        const lines = o.lines || []
+        for (const l of lines) {
+          // Compare by product name (backend may change shape); be tolerant
+          if ((l.productName || l.name || '').toString().toLowerCase() === productName.toString().toLowerCase()) {
+            matches.push({
+              id: l.id,
+              productName: l.productName || l.name,
+              quantity: l.quantity,
+              orderHeader: hdr,
+              customerName: hdr?.customer?.name || hdr?.customerName || null,
+            })
+          }
+        }
+      }
+      setPendingModalItems(matches)
+    } catch (e) {
+      console.error('refreshPendingForModal error', e)
+      setPendingModalItems([])
+    } finally {
+      setPendingModalLoading(false)
+    }
+  }
+
+  const openPendingModal = async (productName: string) => {
+    setPendingModalProduct(productName)
+    setPendingModalOpen(true)
+    await refreshPendingForModal(productName)
+  }
+
   
 
 
-  useEffect(() => { fetchMenu(); fetchDepartment() }, [code])
+  // Trigger fetches when the decoded route param changes
+  useEffect(() => { fetchMenu(); fetchDepartment() }, [decodedCode])
 
   return (
     <div className="space-y-6">
@@ -269,7 +365,8 @@ export default function DepartmentDetail(/* { params }: { params: { code: string
       {error && <div className="text-sm text-red-600">{error}</div>}
 
       <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-        {menu.map((m) => (
+        {/* Show menu cards only when viewing a top-level department (not a section) */}
+        {!decodedCode.includes(':') && menu.map((m) => (
           <div key={m.id} className="border rounded p-4 bg-white">
             <div className="flex justify-between items-center">
               <div>
@@ -284,7 +381,7 @@ export default function DepartmentDetail(/* { params }: { params: { code: string
         ))}
       </div>
 
-      {code?.includes(':') && (
+      {decodedCode.includes(':') && (
         <div className="mt-6">
           <h2 className="text-xl font-semibold">Products</h2>
           <div className="mt-3">
@@ -299,8 +396,8 @@ export default function DepartmentDetail(/* { params }: { params: { code: string
                       <th className="px-2 py-1">Available</th>
                       <th className="px-2 py-1">Units Sold</th>
                       <th className="px-2 py-1">Pending</th>
-                      <th className="px-2 py-1">Reserved</th>
                       <th className="px-2 py-1">Amount Sold</th>
+                      <th className="px-2 py-1">Actions</th>
                     </tr>
                   </thead>
                   <tbody>
@@ -311,8 +408,19 @@ export default function DepartmentDetail(/* { params }: { params: { code: string
                           <td className="px-2 py-2">{String(p.available)}</td>
                           <td className="px-2 py-2">{p.unitsSold ?? 0}</td>
                           <td className="px-2 py-2">{p.pendingQuantity ?? 0}</td>
-                          <td className="px-2 py-2">{p.reservedQuantity ?? 0}</td>
                           <td className="px-2 py-2">{p.amountSold ? new Intl.NumberFormat(undefined, { style: 'currency', currency: 'USD' }).format(Number(p.amountSold)) : '-'}</td>
+                          <td className="px-2 py-2">
+                            {p.pendingQuantity && p.pendingQuantity > 0 ? (
+                              <button
+                                onClick={() => openPendingModal(p.name)}
+                                className="px-2 py-1 text-sm bg-amber-100 text-amber-800 rounded"
+                              >
+                                View / Fulfill ({p.pendingQuantity})
+                              </button>
+                            ) : (
+                              <div className="text-sm text-muted-foreground">—</div>
+                            )}
+                          </td>
                         </tr>
                       ))
                     ) : (
@@ -348,31 +456,111 @@ export default function DepartmentDetail(/* { params }: { params: { code: string
                   </div>
                 </div>
 
-                {/* Product table (shows headers even if empty) */}
-                <div className="w-full mt-3 overflow-x-auto">
-                  <table className="min-w-full text-sm">
-                    <thead>
-                      <tr className="text-left text-xs text-muted-foreground">
-                        <th className="px-2 py-1">Product</th>
-                      </tr>
-                    </thead>
-                    <tbody>
-                      {c.products && c.products.length > 0 ? (
-                        c.products.map((p) => (
-                          <tr key={p.id} className="border-t">
-                            <td className="px-2 py-2">{p.name}</td>
-                          </tr>
-                        ))
-                      ) : (
-                        <tr>
-                          <td className="px-2 py-4 text-muted-foreground" colSpan={1}>No products available</td>
-                        </tr>
-                      )}
-                    </tbody>
-                  </table>
-                </div>
+                {/* NOTE: product lists are intentionally omitted in the section summary to keep this view lightweight.
+                    Detailed product and pending-order actions are available on the section detail page. */}
               </div>
             ))}
+          </div>
+        </div>
+      )}
+
+      {/* Section-level pending orders panel (visible on section detail pages) */}
+      {decodedCode.includes(':') && (
+        <div className="mt-6">
+          <h2 className="text-xl font-semibold">Pending Orders</h2>
+          <div className="mt-3">
+            {pendingOrderLinesLoading ? (
+              <div className="text-sm text-muted-foreground">Loading pending orders...</div>
+            ) : (
+              <div className="space-y-2">
+                {pendingOrderLines && pendingOrderLines.length > 0 ? (
+                  pendingOrderLines.map((ln) => (
+                    <div key={`${ln.orderHeaderId}-${ln.id}`} className="border rounded p-3 flex items-center justify-between">
+                      <div>
+                        <div className="font-medium">Order #{ln.orderNumber} — {ln.productName}</div>
+                        <div className="text-sm text-muted-foreground">Customer: {ln.customerName || 'Guest'} — Qty: {ln.quantity}</div>
+                      </div>
+                      <div className="flex items-center gap-2">
+                        <button
+                          onClick={async () => {
+                            try {
+                              const res = await fetch(`/api/orders/${encodeURIComponent(ln.orderHeaderId)}/fulfillment`, {
+                                method: 'POST',
+                                headers: { 'Content-Type': 'application/json' },
+                                body: JSON.stringify({ lineItemId: ln.id, status: 'fulfilled' }),
+                              })
+                              if (!res.ok) throw new Error('Failed to mark delivered')
+                              // refresh lists
+                              await fetchPendingOrderLines(decodedCode)
+                              await fetchSectionProducts(decodedCode)
+                            } catch (e) {
+                              console.error('Failed to mark delivered', e)
+                              alert('Failed to mark item delivered')
+                            }
+                          }}
+                          className="px-3 py-1 bg-sky-600 text-white rounded text-sm"
+                        >Mark delivered</button>
+                      </div>
+                    </div>
+                  ))
+                ) : (
+                  <div className="text-sm text-muted-foreground">No pending orders for this section.</div>
+                )}
+              </div>
+            )}
+          </div>
+        </div>
+      )}
+
+      {/* Pending items modal (simple inline modal) */}
+      {pendingModalOpen && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40">
+          <div className="bg-white rounded-lg shadow-lg max-w-3xl w-full p-4">
+            <div className="flex items-center justify-between">
+              <h3 className="text-lg font-semibold">Pending orders for: {pendingModalProduct}</h3>
+              <div>
+                <button onClick={() => setPendingModalOpen(false)} className="px-3 py-1 border rounded">Close</button>
+              </div>
+            </div>
+
+            <div className="mt-4">
+              {pendingModalLoading ? (
+                <div className="text-sm text-muted-foreground">Loading pending items...</div>
+              ) : pendingModalItems && pendingModalItems.length > 0 ? (
+                <div className="space-y-3">
+                  {pendingModalItems.map((it) => (
+                    <div key={`${it.orderHeader.id}-${it.id}`} className="border rounded p-2 flex items-center justify-between">
+                      <div>
+                        <div className="font-medium">Order #{it.orderHeader.orderNumber} — {it.productName}</div>
+                        <div className="text-sm text-muted-foreground">Customer: {it.customerName || 'Guest'} — Qty: {it.quantity}</div>
+                      </div>
+                      <div className="flex items-center gap-2">
+                        <button
+                          onClick={async () => {
+                            try {
+                              const res = await fetch(`/api/orders/${encodeURIComponent(it.orderHeader.id)}/fulfillment`, {
+                                method: 'POST',
+                                headers: { 'Content-Type': 'application/json' },
+                                body: JSON.stringify({ lineItemId: it.id, status: 'fulfilled' }),
+                              })
+                              if (!res.ok) throw new Error('Failed to mark delivered')
+                              // refresh modal list
+                              await refreshPendingForModal(pendingModalProduct)
+                            } catch (e) {
+                              console.error('Failed to fulfill line', e)
+                              alert('Failed to mark item delivered')
+                            }
+                          }}
+                          className="px-3 py-1 bg-sky-600 text-white rounded text-sm"
+                        >Mark delivered</button>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              ) : (
+                <div className="text-sm text-muted-foreground">No pending items found for this product.</div>
+              )}
+            </div>
           </div>
         </div>
       )}
