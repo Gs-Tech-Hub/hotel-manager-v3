@@ -230,9 +230,25 @@ export default function DepartmentDetail(/* { params }: { params: { code: string
       const json = await res.json()
       const all = json.data || json || []
       // Children are seeded with codes like `restaurant:{id}:main` so filter by prefix
-      const prefix = `${dept.code}:`
+      // Use a robust matching strategy to locate section children. Departments
+      // may have codes like `RESTAURANT`, `BAR_CLUB` while sections use
+      // `restaurant:<id>:main` or `bar:<id>:main`. Normalize and compare by
+      // lowercasing and also by the first token of the department code.
+      const deptCode = (dept.code || '').toString().toLowerCase()
+      const deptFirst = deptCode.split(/[^a-z0-9]+/)[0] || deptCode
+
       const found = (all as any[])
-        .filter((d) => typeof d.code === 'string' && d.code.startsWith(prefix))
+        .filter((d) => {
+          if (!d || typeof d.code !== 'string') return false
+          const c = d.code.toString().toLowerCase()
+          return (
+            c.startsWith(`${deptCode}:`) ||
+            c.startsWith(`${deptFirst}:`) ||
+            // Also accept explicit references if present
+            (d.referenceType && String(d.referenceType).toLowerCase() === deptCode) ||
+            (d.referenceId && String(d.referenceId) === String((dept as any).id))
+          )
+        })
         .map((d) => ({
           code: d.code,
           name: d.name,
@@ -245,42 +261,38 @@ export default function DepartmentDetail(/* { params }: { params: { code: string
           fulfilledOrders: d.fulfilledOrders,
         })) as ChildDept[]
 
-      // Fetch product details (limited) for each child in parallel. We don't
-      // fetch or surface the full stock summary here (keeps the section list
-      // lightweight). Stock details are shown only on a section's detail page.
-      const withProducts = await Promise.all(
-        found.map(async (c) => {
+      // Set children immediately (fast render). Then load a small product
+      // preview for each child asynchronously so the initial page load is
+      // not blocked by multiple product requests.
+      setChildren(found)
+
+      // Fire-and-forget product previews (limit pageSize to 4). Update each
+      // child as results arrive. This keeps the sections list responsive.
+      for (const c of found) {
+        ;(async () => {
           try {
             const pRes = await fetch(`/api/departments/${encodeURIComponent(dept.code)}/products?details=true&section=${encodeURIComponent(c.code)}&pageSize=4`)
-            let products: ProductDetail[] = []
-            if (pRes.ok) {
-              try {
-                const pj = await pRes.json()
-                const items = (pj.data?.items || pj.items || []) as any[]
-                console.debug('[dept children] products fetch', c.code, { ok: pRes.ok, status: pRes.status, itemsCount: items.length })
-                products = items.map((it) => ({
-                  id: it.id,
-                  name: it.name,
-                  type: it.type,
-                  available: it.available,
-                  unitPrice: it.unitPrice,
-                  unitsSold: it.unitsSold || 0,
-                  amountSold: it.amountSold || 0,
-                  pendingQuantity: it.pendingQuantity || 0,
-                  reservedQuantity: it.reservedQuantity || 0,
-                }))
-              } catch (e) {
-                products = []
-              }
-            }
+            if (!pRes.ok) return
+            const pj = await pRes.json()
+            const items = (pj.data?.items || pj.items || []) as any[]
+            const products = items.map((it) => ({
+              id: it.id,
+              name: it.name,
+              type: it.type,
+              available: it.available,
+              unitPrice: it.unitPrice,
+              unitsSold: it.unitsSold || 0,
+              amountSold: it.amountSold || 0,
+              pendingQuantity: it.pendingQuantity || 0,
+              reservedQuantity: it.reservedQuantity || 0,
+            }))
 
-            return { ...c, products }
+            setChildren((prev) => prev.map((x) => (x.code === c.code ? { ...x, products } : x)))
           } catch (e) {
-            return { ...c }
+            // ignore individual child product failures
           }
-        })
-      )
-      setChildren(withProducts)
+        })()
+      }
     } catch (e) {
       console.error('Failed to load children', e)
     }
@@ -365,8 +377,10 @@ export default function DepartmentDetail(/* { params }: { params: { code: string
       {error && <div className="text-sm text-red-600">{error}</div>}
 
       <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-        {/* Show menu cards only when viewing a top-level department (not a section) */}
-        {!decodedCode.includes(':') && menu.map((m) => (
+        {/* Show menu cards only when viewing a top-level department (not a section)
+            and only when there are no sections for this department. If the
+            department has sections we keep the view focused on sections only. */}
+          {(!decodedCode.includes(':') && children.length === 0) && menu.map((m) => (
           <div key={m.id} className="border rounded p-4 bg-white">
             <div className="flex justify-between items-center">
               <div>
