@@ -2,6 +2,8 @@
 
 import Link from 'next/link'
 import { useEffect, useState } from 'react'
+import { mapDeptCodeToCategory } from '@/lib/utils'
+import { useSearchParams } from 'next/navigation'
 
 type Department = { id: string; code: string; name: string }
 
@@ -26,13 +28,23 @@ export default function InventoryPage() {
     setLoading(true)
     setError(null)
     try {
-      const url = new URL('/api/inventory', window.location.origin)
-      if (dept) url.searchParams.set('department', dept)
+  const url = new URL('/api/inventory', window.location.origin)
+      // backend filters by category (department code mapped to category) so send category param
+      if (dept) {
+        const cat = mapDeptCodeToCategory(dept)
+        if (cat) url.searchParams.set('category', cat)
+      }
       const res = await fetch(url.toString())
       if (!res.ok) throw new Error(`Failed to fetch inventory (${res.status})`)
       const json = await res.json()
       if (!json?.success) throw new Error(json?.error || 'Invalid response')
-      setItems(json.data?.items || [])
+      const fetched: any[] = json.data?.items || []
+      // If a department is selected, show only available items (quantity > 0)
+      if (dept) {
+        setItems(fetched.filter((it) => Number(it?.quantity ?? 0) > 0))
+      } else {
+        setItems(fetched)
+      }
     } catch (err: any) {
       console.error('Failed to load inventory', err)
       setError(err?.message || 'Failed to load inventory')
@@ -58,6 +70,14 @@ export default function InventoryPage() {
     fetchItems(selectedDept)
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [selectedDept])
+
+  // Initialize selected department from the URL query (so returning from a transfer keeps the selection)
+  const search = useSearchParams()
+  useEffect(() => {
+    const dept = search?.get?.('department')
+    if (dept) setSelectedDept(dept)
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [])
 
   return (
     <div className="space-y-6">

@@ -1,6 +1,7 @@
 "use client"
 
 import React, { useEffect, useState } from 'react'
+import { mapDeptCodeToCategory } from '@/lib/utils'
 import { useSearchParams, useRouter } from 'next/navigation'
 
 type Item = { id: string; name: string; quantity?: number; available?: number }
@@ -36,6 +37,9 @@ export default function InventoryTransferPage() {
     setLoading(true)
     try {
       const q = new URLSearchParams({ page: String(p), pageSize: String(pageSize) })
+  // The API filters by category (department code mapped to category). Add category to inventory query.
+  const cat = mapDeptCodeToCategory(source)
+  if (cat) q.set('category', cat)
       const res = await fetch(`/api/inventory?${q.toString()}`)
       const j = await res.json()
       setProducts(j.data?.items || [])
@@ -65,6 +69,9 @@ export default function InventoryTransferPage() {
   async function quickSearch(qs: string) {
     try {
       const q = new URLSearchParams({ search: qs, page: '1', pageSize: '10' })
+  // Use category filter when searching so results reflect the selected source department
+  const cat = mapDeptCodeToCategory(source)
+  if (cat) q.set('category', cat)
       const res = await fetch(`/api/inventory?${q.toString()}`)
       const j = await res.json()
       setResults(j.data?.items || [])
@@ -102,7 +109,8 @@ export default function InventoryTransferPage() {
         alert(j?.error?.message || 'Failed')
       } else {
         alert('Transfer created')
-        router.push('/inventory')
+        // navigate back to inventory and preserve the source department so UI refreshes department stock
+        router.push(`/inventory?department=${encodeURIComponent(source)}`)
       }
     } catch (e) {
       console.error('submit error', e)

@@ -1,6 +1,7 @@
 "use client"
 
 import React, { useEffect, useState } from 'react'
+import { mapDeptCodeToCategory } from '@/lib/utils'
 import Pagination from '@/components/ui/Pagination'
 import Cart from '@/components/transfer/Cart'
 
@@ -43,7 +44,10 @@ export default function TransferPanel({ sourceCode, onClose, initialTarget }: { 
     try {
       const q = new URLSearchParams({ type: productType, page: String(p), pageSize: String(pageSize) })
       if (search) q.set('search', search)
-      const res = await fetch(`/api/departments/${encodeURIComponent(sourceCode)}/products?${q.toString()}`)
+  // Backend filters department by category; add category param instead of calling departments endpoint
+  const cat = mapDeptCodeToCategory(sourceCode)
+  if (cat) q.set('category', cat)
+  const res = await fetch(`/api/inventory?${q.toString()}`)
       const j = await res.json()
       if (res.ok && j?.success) {
         setProducts((j.data.items || []).map((it: any) => ({ id: it.id, name: it.name, available: it.available, unitPrice: it.unitPrice })))
