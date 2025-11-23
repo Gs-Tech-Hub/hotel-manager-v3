@@ -10,6 +10,9 @@
 		"test:endpoints": "tsx ../hotelmanager_v2/test-endpoints.ts",
 		"seed": "tsx scripts/seed.ts"
 	},
+	"engines": {
+		"node": ">=18"
+	},
 	"dependencies": {
 		"@hookform/resolvers": "^5.1.1",
 		"@prisma/client": "^6.19.0",

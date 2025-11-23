@@ -206,34 +206,11 @@ export default function useDepartmentData(decodedCode: string | undefined) {
     await refreshPendingForModal(productName, code)
   }, [refreshPendingForModal])
 
-  // Defensive fetch interceptor
-  useEffect(() => {
-    if (typeof window === 'undefined') return
-    const origFetch = (window as any).fetch
-    const shouldIntercept = () => {
-      try {
-        return decodedCode && !decodedCode.includes(':') && (childrenLoading || (children && children.length > 0))
-      } catch (e) {
-        return false
-      }
-    }
-
-    (window as any).fetch = async (input: any, init?: any) => {
-      try {
-        const url = typeof input === 'string' ? input : input?.url || (input && input.href) || ''
-        if (typeof url === 'string' && url.includes('/api/departments/') && url.includes('/products') && shouldIntercept()) {
-          return new Response(JSON.stringify({ success: true, data: { items: [], total: 0 } }), {
-            status: 200,
-            headers: { 'Content-Type': 'application/json' },
-          })
-        }
-      } catch (e) {
-      }
-      return origFetch(input, init)
-    }
-
-    return () => { try { (window as any).fetch = origFetch } catch (e) { } }
-  }, [decodedCode, childrenLoading, children])
+  // NOTE: Removed a previous "defensive" window.fetch interceptor which
+  // returned empty product lists for some department/product requests.
+  // That interception caused section product fetches to return no items.
+  // Let all requests go through to the API so section products and
+  // inventory transfers behave correctly.
 
   // Fetch department and children sequencing
   useEffect(() => {
