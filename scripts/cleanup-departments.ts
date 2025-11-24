@@ -5,6 +5,7 @@ const prisma = new PrismaClient()
 async function main() {
   const args = process.argv.slice(2)
   const apply = args.includes('--apply')
+  const hardDelete = args.includes('--hard-delete')
 
   console.log(`Cleanup departments (apply=${apply})`)
 
@@ -18,9 +19,13 @@ async function main() {
     for (const t of testCandidates) console.log(` - ${t.code} (${t.name}) id=${t.id}`)
     if (apply) {
       for (const t of testCandidates) {
-        console.log(`Deleting department ${t.code}`)
-        // cascade will remove relations; prefer soft-delete? we'll set isActive=false to be safe
-        await prisma.department.update({ where: { id: t.id }, data: { isActive: false } })
+        if (hardDelete) {
+          console.log(`Hard-deleting department ${t.code}`)
+          await prisma.department.delete({ where: { id: t.id } })
+        } else {
+          console.log(`Deactivating department ${t.code}`)
+          await prisma.department.update({ where: { id: t.id }, data: { isActive: false } })
+        }
       }
     }
   }
@@ -52,12 +57,17 @@ async function main() {
       for (const d of group) console.log(` - ${d.code} (${d.name}) id=${d.id}`)
     }
     if (apply) {
-      // For safety, do not auto-merge — only deactivate duplicates beyond the first in each group
+      // For safety, do not auto-merge — only deactivate/delete duplicates beyond the first in each group
       for (const group of similar) {
         const [keep, ...rest] = group
         for (const r of rest) {
-          console.log(`Deactivating duplicate department ${r.code} (keeping ${keep.code})`)
-          await prisma.department.update({ where: { id: r.id }, data: { isActive: false } })
+          if (hardDelete) {
+            console.log(`Hard-deleting duplicate department ${r.code} (keeping ${keep.code})`)
+            await prisma.department.delete({ where: { id: r.id } })
+          } else {
+            console.log(`Deactivating duplicate department ${r.code} (keeping ${keep.code})`)
+            await prisma.department.update({ where: { id: r.id }, data: { isActive: false } })
+          }
         }
       }
     }

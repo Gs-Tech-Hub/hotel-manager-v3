@@ -12,30 +12,37 @@ function mapDeptCodeToCategory(code?: string | null): string | undefined {
 }
 
 async function main() {
-  // CLI args: --assign=single|even|zero (default: zero). single -> assign full item.quantity to first matching department.
+  // CLI args:
+  // --assign=single|even|zero|from-global (default: zero)
+  // --force (boolean) -> overwrite existing DepartmentInventory values instead of skipping them
   const args = process.argv.slice(2)
   const assignArg = args.find((a) => a.startsWith('--assign='))
   const assign = assignArg ? assignArg.split('=')[1] : 'zero'
+  const force = args.includes('--force')
 
-  console.log(`Seeding DepartmentInventory records (assign strategy=${assign})`)
+  console.log(`Seeding DepartmentInventory records (assign strategy=${assign}, force=${force})`)
 
   const departments = await prisma.department.findMany()
   const items = await prisma.inventoryItem.findMany()
 
   let created = 0
+  let updated = 0
 
   for (const item of items) {
     // find departments that map to this item's category
     const matching = departments.filter((d) => mapDeptCodeToCategory(d.code) === item.category)
     if (matching.length === 0) continue
 
-    // for each matching department, upsert a DepartmentInventory record if missing
     if (assign === 'single') {
       const target = matching[0]
+      const dataQty = item.quantity
       const existing = await prisma.departmentInventory.findUnique({ where: { departmentId_inventoryItemId: { departmentId: target.id, inventoryItemId: item.id } } })
       if (!existing) {
-        await prisma.departmentInventory.create({ data: { departmentId: target.id, inventoryItemId: item.id, quantity: item.quantity, unitPrice: item.unitPrice as any } })
+        await prisma.departmentInventory.create({ data: { departmentId: target.id, inventoryItemId: item.id, quantity: dataQty, unitPrice: item.unitPrice as any } })
         created++
+      } else if (force) {
+        await prisma.departmentInventory.update({ where: { departmentId_inventoryItemId: { departmentId: target.id, inventoryItemId: item.id } }, data: { quantity: dataQty, unitPrice: item.unitPrice as any } })
+        updated++
       }
     } else if (assign === 'even') {
       const per = Math.floor(item.quantity / matching.length)
@@ -44,6 +51,23 @@ async function main() {
         if (!existing) {
           await prisma.departmentInventory.create({ data: { departmentId: md.id, inventoryItemId: item.id, quantity: per, unitPrice: item.unitPrice as any } })
           created++
+        } else if (force) {
+          await prisma.departmentInventory.update({ where: { departmentId_inventoryItemId: { departmentId: md.id, inventoryItemId: item.id } }, data: { quantity: per, unitPrice: item.unitPrice as any } })
+          updated++
+        }
+      }
+    } else if (assign === 'from-global') {
+      // Distribute this item's global quantity among matching departments (evenly). With --force, overwrite existing quantities.
+      const total = Number(item.quantity ?? 0)
+      const per = Math.floor(total / matching.length)
+      for (const md of matching) {
+        const existing = await prisma.departmentInventory.findUnique({ where: { departmentId_inventoryItemId: { departmentId: md.id, inventoryItemId: item.id } } })
+        if (!existing) {
+          await prisma.departmentInventory.create({ data: { departmentId: md.id, inventoryItemId: item.id, quantity: per, unitPrice: item.unitPrice as any } })
+          created++
+        } else if (force) {
+          await prisma.departmentInventory.update({ where: { departmentId_inventoryItemId: { departmentId: md.id, inventoryItemId: item.id } }, data: { quantity: per, unitPrice: item.unitPrice as any } })
+          updated++
         }
       }
     } else {
@@ -53,12 +77,15 @@ async function main() {
         if (!existing) {
           await prisma.departmentInventory.create({ data: { departmentId: md.id, inventoryItemId: item.id, quantity: 0, unitPrice: item.unitPrice as any } })
           created++
+        } else if (force) {
+          await prisma.departmentInventory.update({ where: { departmentId_inventoryItemId: { departmentId: md.id, inventoryItemId: item.id } }, data: { quantity: 0, unitPrice: item.unitPrice as any } })
+          updated++
         }
       }
     }
   }
 
-  console.log(`Seeding complete. DepartmentInventory records created: ${created}`)
+  console.log(`Seeding complete. DepartmentInventory records created: ${created}, updated: ${updated}`)
 }
 
 main()
