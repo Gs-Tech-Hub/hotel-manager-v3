@@ -20,12 +20,54 @@ export async function GET(request: NextRequest, { params }: { params: Promise<{ 
     else if (direction === 'received') where.toDepartmentId = dept.id
     else where = { OR: [{ fromDepartmentId: dept.id }, { toDepartmentId: dept.id }] }
 
-    const [items, total] = await Promise.all([
+    let [items, total] = await Promise.all([
       prisma.departmentTransfer.findMany({ where, include: { items: true }, orderBy: { createdAt: 'desc' }, skip, take: pageSize }),
       prisma.departmentTransfer.count({ where }),
     ])
 
-    return NextResponse.json(successResponse({ items, total, page, pageSize }))
+    // Enrich transfers with friendly department and product names
+    const deptIds = Array.from(new Set(items.flatMap((t: any) => [t.fromDepartmentId, t.toDepartmentId].filter(Boolean))))
+    const departments = await prisma.department.findMany({ where: { id: { in: deptIds } } })
+    const deptMap = new Map(departments.map((d: any) => [d.id, d]))
+
+    // Collect product ids by type
+    const drinkIds: string[] = []
+    const foodIds: string[] = []
+    const inventoryIds: string[] = []
+    for (const t of items) {
+      for (const it of t.items) {
+        if (it.productType === 'drink') drinkIds.push(it.productId)
+        else if (it.productType === 'food') foodIds.push(it.productId)
+        else inventoryIds.push(it.productId)
+      }
+    }
+
+    const [drinks, foods, inventories] = await Promise.all([
+      drinkIds.length ? prisma.drink.findMany({ where: { id: { in: drinkIds } } }) : Promise.resolve([]),
+      foodIds.length ? prisma.foodItem.findMany({ where: { id: { in: foodIds } } }) : Promise.resolve([]),
+      inventoryIds.length ? prisma.inventoryItem.findMany({ where: { id: { in: inventoryIds } } }) : Promise.resolve([]),
+    ])
+
+    const drinkMap = new Map(drinks.map((d: any) => [d.id, d]))
+    const foodMap = new Map(foods.map((f: any) => [f.id, f]))
+    const invMap = new Map(inventories.map((i: any) => [i.id, i]))
+
+    const enriched = items.map((t: any) => {
+      const fromDept = deptMap.get(t.fromDepartmentId)
+      const toDept = deptMap.get(t.toDepartmentId)
+      const itemsWithNames = t.items.map((it: any) => {
+        let productName = it.productName || null
+        if (!productName) {
+          if (it.productType === 'drink') productName = drinkMap.get(it.productId)?.name || null
+          else if (it.productType === 'food') productName = foodMap.get(it.productId)?.name || null
+          else productName = invMap.get(it.productId)?.name || null
+        }
+        return { ...it, productName }
+      })
+      return { ...t, fromDepartmentName: fromDept?.name || null, toDepartmentName: toDept?.name || null, items: itemsWithNames }
+    })
+
+    return NextResponse.json(successResponse({ items: enriched, total, page, pageSize }))
   } catch (err: any) {
     console.error('GET /api/departments/[code]/transfer/list error', err)
     return NextResponse.json(errorResponse(ErrorCodes.INTERNAL_ERROR, 'Failed to fetch transfers'), { status: getStatusCode(ErrorCodes.INTERNAL_ERROR) })

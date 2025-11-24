@@ -1,15 +1,13 @@
 "use client"
-
 import { useRouter, useParams } from 'next/navigation'
 import Link from 'next/link'
 import { Utensils, Coffee, Activity, Gamepad, BookOpen } from 'lucide-react'
-import { useMemo } from 'react'
+import { useMemo, useState, useEffect } from 'react'
 import useDepartmentData from '../../../../components/departments/useDepartmentData'
 import SectionsList from '../../../../components/departments/SectionsList'
 import SectionProductsTable from '../../../../components/departments/SectionProductsTable'
 import PendingOrdersPanel from '../../../../components/departments/PendingOrdersPanel'
 import PendingFulfillModal from '../../../../components/departments/PendingFulfillModal'
-import { useState, useEffect } from 'react'
 
 type DepartmentInfo = {
   code: string
@@ -87,6 +85,7 @@ export default function DepartmentDetail() {
 
   const [pendingTransfers, setPendingTransfers] = useState<any[] | null>(null)
   const [loadingTransfers, setLoadingTransfers] = useState(false)
+  const [incomingModalOpen, setIncomingModalOpen] = useState(false)
 
   const fetchPendingTransfers = async (code: string) => {
     setLoadingTransfers(true)
@@ -99,7 +98,6 @@ export default function DepartmentDetail() {
       }
       const j = await res.json()
       const items = j.data?.items || []
-      // keep only pending transfers targeted at this section code
       setPendingTransfers(items.filter((t: any) => t.status === 'pending'))
     } catch (e) {
       console.error('fetchPendingTransfers error', e)
@@ -130,6 +128,25 @@ export default function DepartmentDetail() {
     }
   }
 
+  const resolveStoreName = (t: any) => {
+    // Prefer explicit friendly name returned by the API, fall back to known fields
+    return t?.fromDepartmentName || t?.fromDepartmentCode || t?.fromDepartmentId || 'Unknown store'
+  }
+
+  const resolveProductName = (it: any) => {
+    if (!it) return 'Unknown product'
+    if (it.productName) return it.productName
+    // try to find in current section products
+    const p = sectionProducts?.find((s: any) => s.id === it.productId || s.inventoryId === it.productId)
+    if (p && (p.name || p.productName)) return p.name || p.productName
+    // try to find in menu
+    const m = menu?.find((mm: any) => mm.inventoryId === it.productId || mm.id === it.productId)
+    if (m) return m.name
+    return it.productId || 'Unknown product'
+  }
+
+  
+
   return (
     <div className="space-y-6">
       <div className="flex items-center justify-between">
@@ -151,11 +168,14 @@ export default function DepartmentDetail() {
             )}
           </div>
         </div>
-        <div>
+        <div className="flex items-center gap-2">
+          {decodedCode.includes(':') && (
+            <button onClick={() => setIncomingModalOpen(true)} className="px-3 py-1 border rounded text-sm">Incoming{pendingTransfers && pendingTransfers.length > 0 ? ` (${pendingTransfers.length})` : ''}</button>
+          )}
           <button onClick={() => router.back()} className="px-3 py-1 border rounded text-sm">Back</button>
         </div>
       </div>
-
+                
       {loading && <div className="text-sm text-muted-foreground">Loading ...</div>}
       {error && <div className="text-sm text-red-600">{error}</div>}
 
@@ -185,25 +205,7 @@ export default function DepartmentDetail() {
               <>
                 <SectionProductsTable products={sectionProducts} />
 
-                <div className="mt-6">
-                  <h3 className="text-lg font-medium">Pending Transfers</h3>
-                  {loadingTransfers ? <div className="text-sm text-muted-foreground">Loading transfers...</div> : (
-                    <div className="mt-2 space-y-2">
-                      {(pendingTransfers && pendingTransfers.length > 0) ? pendingTransfers.map((t: any) => (
-                        <div key={t.id} className="p-2 border rounded flex items-center justify-between">
-                          <div className="text-sm">
-                            <div className="font-medium">From: {t.fromDepartmentId}</div>
-                            <div className="text-xs text-muted-foreground">{new Date(t.createdAt).toLocaleString()}</div>
-                            <div className="text-xs mt-1">{t.items.map((it: any) => `${it.productType}: ${it.productId} x ${it.quantity}`).join('; ')}</div>
-                          </div>
-                          <div>
-                            <button onClick={() => markReceived(t.id)} className="px-2 py-1 bg-green-600 text-white rounded text-sm">Mark Received</button>
-                          </div>
-                        </div>
-                      )) : <div className="text-sm text-muted-foreground">No pending transfers for this section.</div>}
-                    </div>
-                  )}
-                </div>
+                
               </>
             )}
           </div>
@@ -228,6 +230,34 @@ export default function DepartmentDetail() {
           setPendingModalItems(null)
         }}
       />
+      {/* Incoming transfers modal */}
+      {incomingModalOpen && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center">
+          <div className="absolute inset-0 bg-black/40" onClick={() => setIncomingModalOpen(false)} />
+          <div className="relative bg-white rounded-md w-full md:w-3/4 max-h-[80vh] overflow-auto p-4 z-50">
+            <div className="flex items-center justify-between mb-4">
+              <h3 className="text-lg font-semibold">Incoming Transfers</h3>
+              <button onClick={() => setIncomingModalOpen(false)} className="px-2 py-1 border rounded">Close</button>
+            </div>
+            {loadingTransfers ? <div className="text-sm">Loading...</div> : (
+              <div className="space-y-3">
+                {(pendingTransfers && pendingTransfers.length > 0) ? pendingTransfers.map((t: any) => (
+                  <div key={t.id} className="p-3 border rounded flex items-start justify-between">
+                    <div className="flex-1">
+                      <div className="font-medium">From: {resolveStoreName(t)}</div>
+                      <div className="text-xs text-muted-foreground">{new Date(t.createdAt).toLocaleString()}</div>
+                      <div className="text-sm mt-2">{t.items?.map((it: any) => <div key={it.id}>{resolveProductName(it)} x {it.quantity}</div>)}</div>
+                    </div>
+                    <div className="ml-4">
+                      <button onClick={() => markReceived(t.id)} className="px-3 py-1 bg-green-600 text-white rounded">Accept</button>
+                    </div>
+                  </div>
+                )) : <div className="text-sm text-muted-foreground">No incoming transfers.</div>}
+              </div>
+            )}
+          </div>
+        </div>
+      )}
     </div>
   )
 }

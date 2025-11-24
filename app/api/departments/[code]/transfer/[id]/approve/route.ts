@@ -19,7 +19,14 @@ export async function POST(request: NextRequest, { params }: { params: Promise<{
     }
 
     const result = await transferService.approveTransfer(id)
-    if (!result.success) return NextResponse.json(errorResponse(ErrorCodes.INTERNAL_ERROR, result.message || 'Receive failed'), { status: getStatusCode(ErrorCodes.INTERNAL_ERROR) })
+    if (!result.success) {
+      // Map common validation-like failures to a validation error so callers
+      // receive a 4xx instead of 5xx and can display friendly messages.
+      const msg = result.message || 'Receive failed'
+      const isValidation = msg.includes('No inventory record') || msg.includes('Insufficient') || msg.includes('not found')
+      const code = isValidation ? ErrorCodes.VALIDATION_ERROR : ErrorCodes.INTERNAL_ERROR
+      return NextResponse.json(errorResponse(code, msg), { status: getStatusCode(code) })
+    }
 
     return NextResponse.json(successResponse({ message: 'Transfer received and executed' }))
   } catch (err: any) {
