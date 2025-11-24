@@ -86,7 +86,8 @@ export default function InventoryPage() {
         <h1 className="text-2xl font-bold">Inventory</h1>
         <div>
           <button onClick={() => fetchItems(selectedDept)} className="px-3 py-1 border rounded text-sm mr-2">Refresh</button>
-          <Link href={selectedDept ? `/inventory/transfer?source=${encodeURIComponent(selectedDept)}` : '#'} className={`px-3 py-1 border rounded text-sm ${!selectedDept ? 'opacity-60 pointer-events-none' : ''}`}>Transfer</Link>
+          <Link href={selectedDept ? `/inventory/transfer?source=${encodeURIComponent(selectedDept)}` : '#'} className={`px-3 py-1 border rounded text-sm mr-2 ${!selectedDept ? 'opacity-60 pointer-events-none' : ''}`}>Transfer</Link>
+          <Link href="/inventory/movements" className="px-3 py-1 border rounded text-sm">Movements</Link>
         </div>
       </div>
 
@@ -135,9 +136,7 @@ export default function InventoryPage() {
           </tbody>
         </table>
       </div>
-      {selectedDept && (
-        <TransferAuditPanel code={selectedDept} />
-      )}
+      {/* Transfer audit removed from inventory page to avoid movement artifact */}
       
     </div>
   )

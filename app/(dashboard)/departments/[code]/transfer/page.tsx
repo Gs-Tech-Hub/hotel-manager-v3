@@ -144,13 +144,15 @@ export default function DepartmentTransferPage() {
     try {
       const res = await fetch(`/api/departments/${encodeURIComponent(String(deptCode))}/transfer/${encodeURIComponent(id)}/approve`, { method: 'POST' })
       const j = await res.json()
-      if (!res.ok || !j?.success) setMessage(j?.error?.message || 'Approve failed')
+      if (!res.ok || !j?.success) setMessage(j?.error?.message || 'Receive failed')
       else {
-        setMessage('Transfer approved and executed')
+        setMessage('Transfer received and executed')
+        // Refresh transfers list and attempt to refresh products availability
         fetchTransfers()
+        try { fetchProducts() } catch (e) { /* best-effort refresh */ }
       }
     } catch (err: any) {
-      setMessage(err?.message || 'Approve failed')
+      setMessage(err?.message || 'Receive failed')
     }
   }
 
@@ -257,12 +259,7 @@ export default function DepartmentTransferPage() {
                         <div className="text-xs text-muted-foreground">From: {t.fromDepartmentId} • To: {t.toDepartmentId}</div>
                         <div className="text-xs text-muted-foreground">{new Date(t.createdAt).toLocaleString()}</div>
                       </div>
-                      <div>
-                        {/* show approve button only when this department is destination */}
-                        {t.status === 'pending' && deptId && t.toDepartmentId === deptId && (
-                          <button onClick={() => approveTransfer(t.id)} className="px-2 py-1 bg-green-600 text-white rounded text-sm">Approve</button>
-                        )}
-                      </div>
+                      <div />
                     </div>
                     <div className="mt-2 text-sm">
                       {t.items.map((it: any) => (<div key={it.id} className="text-xs">{it.productType}: {it.productId} x {it.quantity}</div>))}

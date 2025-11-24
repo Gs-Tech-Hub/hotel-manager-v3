@@ -1,5 +1,5 @@
 import { PrismaClient } from '@prisma/client'
-import { transferService } from '../src/services/transfer.service'
+import { transferService } from '../src/services/inventory/transfer.service'
 
 const prisma = new PrismaClient()
 

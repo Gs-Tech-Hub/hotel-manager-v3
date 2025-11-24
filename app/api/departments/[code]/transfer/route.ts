@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { prisma } from '@/lib/prisma'
-import { transferService } from '@/src/services/transfer.service'
+import { transferService } from '@/services/inventory/transfer.service'
 import { successResponse, errorResponse, ErrorCodes, getStatusCode } from '@/lib/api-response'
 
 /**

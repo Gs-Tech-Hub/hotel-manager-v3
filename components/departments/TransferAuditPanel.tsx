@@ -46,8 +46,8 @@ export default function TransferAuditPanel({ code }: { code: string }) {
                 {transfers.map((t) => (
                   <li key={t.id} className="border rounded p-2 bg-white">
                     <div className="text-sm">Status: <span className="font-medium">{t.status}</span></div>
-                    <div className="text-sm">From: {t.fromDepartmentId} → To: {t.toDepartmentId}</div>
-                    <div className="text-sm">Items: {t.items?.map((it: any) => `${it.productType}:${it.productId} x${it.quantity}`).join(', ')}</div>
+                    <div className="text-sm">From: {t.fromDepartmentName || t.fromDepartmentId} → To: {t.toDepartmentName || t.toDepartmentId}</div>
+                    <div className="text-sm">Items: {t.items?.map((it: any) => `${it.productType}:${it.productName || it.productId} x${it.quantity}`).join(', ')}</div>
                     <div className="text-xs text-muted-foreground">Created: {new Date(t.createdAt).toLocaleString()}</div>
                   </li>
                 ))}
@@ -63,7 +63,7 @@ export default function TransferAuditPanel({ code }: { code: string }) {
                 {movements.map((m) => (
                   <li key={m.id} className="border rounded p-2 bg-white">
                     <div className="text-sm">Type: <span className="font-medium">{m.movementType}</span> — Reason: {m.reason || '-'}</div>
-                    <div className="text-sm">Item: {m.inventoryItemId} — Qty: {m.quantity}</div>
+                    <div className="text-sm">Item: {m.inventoryItemName || m.inventoryItemId} — Qty: {m.quantity}</div>
                     <div className="text-sm">Reference: {m.reference}</div>
                     <div className="text-xs text-muted-foreground">When: {new Date(m.createdAt).toLocaleString()}</div>
                   </li>

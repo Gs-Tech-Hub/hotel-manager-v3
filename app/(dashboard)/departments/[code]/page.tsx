@@ -9,6 +9,7 @@ import SectionsList from '../../../../components/departments/SectionsList'
 import SectionProductsTable from '../../../../components/departments/SectionProductsTable'
 import PendingOrdersPanel from '../../../../components/departments/PendingOrdersPanel'
 import PendingFulfillModal from '../../../../components/departments/PendingFulfillModal'
+import { useState, useEffect } from 'react'
 
 type DepartmentInfo = {
   code: string
@@ -84,6 +85,51 @@ export default function DepartmentDetail() {
     setPendingModalItems,
   } = useDepartmentData(decodedCode)
 
+  const [pendingTransfers, setPendingTransfers] = useState<any[] | null>(null)
+  const [loadingTransfers, setLoadingTransfers] = useState(false)
+
+  const fetchPendingTransfers = async (code: string) => {
+    setLoadingTransfers(true)
+    try {
+      const url = `/api/departments/${encodeURIComponent(code)}/transfer/list?direction=received&pageSize=50`
+      const res = await fetch(url)
+      if (!res.ok) {
+        setPendingTransfers([])
+        return
+      }
+      const j = await res.json()
+      const items = j.data?.items || []
+      // keep only pending transfers targeted at this section code
+      setPendingTransfers(items.filter((t: any) => t.status === 'pending'))
+    } catch (e) {
+      console.error('fetchPendingTransfers error', e)
+      setPendingTransfers([])
+    } finally {
+      setLoadingTransfers(false)
+    }
+  }
+
+  useEffect(() => {
+    if (decodedCode && decodedCode.includes(':')) {
+      fetchPendingTransfers(decodedCode)
+    }
+  }, [decodedCode])
+
+  const markReceived = async (id: string) => {
+    try {
+      const res = await fetch(`/api/departments/${encodeURIComponent(decodedCode)}/transfer/${encodeURIComponent(id)}/approve`, { method: 'POST' })
+      const j = await res.json()
+      if (!res.ok || !j?.success) return alert(j?.error?.message || 'Receive failed')
+      // refresh UI
+      await fetchPendingTransfers(decodedCode)
+      await fetchSectionProducts(decodedCode)
+      alert('Transfer received')
+    } catch (e: any) {
+      console.error('markReceived error', e)
+      alert(e?.message || 'Receive failed')
+    }
+  }
+
   return (
     <div className="space-y-6">
       <div className="flex items-center justify-between">
@@ -136,7 +182,29 @@ export default function DepartmentDetail() {
             {sectionProductsLoading ? (
               <div className="text-sm text-muted-foreground">Loading products...</div>
             ) : (
-              <SectionProductsTable products={sectionProducts} />
+              <>
+                <SectionProductsTable products={sectionProducts} />
+
+                <div className="mt-6">
+                  <h3 className="text-lg font-medium">Pending Transfers</h3>
+                  {loadingTransfers ? <div className="text-sm text-muted-foreground">Loading transfers...</div> : (
+                    <div className="mt-2 space-y-2">
+                      {(pendingTransfers && pendingTransfers.length > 0) ? pendingTransfers.map((t: any) => (
+                        <div key={t.id} className="p-2 border rounded flex items-center justify-between">
+                          <div className="text-sm">
+                            <div className="font-medium">From: {t.fromDepartmentId}</div>
+                            <div className="text-xs text-muted-foreground">{new Date(t.createdAt).toLocaleString()}</div>
+                            <div className="text-xs mt-1">{t.items.map((it: any) => `${it.productType}: ${it.productId} x ${it.quantity}`).join('; ')}</div>
+                          </div>
+                          <div>
+                            <button onClick={() => markReceived(t.id)} className="px-2 py-1 bg-green-600 text-white rounded text-sm">Mark Received</button>
+                          </div>
+                        </div>
+                      )) : <div className="text-sm text-muted-foreground">No pending transfers for this section.</div>}
+                    </div>
+                  )}
+                </div>
+              </>
             )}
           </div>
         </div>

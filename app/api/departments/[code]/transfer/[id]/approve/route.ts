@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { prisma } from '@/lib/prisma'
-import { transferService } from '@/src/services/transfer.service'
+import { transferService } from '@/services/inventory/transfer.service'
 import { successResponse, errorResponse, ErrorCodes, getStatusCode } from '@/lib/api-response'
 
 export async function POST(request: NextRequest, { params }: { params: Promise<{ code: string; id: string }> }) {
@@ -19,9 +19,9 @@ export async function POST(request: NextRequest, { params }: { params: Promise<{
     }
 
     const result = await transferService.approveTransfer(id)
-    if (!result.success) return NextResponse.json(errorResponse(ErrorCodes.INTERNAL_ERROR, result.message || 'Approval failed'), { status: getStatusCode(ErrorCodes.INTERNAL_ERROR) })
+    if (!result.success) return NextResponse.json(errorResponse(ErrorCodes.INTERNAL_ERROR, result.message || 'Receive failed'), { status: getStatusCode(ErrorCodes.INTERNAL_ERROR) })
 
-    return NextResponse.json(successResponse({ message: 'Transfer approved and executed' }))
+    return NextResponse.json(successResponse({ message: 'Transfer received and executed' }))
   } catch (err: any) {
     console.error('approve transfer error', err)
     return NextResponse.json(errorResponse(ErrorCodes.INTERNAL_ERROR, 'Failed to approve transfer'), { status: getStatusCode(ErrorCodes.INTERNAL_ERROR) })
