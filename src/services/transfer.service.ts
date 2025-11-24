@@ -63,57 +63,46 @@ export class TransferService {
             // For generic inventory items (inventoryItem) adjust per-department balances via DepartmentInventory
             if (it.productType === 'inventoryItem') {
               // source department inventory record
-              const fromRecord = await (tx as any).departmentInventory.findUnique({
-                where: { departmentId_inventoryItemId: { departmentId: transfer.fromDepartmentId, inventoryItemId: it.productId } },
-              })
-              if (!fromRecord) throw new Error(`No inventory record for department ${transfer.fromDepartmentId} and item ${it.productId}`)
-              if (fromRecord.quantity < it.quantity) throw new Error(`Insufficient inventory for ${fromRecord.id}`)
+              const fromRecord = await (tx as any).departmentInventory.findUnique({ where: { departmentId_inventoryItemId: { departmentId: transfer.fromDepartmentId, inventoryItemId: it.productId } } })
+              if (!fromRecord) {
+                // Fallback: if no per-department record exists for the source, try to use global InventoryItem.quantity
+                const invItem = await (tx as any).inventoryItem.findUnique({ where: { id: it.productId } })
+                if (!invItem) throw new Error(`Inventory item not found: ${it.productId}`)
+                const globalQty = Number(invItem.quantity ?? 0)
+                if (globalQty < it.quantity) throw new Error(`No inventory record for department ${transfer.fromDepartmentId} and item ${it.productId}`)
 
-              // decrement source
-              await (tx as any).departmentInventory.update({
-                where: { departmentId_inventoryItemId: { departmentId: transfer.fromDepartmentId, inventoryItemId: it.productId } },
-                data: { quantity: { decrement: it.quantity } },
-              })
+                // decrement global inventory quantity
+                await (tx as any).inventoryItem.update({ where: { id: it.productId }, data: { quantity: { decrement: it.quantity } } })
 
-              // increment destination (create if missing)
-              const toRecord = await (tx as any).departmentInventory.findUnique({
-                where: { departmentId_inventoryItemId: { departmentId: transfer.toDepartmentId, inventoryItemId: it.productId } },
-              })
-              if (toRecord) {
-                await (tx as any).departmentInventory.update({
-                  where: { departmentId_inventoryItemId: { departmentId: transfer.toDepartmentId, inventoryItemId: it.productId } },
-                  data: { quantity: { increment: it.quantity } },
-                })
+                // increment destination (create if missing)
+                const toRecord = await (tx as any).departmentInventory.findUnique({ where: { departmentId_inventoryItemId: { departmentId: transfer.toDepartmentId, inventoryItemId: it.productId } } })
+                if (toRecord) {
+                  await (tx as any).departmentInventory.update({ where: { departmentId_inventoryItemId: { departmentId: transfer.toDepartmentId, inventoryItemId: it.productId } }, data: { quantity: { increment: it.quantity } } })
+                } else {
+                  await (tx as any).departmentInventory.create({ data: { departmentId: transfer.toDepartmentId, inventoryItemId: it.productId, quantity: it.quantity } })
+                }
+
+                // record global movement out and department movement in
+                await tx.inventoryMovement.create({ data: { movementType: 'out', quantity: it.quantity, reason: 'transfer-out', reference: transferId, inventoryItemId: it.productId } })
+                await tx.inventoryMovement.create({ data: { movementType: 'in', quantity: it.quantity, reason: 'transfer-in', reference: transferId, inventoryItemId: it.productId } })
               } else {
-                await (tx as any).departmentInventory.create({
-                  data: {
-                    departmentId: transfer.toDepartmentId,
-                    inventoryItemId: it.productId,
-                    quantity: it.quantity,
-                  },
-                })
+                if (fromRecord.quantity < it.quantity) throw new Error(`Insufficient inventory for ${fromRecord.id}`)
+
+                // decrement source
+                await (tx as any).departmentInventory.update({ where: { departmentId_inventoryItemId: { departmentId: transfer.fromDepartmentId, inventoryItemId: it.productId } }, data: { quantity: { decrement: it.quantity } } })
+
+                // increment destination (create if missing)
+                const toRecord = await (tx as any).departmentInventory.findUnique({ where: { departmentId_inventoryItemId: { departmentId: transfer.toDepartmentId, inventoryItemId: it.productId } } })
+                if (toRecord) {
+                  await (tx as any).departmentInventory.update({ where: { departmentId_inventoryItemId: { departmentId: transfer.toDepartmentId, inventoryItemId: it.productId } }, data: { quantity: { increment: it.quantity } } })
+                } else {
+                  await (tx as any).departmentInventory.create({ data: { departmentId: transfer.toDepartmentId, inventoryItemId: it.productId, quantity: it.quantity } })
+                }
+
+                // record movements for the inventory item
+                await tx.inventoryMovement.create({ data: { movementType: 'out', quantity: it.quantity, reason: 'transfer-out', reference: transferId, inventoryItemId: it.productId } })
+                await tx.inventoryMovement.create({ data: { movementType: 'in', quantity: it.quantity, reason: 'transfer-in', reference: transferId, inventoryItemId: it.productId } })
               }
-
-              // record movements for the inventory item
-              await tx.inventoryMovement.create({
-                data: {
-                  movementType: 'out',
-                  quantity: it.quantity,
-                  reason: 'transfer-out',
-                  reference: transferId,
-                  inventoryItemId: it.productId,
-                },
-              })
-
-              await tx.inventoryMovement.create({
-                data: {
-                  movementType: 'in',
-                  quantity: it.quantity,
-                  reason: 'transfer-in',
-                  reference: transferId,
-                  inventoryItemId: it.productId,
-                },
-              })
             } else {
               throw new Error(`Unsupported productType: ${it.productType}`)
             }

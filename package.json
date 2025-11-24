@@ -8,7 +8,11 @@
 		"start": "next start",
 		"lint": "next lint",
 		"test:endpoints": "tsx ../hotelmanager_v2/test-endpoints.ts",
-		"seed": "tsx scripts/seed.ts"
+		"seed": "tsx scripts/seed.ts",
+		"seed:dept-inv": "tsx scripts/seed-department-inventories.ts",
+		"reconcile:dept-inv": "tsx scripts/reconcile-department-inventories.ts",
+		"cleanup:depts": "tsx scripts/cleanup-departments.ts",
+		"consolidate:inventory": "tsx scripts/consolidate-inventory.ts"
 	},
 	"engines": {
 		"node": ">=18"

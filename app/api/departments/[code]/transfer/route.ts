@@ -35,6 +35,27 @@ export async function POST(request: NextRequest, { params }: { params: Promise<{
     }
 
     const mappedItems = items.map((it: any) => ({ productType: it.type, productId: it.id, quantity: Number(it.quantity || 0) }))
+    // Validate inventoryItem transfers up-front: prefer per-department inventory but allow using global inventory if available
+    for (const mi of mappedItems) {
+      if (mi.productType === 'inventoryItem') {
+        const rec = await prisma.departmentInventory.findUnique({ where: { departmentId_inventoryItemId: { departmentId: fromDept.id, inventoryItemId: mi.productId } } })
+        if (rec) {
+          if ((rec.quantity ?? 0) < (mi.quantity ?? 0)) {
+            return NextResponse.json(errorResponse(ErrorCodes.VALIDATION_ERROR, `Insufficient inventory for department ${fromDept.id} and item ${mi.productId}`), { status: getStatusCode(ErrorCodes.VALIDATION_ERROR) })
+          }
+        } else {
+          // No per-department record: check global inventory as a fallback
+          const inv = await prisma.inventoryItem.findUnique({ where: { id: mi.productId } })
+          if (!inv) {
+            return NextResponse.json(errorResponse(ErrorCodes.VALIDATION_ERROR, `No inventory record for department ${fromDept.id} and item ${mi.productId}`), { status: getStatusCode(ErrorCodes.VALIDATION_ERROR) })
+          }
+          if ((inv.quantity ?? 0) < (mi.quantity ?? 0)) {
+            return NextResponse.json(errorResponse(ErrorCodes.VALIDATION_ERROR, `Insufficient inventory for item ${mi.productId}`), { status: getStatusCode(ErrorCodes.VALIDATION_ERROR) })
+          }
+        }
+      }
+    }
+
     // create transfer record (pending)
     const created = await transferService.createTransfer(fromDept.id, toDept.id, mappedItems)
 
