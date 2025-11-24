@@ -4,6 +4,7 @@ import Link from 'next/link'
 import { useEffect, useState } from 'react'
 import { mapDeptCodeToCategory } from '@/lib/utils'
 import { useSearchParams } from 'next/navigation'
+import TransferAuditPanel from '@/components/departments/TransferAuditPanel'
 
 type Department = { id: string; code: string; name: string }
 
@@ -134,6 +135,9 @@ export default function InventoryPage() {
           </tbody>
         </table>
       </div>
+      {selectedDept && (
+        <TransferAuditPanel code={selectedDept} />
+      )}
       
     </div>
   )

@@ -137,7 +137,18 @@ export async function GET(request: NextRequest, { params }: { params: Promise<{ 
       const itemIds = items.map((i) => i.id)
       let balances: any[] = []
       try {
-        balances = await (prisma as any).departmentInventory.findMany({ where: { departmentId: dept.id, inventoryItemId: { in: itemIds } } })
+        // If a section filter was provided, prefer balances for that specific section
+        // (sections are departments themselves with codes like 'restaurant:<id>:main').
+        let deptIdForBalances = dept.id
+        if (sectionFilter) {
+          try {
+            const sectionDept = await prisma.department.findUnique({ where: { code: sectionFilter } })
+            if (sectionDept && sectionDept.id) deptIdForBalances = sectionDept.id
+          } catch (e) {
+            // ignore and fall back to parent dept id
+          }
+        }
+        balances = await (prisma as any).departmentInventory.findMany({ where: { departmentId: deptIdForBalances, inventoryItemId: { in: itemIds } } })
       } catch (e: any) {
         // Prisma P2021 means the table doesn't exist in the DB; log and continue
         // with no balances so the UI falls back to the item's base quantity.

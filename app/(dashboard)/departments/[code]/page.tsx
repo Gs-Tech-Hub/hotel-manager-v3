@@ -9,7 +9,6 @@ import SectionsList from '../../../../components/departments/SectionsList'
 import SectionProductsTable from '../../../../components/departments/SectionProductsTable'
 import PendingOrdersPanel from '../../../../components/departments/PendingOrdersPanel'
 import PendingFulfillModal from '../../../../components/departments/PendingFulfillModal'
-import TransferAuditPanel from '../../../../components/departments/TransferAuditPanel'
 
 type DepartmentInfo = {
   code: string
@@ -149,9 +148,7 @@ export default function DepartmentDetail() {
         <PendingOrdersPanel pending={pendingOrderLines} onOpen={(line: any) => openPendingModal?.(line.productName)} />
       )}
 
-      {decodedCode.includes(':') && (
-        <TransferAuditPanel code={decodedCode} />
-      )}
+      {/* Transfer audit moved to Inventory page */}
 
       <PendingFulfillModal
         open={pendingModalOpen}
