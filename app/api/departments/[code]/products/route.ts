@@ -123,8 +123,37 @@ export async function GET(request: NextRequest, { params }: { params: Promise<{ 
     {
       const where: any = {}
       if (search) where.name = { contains: search, mode: 'insensitive' }
-      // if department.type looks like a category, filter by it
-      if (dept.type) where.category = dept.type
+      // Map department.type to inventoryItem.category where appropriate.
+      // Department types like "restaurants" or "bars" don't directly match
+      // item categories (which are 'food', 'drinks', 'supplies', etc.). Use
+      // an explicit mapping and only apply the filter when mapped.
+      const deptToCategoryMap: Record<string, string> = {
+        restaurants: 'food',
+        restaurant: 'food',
+        bars: 'drinks',
+        'bar-and-clubs': 'drinks',
+        gyms: 'supplies',
+        housekeeping: 'supplies',
+        laundry: 'supplies',
+        games: 'supplies',
+        security: 'supplies',
+      }
+
+      let mappedCategory: string | undefined = undefined
+      if (dept?.type) {
+        const raw = String(dept.type).toLowerCase()
+        if (deptToCategoryMap[raw]) mappedCategory = deptToCategoryMap[raw]
+        // if dept.type already matches an inventory category, accept it
+        else if (['food', 'drinks', 'supplies', 'toiletries', 'misc'].includes(raw)) mappedCategory = raw
+      }
+
+      if (mappedCategory) {
+        where.category = mappedCategory
+      } else {
+        // No reliable mapping found — omit category filter so we return all
+        // inventory items and rely on DepartmentInventory balances (deptQty)
+        // to indicate availability for the section.
+      }
 
       const [items, total] = await Promise.all([
         prisma.inventoryItem.findMany({ where, skip, take: pageSize, orderBy: { name: 'asc' } }),

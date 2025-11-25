@@ -53,13 +53,13 @@ async function main() {
   // Check movements
   const movements = await prisma.inventoryMovement.findMany({
     where: {
-      departmentTransferId: transfer.id,
+      reference: transfer.id, // use the actual field name in the schema
     },
   })
 
   console.log(`\nInventory Movements: ${movements.length}`)
   movements.forEach((m) => {
-    console.log(`  - Type: ${m.type}, Qty: ${m.quantity}, Dept: ${m.departmentId.substring(0, 8)}...`)
+    console.log(`  - Type: ${m.movementType}, Qty: ${m.quantity}, Ref: ${m.reference?.substring(0, 8) || 'N/A'}...`)
   })
 }
 
