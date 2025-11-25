@@ -3,7 +3,7 @@ import { NextRequest, NextResponse } from 'next/server'
 export async function POST(req: NextRequest) {
   try {
     const body = await req.json()
-    const { terminalId, items, subtotal, tax, total, payment } = body
+    const { terminalId, departmentCode, sectionId, items, subtotal, tax, total, payment } = body
 
     // Very small mock validation
     if (!items || !Array.isArray(items) || items.length === 0) {
@@ -16,6 +16,8 @@ export async function POST(req: NextRequest) {
       id: Math.random().toString(36).slice(2),
       orderNumber,
       terminalId: terminalId ?? null,
+      departmentCode: departmentCode ?? null,
+      sectionId: sectionId ?? null,
       items,
       subtotal,
       tax,

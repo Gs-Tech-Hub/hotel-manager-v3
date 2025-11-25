@@ -20,6 +20,10 @@ export default function POSCheckoutShell({ terminalId }: { terminalId?: string }
   const [summaryError, setSummaryError] = useState<string | null>(null)
   const [summaryRefreshKey, setSummaryRefreshKey] = useState(0)
 
+  const [terminals, setTerminals] = useState<Array<any>>([])
+  const [loadingTerminals, setLoadingTerminals] = useState(false)
+  const [terminalsError, setTerminalsError] = useState<string | null>(null)
+
   const categories = [
     { id: 'foods', name: 'Foods' },
     { id: 'drinks', name: 'Drinks' },
@@ -53,11 +57,13 @@ export default function POSCheckoutShell({ terminalId }: { terminalId?: string }
   const total = subtotal + tax
 
   const handlePaymentComplete = (payment: any) => {
-    // Post to mock orders endpoint (in production this should point to /api/orders)
     ;(async () => {
       try {
         const payload = {
           terminalId: effectiveTerminalId ?? null,
+          // include department context and section mapping from the terminal so server can attribute sales correctly
+          departmentCode: resolvedTerminal?.departmentCode ?? null,
+          sectionId: (resolvedTerminal as any)?.defaultSectionId ?? null,
           items: cart,
           subtotal,
           tax,
@@ -76,7 +82,7 @@ export default function POSCheckoutShell({ terminalId }: { terminalId?: string }
           setReceipt(json.data)
           setCart([])
         } else {
-          // fallback to local receipt if mock server fails
+          // fallback to local receipt if server fails
           const receipt = {
             orderNumber: `T-${Date.now()}`,
             items: cart,
@@ -88,7 +94,7 @@ export default function POSCheckoutShell({ terminalId }: { terminalId?: string }
           setReceipt(receipt)
         }
       } catch (err) {
-        console.error('Error posting to mock orders:', err)
+        console.error('Error posting order:', err)
         const receipt = {
           orderNumber: `T-${Date.now()}`,
           items: cart,
@@ -104,13 +110,6 @@ export default function POSCheckoutShell({ terminalId }: { terminalId?: string }
     })()
   }
 
-  // Sample terminals (in real app fetch terminals / assigned department)
-  const terminals = [
-    { id: 'term-1', name: 'Front Desk - Restaurant', departmentCode: 'restaurant' },
-    { id: 'term-2', name: 'Bar - Main Bar', departmentCode: 'bar' },
-    { id: 'term-3', name: 'Poolside - Cafe', departmentCode: 'pool' },
-  ]
-
   // Helper: slugify terminal names for human-friendly routes
   const slugify = (s: string) =>
     s
@@ -122,13 +121,45 @@ export default function POSCheckoutShell({ terminalId }: { terminalId?: string }
 
   // Resolve the incoming terminalId route param which may be an id or a slugified name.
   // Prefer exact id match; otherwise try to match slugified terminal name.
-  const resolvedTerminal = terminals.find((t) => t.id === terminalId) ?? terminals.find((t) => slugify(t.name) === (terminalId ?? ''))
+  const resolvedTerminal =
+    terminals.find((t) => t.id === terminalId) ?? terminals.find((t) => slugify(t.name) === (terminalId ?? ''))
   const effectiveTerminalId = resolvedTerminal?.id ?? terminalId ?? ''
   const effectiveTerminalName = resolvedTerminal?.name ?? terminalId ?? '—'
+  const effectiveDepartmentCode = resolvedTerminal?.departmentCode ?? null
+  const effectiveSectionId = (resolvedTerminal as any)?.defaultSectionId ?? null
+
+  useEffect(() => {
+    // Fetch available department-sections from server
+    let mounted = true
+    setLoadingTerminals(true)
+    setTerminalsError(null)
+    fetch('/api/admin/pos/terminals')
+      .then((r) => r.json())
+      .then((json) => {
+        if (!mounted) return
+        if (json && json.success && Array.isArray(json.data)) {
+          setTerminals(json.data)
+        } else {
+          setTerminalsError('Failed to load sales points')
+          setTerminals([])
+        }
+      })
+      .catch((err) => {
+        console.error('Failed to fetch sales points', err)
+        if (!mounted) return
+        setTerminalsError('Failed to load sales points (network)')
+        setTerminals([])
+      })
+      .finally(() => mounted && setLoadingTerminals(false))
+
+    return () => {
+      mounted = false
+    }
+  }, [])
 
   useEffect(() => {
     // If a terminal is provided via the route param, fetch its department menu
-    const code = terminals.find((t) => t.id === effectiveTerminalId)?.departmentCode
+    const code = effectiveDepartmentCode
     if (!code) {
       setProducts([])
       return
@@ -151,7 +182,7 @@ export default function POSCheckoutShell({ terminalId }: { terminalId?: string }
         }
       })
       .catch((err) => {
-        console.error('Failed to fetch mock department menu', err)
+        console.error('Failed to fetch department menu', err)
         if (!mounted) return
         setTerminalError('Failed to load department menu (network)')
         setProducts(sampleProducts)
@@ -220,9 +251,34 @@ export default function POSCheckoutShell({ terminalId }: { terminalId?: string }
     <div className="space-y-4">
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
         <div className="lg:col-span-2 space-y-4">
+          <div className="flex items-center gap-3 flex-wrap">
+            <label className="text-sm font-medium">Sales Point:</label>
+            {loadingTerminals ? (
+              <div className="text-sm text-muted-foreground">Loading available sales points...</div>
+            ) : terminalsError ? (
+              <div className="text-sm text-red-600">{terminalsError}</div>
+            ) : terminals.length === 0 ? (
+              <div className="text-sm text-red-600">No sales points available</div>
+            ) : (
+              <select
+                value={effectiveTerminalId}
+                onChange={(e) => {
+                  window.location.hash = `#terminal=${e.target.value}`
+                }}
+                className="px-3 py-1 border rounded text-sm"
+              >
+                <option value="">— Select a sales point —</option>
+                {terminals.map((t) => (
+                  <option key={t.id} value={t.id}>
+                    {t.name}
+                  </option>
+                ))}
+              </select>
+            )}
+          </div>
           <div className="flex items-center gap-3">
-            <label className="text-sm font-medium">Terminal:</label>
-            <div className="px-2 py-1">{effectiveTerminalName}</div>
+            <div className="text-sm font-medium">Active:</div>
+            <div className="px-2 py-1 bg-blue-50 border border-blue-200 rounded text-sm">{effectiveTerminalName || '—'}</div>
             {loadingProducts && <div className="text-sm text-muted-foreground">Loading menu...</div>}
             {terminalError && <div className="text-sm text-red-600">{terminalError}</div>}
           </div>
