@@ -41,7 +41,7 @@ export class TransferService {
     try {
       const maxAttempts = 3
       for (let attempt = 1; attempt <= maxAttempts; attempt++) {
-        // Preflight: fetch all referenced records to validate availability and prepare batched operations.
+        // Preflight: fetch all referenced records to validate availability and prepare batched payloads.
         const inventoryItemIds: string[] = []
         const drinkIds: string[] = []
         for (const it of transfer.items) {
@@ -81,17 +81,16 @@ export class TransferService {
               break
             }
           } else if (it.productType === 'inventoryItem') {
-              const keyFrom = `${transfer.fromDepartmentId}::${it.productId}`
-              const fromRecord = deptInvMap.get(keyFrom)
-              if (!fromRecord) {
-                // Require department-scoped inventory to exist for transfers. Encourage running the seed/normalize script.
-                validationError = `Missing DepartmentInventory for department ${transfer.fromDepartmentId} and item ${it.productId}`
-                break
-              }
-              if (fromRecord.quantity < it.quantity) {
-                validationError = `Insufficient inventory for ${it.productId} in department ${transfer.fromDepartmentId}`
-                break
-              }
+            const keyFrom = `${transfer.fromDepartmentId}::${it.productId}`
+            const fromRecord = deptInvMap.get(keyFrom)
+            if (!fromRecord) {
+              validationError = `Missing DepartmentInventory for department ${transfer.fromDepartmentId} and item ${it.productId}`
+              break
+            }
+            if (fromRecord.quantity < it.quantity) {
+              validationError = `Insufficient inventory for ${it.productId} in department ${transfer.fromDepartmentId}`
+              break
+            }
           } else {
             validationError = `Unsupported productType: ${it.productType}`
             break
@@ -99,13 +98,16 @@ export class TransferService {
         }
 
         if (validationError) {
-          // If validation failed, return immediately (no retry). This is a hard business rule failure.
           return { success: false, message: validationError }
         }
 
-        // Build batched operation functions (use tx.* inside the transaction callback)
-        const opsFns: Array<(tx: any) => Promise<any>> = []
+        // Build minimal write payloads to run in the interactive transaction.
+        const sourceDecrements: Array<{ departmentId?: string; inventoryItemId?: string; drinkId?: string; amount: number; sourceField?: string; destField?: string }> = []
+        const destCreates: Array<{ departmentId: string; inventoryItemId: string; quantity: number; unitPrice: any }> = []
+        const destIncrements: Array<{ departmentId: string; inventoryItemId: string; amount: number }> = []
+        const movementRows: Array<any> = []
 
+        // Prepare payloads for drinks and inventory items
         for (const it of transfer.items) {
           if (it.productType === 'drink') {
             const drink = drinkMap.get(it.productId)
@@ -114,59 +116,73 @@ export class TransferService {
             if (fromDept.referenceType === 'BarAndClub' && fromDept.referenceId && (drink as any).barAndClubId === fromDept.referenceId) sourceField = 'barStock'
             if (toDept.referenceType === 'BarAndClub' && toDept.referenceId && (drink as any).barAndClubId === toDept.referenceId) destField = 'barStock'
 
-            // Use updateMany to ensure atomicity: only decrement if enough stock remains
-            opsFns.push(async (tx: any) => {
-              const res = await tx.drink.updateMany({ where: { id: it.productId, [sourceField]: { gte: it.quantity } }, data: { [sourceField]: { decrement: it.quantity }, [destField]: { increment: it.quantity } } } as any)
-              if ((res as any).count === 0) throw new Error(`Insufficient stock for drink ${it.productId}`)
-              return res
-            })
+            sourceDecrements.push({ drinkId: it.productId, amount: it.quantity, sourceField, destField })
           } else {
             const inv = invMap.get(it.productId)
-            const keyFrom = `${transfer.fromDepartmentId}::${it.productId}`
-            const fromRecord = deptInvMap.get(keyFrom)
+            // we validated that department inventory exists and is sufficient
+            sourceDecrements.push({ departmentId: transfer.fromDepartmentId, inventoryItemId: it.productId, amount: it.quantity })
 
-            if (fromRecord) {
-              opsFns.push(async (tx: any) => {
-                const res = await tx.departmentInventory.updateMany({ where: { departmentId: transfer.fromDepartmentId, inventoryItemId: it.productId, quantity: { gte: it.quantity } }, data: { quantity: { decrement: it.quantity } } })
-                if ((res as any).count === 0) throw new Error(`Insufficient inventory for ${it.productId} in department ${transfer.fromDepartmentId}`)
-                return res
-              })
+            const keyTo = `${transfer.toDepartmentId}::${it.productId}`
+            const toRecord = deptInvMap.get(keyTo)
+            if (toRecord) {
+              destIncrements.push({ departmentId: transfer.toDepartmentId, inventoryItemId: it.productId, amount: it.quantity })
             } else {
-              opsFns.push(async (tx: any) => {
-                const res = await tx.inventoryItem.updateMany({ where: { id: it.productId, quantity: { gte: it.quantity } }, data: { quantity: { decrement: it.quantity } } })
-                if ((res as any).count === 0) throw new Error(`Insufficient global inventory for ${it.productId}`)
-                return res
-              })
+              destCreates.push({ departmentId: transfer.toDepartmentId, inventoryItemId: it.productId, quantity: it.quantity, unitPrice: inv?.unitPrice ?? 0 })
             }
 
-            // upsert destination department inventory (create or increment)
-            opsFns.push((tx: any) => tx.departmentInventory.upsert({
-              where: { departmentId_inventoryItemId: { departmentId: transfer.toDepartmentId, inventoryItemId: it.productId } },
-              create: { departmentId: transfer.toDepartmentId, inventoryItemId: it.productId, quantity: it.quantity, unitPrice: inv?.unitPrice ?? 0 },
-              update: { quantity: { increment: it.quantity } },
-            }))
-
-            // record movements
-            opsFns.push((tx: any) => tx.inventoryMovement.create({ data: { movementType: 'out', quantity: it.quantity, reason: 'transfer-out', reference: transferId, inventoryItemId: it.productId } }))
-            opsFns.push((tx: any) => tx.inventoryMovement.create({ data: { movementType: 'in', quantity: it.quantity, reason: 'transfer-in', reference: transferId, inventoryItemId: it.productId } }))
+            movementRows.push({ movementType: 'out', quantity: it.quantity, reason: 'transfer-out', reference: transferId, inventoryItemId: it.productId })
+            movementRows.push({ movementType: 'in', quantity: it.quantity, reason: 'transfer-in', reference: transferId, inventoryItemId: it.productId })
           }
         }
 
-        // Mark transfer completed
-        opsFns.push((tx: any) => tx.departmentTransfer.update({ where: { id: transferId }, data: { status: 'completed', updatedAt: new Date() } }))
-
-        // Execute batched operations in a single interactive transaction within the allowed timeout.
+        // Execute minimal writes inside a short interactive transaction
         try {
+          const start = Date.now()
           await prisma.$transaction(async (tx) => {
-            for (const fn of opsFns) {
-              await fn(tx)
+            // 1) decrement drink stocks (parallelized)
+            const drinkOps = sourceDecrements.filter((s) => s.drinkId).map((d) =>
+              tx.drink.updateMany({ where: { id: d.drinkId, [d.sourceField!]: { gte: d.amount } }, data: { [d.sourceField!]: { decrement: d.amount }, [d.destField!]: { increment: d.amount } } } as any)
+            )
+            const drinkResults = await Promise.all(drinkOps)
+            for (const r of drinkResults) {
+              if ((r as any).count === 0) throw new Error(`Insufficient drink stock during transfer`)
             }
+
+            // 2) decrement source department inventory for inventoryItems (parallelized)
+            const srcInvOps = sourceDecrements.filter((s) => s.inventoryItemId).map((s) =>
+              tx.departmentInventory.updateMany({ where: { departmentId: s.departmentId, inventoryItemId: s.inventoryItemId, quantity: { gte: s.amount } }, data: { quantity: { decrement: s.amount } } })
+            )
+            const srcInvResults = await Promise.all(srcInvOps)
+            for (let i = 0; i < srcInvResults.length; i++) {
+              const res = srcInvResults[i] as any
+              const s = sourceDecrements.filter((s) => s.inventoryItemId)[i]
+              if (res.count === 0) throw new Error(`Insufficient inventory for ${s.inventoryItemId} in department ${s.departmentId}`)
+            }
+
+            // 3) create missing destination department inventories in one call if any
+            if (destCreates.length) {
+              await tx.departmentInventory.createMany({ data: destCreates, skipDuplicates: true })
+            }
+
+            // 4) increment existing destination department inventories (parallelized)
+            const destIncOps = destIncrements.map((u) =>
+              tx.departmentInventory.updateMany({ where: { departmentId: u.departmentId, inventoryItemId: u.inventoryItemId }, data: { quantity: { increment: u.amount } } })
+            )
+            if (destIncOps.length) await Promise.all(destIncOps)
+
+            // 5) create inventory movements in bulk
+            if (movementRows.length) {
+              await tx.inventoryMovement.createMany({ data: movementRows })
+            }
+
+            // 6) mark transfer completed
+            await tx.departmentTransfer.update({ where: { id: transferId }, data: { status: 'completed', updatedAt: new Date() } })
           }, { timeout: 15000 })
 
+          const took = Date.now() - start
           // success
-          return { success: true, message: 'Transfer executed' }
+          return { success: true, message: `Transfer executed in ${took}ms` }
         } catch (txErr: any) {
-          // If this was the last attempt, propagate error
           const isInsufficient = String(txErr?.message || '').toLowerCase().includes('insufficient') || String(txErr?.message || '').toLowerCase().includes('no inventory')
           if (isInsufficient) {
             return { success: false, message: txErr?.message || 'Insufficient inventory' }
@@ -176,13 +192,12 @@ export class TransferService {
             throw txErr
           }
 
-          // Otherwise, log and retry (concurrent modification likely). Small delay before retry.
+          // Concurrency / transient error: wait and retry preflight
           console.warn(`approveTransfer attempt ${attempt} failed, retrying...`, txErr?.message)
           await new Promise((r) => setTimeout(r, 250 * attempt))
           continue
         }
       }
-      // if loop exits unexpectedly
       return { success: false, message: 'Transfer execution failed after retries' }
     } catch (err: any) {
       console.error('approveTransfer error', err)
