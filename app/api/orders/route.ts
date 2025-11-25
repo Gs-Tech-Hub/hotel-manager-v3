@@ -47,14 +47,21 @@ export async function POST(request: NextRequest) {
 
     // Parse request body
     const body = await request.json();
-    const { customerId, items, discounts, notes } = body;
+    const { customerId: incomingCustomerId, items, discounts, notes } = body;
 
-    // Validate input
+    // If no customerId provided (walk-in), create a guest customer record
+    let customerId = incomingCustomerId
     if (!customerId) {
-      return NextResponse.json(
-        errorResponse(ErrorCodes.VALIDATION_ERROR, 'customerId is required'),
-        { status: getStatusCode(ErrorCodes.VALIDATION_ERROR) }
-      );
+      try {
+        const guest = await prisma.customer.create({ data: { name: 'Guest', notes: 'Walk-in / POS guest' } });
+        customerId = guest.id
+      } catch (err) {
+        console.error('Failed to create guest customer:', err)
+        return NextResponse.json(
+          errorResponse(ErrorCodes.INTERNAL_ERROR, 'Failed to create guest customer'),
+          { status: getStatusCode(ErrorCodes.INTERNAL_ERROR) }
+        )
+      }
     }
 
     if (!items || !Array.isArray(items) || items.length === 0) {
@@ -77,7 +84,7 @@ export async function POST(request: NextRequest) {
       }
     }
 
-    // Verify customer exists
+    // Verify customer exists (should exist at this point)
     const customer = await prisma.customer.findUnique({ where: { id: customerId } });
     if (!customer) {
       return NextResponse.json(
@@ -104,6 +111,24 @@ export async function POST(request: NextRequest) {
         order,
         { status: getStatusCode(order.error.code) }
       );
+    }
+
+    // If client provided a payment object in the payload, record payment now
+    if (order && !(order as any).error && body.payment) {
+      try {
+        const payment = body.payment as any;
+        // payment should contain amount, paymentTypeId (or paymentMethod), transactionReference
+        const paymentPayload = {
+          amount: payment.amount,
+          paymentTypeId: payment.paymentTypeId,
+          transactionReference: payment.transactionReference,
+        };
+        // record payment (orderService.recordPayment will validate and move order to processing)
+        await orderService.recordPayment((order as any).id, paymentPayload, userWithRoles);
+      } catch (err) {
+        console.error('Failed to record payment during order creation:', err);
+        // continue — order was created, but payment recording failed; client can retry via payments endpoint
+      }
     }
 
     // Return created order

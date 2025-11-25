@@ -59,28 +59,37 @@ export default function POSCheckoutShell({ terminalId }: { terminalId?: string }
   const handlePaymentComplete = (payment: any) => {
     ;(async () => {
       try {
-        const payload = {
-          sectionCode: departmentSection?.id ?? null,
+        // Build items shaped for the server Order API
+        const items = cart.map((c) => ({
+          productId: c.productId,
+          productType: (c as any).type || 'inventory',
+          productName: c.productName,
           departmentCode: departmentSection?.departmentCode ?? null,
-          sectionId: departmentSection?.defaultSectionId ?? null,
-          items: cart,
-          subtotal,
-          tax,
-          total,
+          quantity: c.quantity,
+          unitPrice: c.unitPrice,
+        }))
+
+        const payload: any = {
+          // customerId is optional for walk-in / guest purchases; server will create guest customer if missing
+          items,
+          discounts: [],
+          notes: `POS sale - terminal ${terminalId || departmentSection?.id || 'unknown'}`,
           payment,
         }
 
-        const res = await fetch('/api/mock/orders', {
+        const res = await fetch('/api/orders', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify(payload),
         })
 
-        const json = await res.json()
-        if (res.ok && json && json.success) {
+        const json = await res.json().catch(() => null)
+        if (res.ok && json && json.success && json.data) {
+          // The server returns the created order header (or success payload)
           setReceipt(json.data)
           setCart([])
         } else {
+          // Fallback: show a local receipt if the API failed
           const receipt = {
             orderNumber: `T-${Date.now()}`,
             items: cart,
@@ -88,6 +97,7 @@ export default function POSCheckoutShell({ terminalId }: { terminalId?: string }
             tax,
             total,
             payment,
+            error: json && json.error ? json.error : undefined,
           }
           setReceipt(receipt)
         }

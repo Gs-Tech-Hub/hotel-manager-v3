@@ -409,9 +409,45 @@ export class OrderService extends BaseService<IOrderHeader> {
   const totalPayments = allPayments.reduce((sum: number, p: any) => sum + p.amount, 0);
 
       if (totalPayments >= order.total) {
-        await (prisma as any).orderHeader.update({
-          where: { id: orderId },
-          data: { status: 'processing' },
+        // Fully paid: move to processing and consume reserved inventory for inventory-based departments
+        await prisma.$transaction(async (tx: any) => {
+          // Update order status
+          await tx.orderHeader.update({ where: { id: orderId }, data: { status: 'processing' } });
+
+          // Find order lines that require inventory consumption
+          const lines = await tx.orderLine.findMany({ where: { orderHeaderId: orderId } });
+
+          const movementRows: any[] = [];
+
+          for (const line of lines) {
+            if (['RESTAURANT', 'BAR_CLUB'].includes(line.departmentCode)) {
+              // find department
+              const dept = await tx.department.findUnique({ where: { code: line.departmentCode } });
+              if (!dept) {
+                throw new Error(`Department not found for code ${line.departmentCode}`);
+              }
+
+              // attempt to decrement department inventory (must have sufficient quantity)
+              const res = await tx.departmentInventory.updateMany({
+                where: { departmentId: dept.id, inventoryItemId: line.productId, quantity: { gte: line.quantity } },
+                data: { quantity: { decrement: line.quantity } },
+              });
+
+              if (res.count === 0) {
+                throw new Error(`Insufficient inventory for product ${line.productId} in department ${dept.code}`);
+              }
+
+              movementRows.push({ movementType: 'out', quantity: line.quantity, reason: 'sale', reference: orderId, inventoryItemId: line.productId });
+            }
+          }
+
+          // create inventory movement records
+          if (movementRows.length) {
+            await tx.inventoryMovement.createMany({ data: movementRows });
+          }
+
+          // mark reservations as consumed
+          await tx.inventoryReservation.updateMany({ where: { orderHeaderId: orderId, status: 'reserved' }, data: { status: 'consumed', consumedAt: new Date() } });
         });
       }
 
