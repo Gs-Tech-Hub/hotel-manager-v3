@@ -20,9 +20,9 @@ export default function POSCheckoutShell({ terminalId }: { terminalId?: string }
   const [summaryError, setSummaryError] = useState<string | null>(null)
   const [summaryRefreshKey, setSummaryRefreshKey] = useState(0)
 
-  const [terminals, setTerminals] = useState<Array<any>>([])
-  const [loadingTerminals, setLoadingTerminals] = useState(false)
-  const [terminalsError, setTerminalsError] = useState<string | null>(null)
+  const [departmentSection, setDepartmentSection] = useState<any | null>(null)
+  const [loadingDepartments, setLoadingDepartments] = useState(false)
+  const [departmentsError, setDepartmentsError] = useState<string | null>(null)
 
   const categories = [
     { id: 'foods', name: 'Foods' },
@@ -60,10 +60,9 @@ export default function POSCheckoutShell({ terminalId }: { terminalId?: string }
     ;(async () => {
       try {
         const payload = {
-          terminalId: effectiveTerminalId ?? null,
-          // include department context and section mapping from the terminal so server can attribute sales correctly
-          departmentCode: resolvedTerminal?.departmentCode ?? null,
-          sectionId: (resolvedTerminal as any)?.defaultSectionId ?? null,
+          sectionCode: departmentSection?.id ?? null,
+          departmentCode: departmentSection?.departmentCode ?? null,
+          sectionId: departmentSection?.defaultSectionId ?? null,
           items: cart,
           subtotal,
           tax,
@@ -82,7 +81,6 @@ export default function POSCheckoutShell({ terminalId }: { terminalId?: string }
           setReceipt(json.data)
           setCart([])
         } else {
-          // fallback to local receipt if server fails
           const receipt = {
             orderNumber: `T-${Date.now()}`,
             items: cart,
@@ -119,38 +117,30 @@ export default function POSCheckoutShell({ terminalId }: { terminalId?: string }
       .replace(/\s+/g, '-')
       .replace(/[^a-z0-9\-]/g, '')
 
-  // Resolve the incoming terminalId route param which may be an id or a slugified name.
-  // Prefer exact id match; otherwise try to match slugified terminal name.
-  const resolvedTerminal =
-    terminals.find((t) => t.id === terminalId) ?? terminals.find((t) => slugify(t.name) === (terminalId ?? ''))
-  const effectiveTerminalId = resolvedTerminal?.id ?? terminalId ?? ''
-  const effectiveTerminalName = resolvedTerminal?.name ?? terminalId ?? '—'
-  const effectiveDepartmentCode = resolvedTerminal?.departmentCode ?? null
-  const effectiveSectionId = (resolvedTerminal as any)?.defaultSectionId ?? null
-
   useEffect(() => {
-    // Fetch available department-sections from server
+    // Fetch available department-sections from server and auto-select first one
     let mounted = true
-    setLoadingTerminals(true)
-    setTerminalsError(null)
+    setLoadingDepartments(true)
+    setDepartmentsError(null)
     fetch('/api/admin/pos/terminals')
       .then((r) => r.json())
       .then((json) => {
         if (!mounted) return
-        if (json && json.success && Array.isArray(json.data)) {
-          setTerminals(json.data)
+        if (json && json.success && Array.isArray(json.data) && json.data.length > 0) {
+          // Auto-select the first available department-section
+          setDepartmentSection(json.data[0])
         } else {
-          setTerminalsError('Failed to load sales points')
-          setTerminals([])
+          setDepartmentsError('No sales points available')
+          setDepartmentSection(null)
         }
       })
       .catch((err) => {
         console.error('Failed to fetch sales points', err)
         if (!mounted) return
-        setTerminalsError('Failed to load sales points (network)')
-        setTerminals([])
+        setDepartmentsError('Failed to load sales points (network)')
+        setDepartmentSection(null)
       })
-      .finally(() => mounted && setLoadingTerminals(false))
+      .finally(() => mounted && setLoadingDepartments(false))
 
     return () => {
       mounted = false
@@ -158,8 +148,8 @@ export default function POSCheckoutShell({ terminalId }: { terminalId?: string }
   }, [])
 
   useEffect(() => {
-    // If a terminal is provided via the route param, fetch its department menu
-    const code = effectiveDepartmentCode
+    // If a department-section is selected, fetch its products/menu
+    const code = departmentSection?.departmentCode
     if (!code) {
       setProducts([])
       return
@@ -169,22 +159,23 @@ export default function POSCheckoutShell({ terminalId }: { terminalId?: string }
     setLoadingProducts(true)
     setTerminalError(null)
 
-    fetch(`/api/mock/departments/${code}/menu`)
+    // Use the real departments menu API (DB-backed) instead of the mock
+    fetch(`/api/departments/${encodeURIComponent(code)}/menu`)
       .then((r) => r.json())
       .then((json) => {
         if (!mounted) return
         if (json && json.success && Array.isArray(json.data)) {
-          const mapped: POSProduct[] = json.data.map((m: any) => ({ id: m.id, name: m.name, price: Number(m.price || 0), available: !!m.available }))
+          const mapped: POSProduct[] = json.data.map((m: any) => ({ id: m.id, name: m.name, price: Number(m.price || 0), available: !!m.available, type: m.type }))
           setProducts(mapped)
         } else {
-          setTerminalError('Failed to load department menu')
+          setTerminalError('Failed to load products')
           setProducts(sampleProducts)
         }
       })
       .catch((err) => {
-        console.error('Failed to fetch department menu', err)
+        console.error('Failed to fetch products', err)
         if (!mounted) return
-        setTerminalError('Failed to load department menu (network)')
+        setTerminalError('Failed to load products (network)')
         setProducts(sampleProducts)
       })
       .finally(() => mounted && setLoadingProducts(false))
@@ -192,14 +183,14 @@ export default function POSCheckoutShell({ terminalId }: { terminalId?: string }
     return () => {
       mounted = false
     }
-  }, [effectiveTerminalId])
+  }, [departmentSection?.id])
 
   useEffect(() => {
-    // fetch sales summary for today for the resolved terminal id
-    const tId = effectiveTerminalId ?? ''
+    // fetch sales summary for today for the selected department section
+    const sectionId = departmentSection?.id ?? ''
     let mounted = true
     const fetchSummary = async () => {
-      if (!tId) {
+      if (!sectionId) {
         setSalesSummary(null)
         return
       }
@@ -207,7 +198,7 @@ export default function POSCheckoutShell({ terminalId }: { terminalId?: string }
       setSummaryError(null)
       try {
         // primary endpoint
-        const res = await fetch(`/api/admin/pos/sales-summary?terminalId=${encodeURIComponent(tId)}`)
+        const res = await fetch(`/api/admin/pos/sales-summary?terminalId=${encodeURIComponent(sectionId)}`)
         if (res.ok) {
           const json = await res.json()
           if (mounted && json && json.success && json.data) {
@@ -217,7 +208,7 @@ export default function POSCheckoutShell({ terminalId }: { terminalId?: string }
         }
 
         // fallback to mock endpoint
-        const mock = await fetch(`/api/mock/sales-summary?terminalId=${encodeURIComponent(tId)}`)
+        const mock = await fetch(`/api/mock/sales-summary?terminalId=${encodeURIComponent(sectionId)}`)
         if (mock.ok) {
           const mj = await mock.json()
           if (mounted && mj && mj.success && mj.data) {
@@ -245,40 +236,18 @@ export default function POSCheckoutShell({ terminalId }: { terminalId?: string }
     return () => {
       mounted = false
     }
-  }, [effectiveTerminalId, summaryRefreshKey])
+  }, [departmentSection?.id, summaryRefreshKey])
 
   return (
     <div className="space-y-4">
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
         <div className="lg:col-span-2 space-y-4">
-          <div className="flex items-center gap-3 flex-wrap">
-            <label className="text-sm font-medium">Sales Point:</label>
-            {loadingTerminals ? (
-              <div className="text-sm text-muted-foreground">Loading available sales points...</div>
-            ) : terminalsError ? (
-              <div className="text-sm text-red-600">{terminalsError}</div>
-            ) : terminals.length === 0 ? (
-              <div className="text-sm text-red-600">No sales points available</div>
-            ) : (
-              <select
-                value={effectiveTerminalId}
-                onChange={(e) => {
-                  window.location.hash = `#terminal=${e.target.value}`
-                }}
-                className="px-3 py-1 border rounded text-sm"
-              >
-                <option value="">— Select a sales point —</option>
-                {terminals.map((t) => (
-                  <option key={t.id} value={t.id}>
-                    {t.name}
-                  </option>
-                ))}
-              </select>
-            )}
-          </div>
+          {loadingDepartments && <div className="text-sm text-muted-foreground">Loading sales platform...</div>}
+          {departmentsError && <div className="text-sm text-red-600">{departmentsError}</div>}
+
           <div className="flex items-center gap-3">
-            <div className="text-sm font-medium">Active:</div>
-            <div className="px-2 py-1 bg-blue-50 border border-blue-200 rounded text-sm">{effectiveTerminalName || '—'}</div>
+            <div className="text-sm font-medium">Department:</div>
+            <div className="px-3 py-2 bg-blue-50 border border-blue-200 rounded text-sm font-semibold">{departmentSection?.name || '—'}</div>
             {loadingProducts && <div className="text-sm text-muted-foreground">Loading menu...</div>}
             {terminalError && <div className="text-sm text-red-600">{terminalError}</div>}
           </div>
@@ -311,12 +280,11 @@ export default function POSCheckoutShell({ terminalId }: { terminalId?: string }
             <div className="flex items-center justify-between">
               <div>
                 <div className="text-xs text-muted-foreground">Today's Sales</div>
-                <div className="text-lg font-semibold">{effectiveTerminalName}</div>
+                <div className="text-lg font-semibold">{departmentSection?.name}</div>
               </div>
               <div>
                 <button
                   onClick={() => {
-                    // trigger refresh for the summary
                     setSummaryRefreshKey((k) => k + 1)
                   }}
                   className="text-sm text-sky-600 underline"
