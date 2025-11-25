@@ -14,6 +14,7 @@
 
 import { NextRequest, NextResponse } from "next/server";
 import { checkPermission, type PermissionContext } from "./rbac";
+import { verifyAuthHeader, extractUserFromHeaders } from "./session";
 
 /**
  * Higher-order function to protect API routes with permission checks.
@@ -33,13 +34,21 @@ export function withPermission(
 ) {
   return async (req: NextRequest) => {
     try {
-      // Extract user context from headers (populated by auth middleware)
-      const userId = req.headers.get("x-user-id");
-      const userType = req.headers.get("x-user-type") as
+      // Try to verify JWT from Authorization header first
+      const authHeader = req.headers.get("authorization");
+      let session = null;
+
+      if (authHeader) {
+        session = await verifyAuthHeader(authHeader);
+      }
+
+      // If no valid JWT, extract from headers (set by auth middleware)
+      let userId = session?.userId || req.headers.get("x-user-id");
+      let userType = (session?.userType || req.headers.get("x-user-type")) as
         | "admin"
         | "employee"
         | "other";
-      const departmentId = req.headers.get("x-department-id");
+      let departmentId = session?.departmentId || req.headers.get("x-department-id");
 
       // Validate required fields
       if (!userId || !userType) {

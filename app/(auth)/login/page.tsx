@@ -4,6 +4,8 @@ import { zodResolver } from "@hookform/resolvers/zod";
 import { useForm } from "react-hook-form";
 import { z } from "zod";
 import { toast } from "sonner";
+import { useRouter } from "next/navigation";
+import { useState } from "react";
 
 import { Button } from "@/components/ui/button";
 import {
@@ -23,7 +25,7 @@ import {
 	CardHeader,
 	CardTitle,
 } from "@/components/ui/card";
-import { LogIn, Mail, Lock } from "lucide-react";
+import { LogIn, Mail, Lock, Loader2 } from "lucide-react";
 import Link from "next/link";
 
 const formSchema = z.object({
@@ -36,6 +38,9 @@ const formSchema = z.object({
 });
 
 export default function LoginPage() {
+	const router = useRouter();
+	const [isLoading, setIsLoading] = useState(false);
+
 	const form = useForm<z.infer<typeof formSchema>>({
 		resolver: zodResolver(formSchema),
 		defaultValues: {
@@ -44,11 +49,43 @@ export default function LoginPage() {
 		},
 	});
 
-	function onSubmit(values: z.infer<typeof formSchema>) {
-		console.log(values);
-		toast.success("Login successful!", {
-			description: "Welcome back! You have been logged in successfully.",
-		});
+	async function onSubmit(values: z.infer<typeof formSchema>) {
+		setIsLoading(true);
+		try {
+			const response = await fetch("/api/auth/login", {
+				method: "POST",
+				headers: {
+					"Content-Type": "application/json",
+				},
+				body: JSON.stringify(values),
+			});
+
+			const data = await response.json();
+
+			if (!response.ok) {
+				toast.error("Login failed", {
+					description: data.error || "Invalid email or password",
+				});
+				return;
+			}
+
+			toast.success("Login successful!", {
+				description: "Welcome back! Redirecting...",
+			});
+
+			// Wait a bit for toast to show, then redirect
+			setTimeout(() => {
+				router.push("/dashboard");
+				router.refresh();
+			}, 1000);
+		} catch (error) {
+			console.error("Login error:", error);
+			toast.error("Login failed", {
+				description: "An unexpected error occurred",
+			});
+		} finally {
+			setIsLoading(false);
+		}
 	}
 
 	return (
@@ -75,6 +112,7 @@ export default function LoginPage() {
 											<Input
 												placeholder="Enter your email"
 												className="pl-10"
+												disabled={isLoading}
 												{...field}
 											/>
 										</div>
@@ -96,6 +134,7 @@ export default function LoginPage() {
 												type="password"
 												placeholder="Enter your password"
 												className="pl-10"
+												disabled={isLoading}
 												{...field}
 											/>
 										</div>
@@ -104,8 +143,9 @@ export default function LoginPage() {
 								</FormItem>
 							)}
 						/>
-						<Button type="submit" className="w-full">
-							Sign In
+						<Button type="submit" className="w-full" disabled={isLoading}>
+							{isLoading && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
+							{isLoading ? "Signing in..." : "Sign In"}
 						</Button>
 					</form>
 				</Form>

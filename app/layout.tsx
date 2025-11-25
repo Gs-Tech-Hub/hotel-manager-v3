@@ -111,7 +111,9 @@ export default function RootLayout({
 					enableSystem
 					disableTransitionOnChange
 				>
-					{children}
+					{/* AuthProvider wraps the app to provide session state to components */}
+					{/* Use client component wrapper since AuthProvider is client-side */}
+					<div id="auth-root">{children}</div>
 				</ThemeProvider>
 			</body>
 		</html>
