@@ -63,6 +63,139 @@ model AdminPermission {
   @@map("admin_permissions")
 }
 
+// ==================== UNIFIED RBAC ====================
+
+/// Fine-grained permission definition. Reusable across roles, tokens, and individual user grants.
+model Permission {
+  id               String   @id @default(cuid())
+  action           String   // e.g., "orders.create", "bookings.read", "inventory.transfer"
+  subject          String?  // optional object context e.g., "orders", "bookings"
+  description      String?
+  actionParameters Json     @default("{}")  // complex rule parameters
+  conditions       Json     @default("[]")  // additional constraints
+  properties       Json     @default("{}")  // extra metadata
+
+  createdAt        DateTime @default(now())
+  updatedAt        DateTime @updatedAt
+
+  rolePermissions   RolePermission[]
+  userPermissions   UserPermission[]  // direct user overrides
+  tokenPermissions  TokenPermission[]
+
+  @@unique([action, subject])
+  @@index([action])
+  @@index([subject])
+  @@map("permissions")
+}
+
+/// Role definition: a named group of permissions. Can be admin-scoped or department-scoped.
+model Role {
+  id          String   @id @default(cuid())
+  code        String   @unique
+  name        String
+  description String?
+  type        String   @default("standard")  // admin, employee, manager, custom
+  isActive    Boolean  @default(true)
+
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  rolePermissions  RolePermission[]
+  userRoles        UserRole[]
+
+  @@index([code, type])
+  @@index([isActive])
+  @@map("roles")
+}
+
+/// Explicit join: which permissions are granted by a role.
+model RolePermission {
+  id           String     @id @default(cuid())
+
+  roleId       String
+  role         Role       @relation(fields: [roleId], references: [id], onDelete: Cascade)
+
+  permissionId String
+  permission   Permission @relation(fields: [permissionId], references: [id], onDelete: Cascade)
+
+  createdAt    DateTime   @default(now())
+
+  @@unique([roleId, permissionId])
+  @@index([roleId])
+  @@index([permissionId])
+  @@map("role_permissions")
+}
+
+/// Explicit join: which roles are assigned to a user. Supports department scoping and audit trail.
+model UserRole {
+  id           String    @id @default(cuid())
+
+  userId       String    // works with AdminUser.id or PluginUsersPermissionsUser.id
+  userType     String    // "admin" | "employee" | "other"
+
+  roleId       String
+  role         Role      @relation(fields: [roleId], references: [id], onDelete: Cascade)
+
+  /// Optional: scope this role assignment to a specific department
+  departmentId String?
+  department   Department? @relation(fields: [departmentId], references: [id], onDelete: SetNull)
+
+  /// Audit trail
+  grantedAt    DateTime  @default(now())
+  grantedBy    String?   // admin user who granted the role (optional)
+  revokedAt    DateTime?
+  revokedBy    String?
+
+  createdAt    DateTime  @default(now())
+  updatedAt    DateTime  @updatedAt
+
+  @@unique([userId, userType, roleId, departmentId])
+  @@index([userId, userType])
+  @@index([roleId])
+  @@index([departmentId])
+  @@map("user_roles")
+}
+
+/// Direct permission overrides for individual users (bypasses role).
+model UserPermission {
+  id           String     @id @default(cuid())
+
+  userId       String     // admin or employee user ID
+  userType     String     // "admin" | "employee"
+
+  permissionId String
+  permission   Permission @relation(fields: [permissionId], references: [id], onDelete: Cascade)
+
+  /// Optional: scope this permission to a department
+  departmentId String?
+  department   Department? @relation(fields: [departmentId], references: [id], onDelete: SetNull)
+
+  grantedAt    DateTime   @default(now())
+  grantedBy    String?
+
+  @@unique([userId, userType, permissionId, departmentId])
+  @@index([userId, userType])
+  @@index([permissionId])
+  @@map("user_permissions")
+}
+
+/// Token-based permissions: map API/Transfer tokens to fine-grained permissions.
+model TokenPermission {
+  id           String     @id @default(cuid())
+
+  tokenId      String     // ApiToken.id or TransferToken.id
+  tokenType    String     // "api" | "transfer"
+
+  permissionId String
+  permission   Permission @relation(fields: [permissionId], references: [id], onDelete: Cascade)
+
+  createdAt    DateTime   @default(now())
+
+  @@unique([tokenId, tokenType, permissionId])
+  @@index([tokenId, tokenType])
+  @@map("token_permissions")
+}
+
 model ApiToken {
   id          String    @id @default(cuid())
   name        String
@@ -662,6 +795,10 @@ model Department {
 
   // per-department inventory records
   departmentInventories DepartmentInventory[]
+
+  // RBAC: Role assignments scoped to this department
+  userRoles       UserRole[]
+  userPermissions UserPermission[]
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
