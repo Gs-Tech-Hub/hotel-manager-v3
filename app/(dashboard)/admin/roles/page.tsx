@@ -1,7 +1,8 @@
-'use client';
+"use client";
 
-import { useState, useEffect } from 'react';
-import { useRouter } from 'next/navigation';
+import { useState, useEffect } from "react";
+import { useRouter } from "next/navigation";
+import { ProtectedRoute } from '@/components/protected-route';
 
 interface Permission {
   id: string;
@@ -20,7 +21,7 @@ interface Role {
   createdAt: string;
 }
 
-export default function RolesManagementPage() {
+function RolesManagementContent() {
   const router = useRouter();
   const [roles, setRoles] = useState<Role[]>([]);
   const [permissions, setPermissions] = useState<Permission[]>([]);
@@ -353,5 +354,13 @@ export default function RolesManagementPage() {
         </div>
       )}
     </div>
+  );
+}
+
+export default function RolesManagementPageWrapper() {
+  return (
+    <ProtectedRoute requiredRole="admin">
+      <RolesManagementContent />
+    </ProtectedRoute>
   );
 }

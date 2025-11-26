@@ -2,6 +2,7 @@ import type { Metadata } from "next";
 import { Inter } from "next/font/google";
 import "./globals.css";
 import { ThemeProvider } from "@/components/theme-provider";
+import { AuthProvider } from "@/components/auth-context";
 
 const inter = Inter({ subsets: ["latin"] });
 
@@ -111,9 +112,9 @@ export default function RootLayout({
 					enableSystem
 					disableTransitionOnChange
 				>
-					{/* AuthProvider wraps the app to provide session state to components */}
-					{/* Use client component wrapper since AuthProvider is client-side */}
-					<div id="auth-root">{children}</div>
+					<AuthProvider>
+						{children}
+					</AuthProvider>
 				</ThemeProvider>
 			</body>
 		</html>

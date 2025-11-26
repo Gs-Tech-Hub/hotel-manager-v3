@@ -1,8 +1,9 @@
-'use client';
+"use client";
 
-import { useState, useEffect } from 'react';
-import { useRouter } from 'next/navigation';
-import Link from 'next/link';
+import { useState, useEffect } from "react";
+import { useRouter } from "next/navigation";
+import Link from "next/link";
+import { ProtectedRoute } from '@/components/protected-route';
 
 interface User {
   id: string;
@@ -13,8 +14,7 @@ interface User {
   isActive: boolean;
   createdAt: string;
 }
-
-export default function UsersManagementPage() {
+function UsersManagementContent() {
   const router = useRouter();
   const [users, setUsers] = useState<User[]>([]);
   const [loading, setLoading] = useState(true);
@@ -347,5 +347,13 @@ export default function UsersManagementPage() {
         </div>
       )}
     </div>
+  );
+}
+
+export default function UsersManagementPageWrapper() {
+  return (
+    <ProtectedRoute requiredRole="admin">
+      <UsersManagementContent />
+    </ProtectedRoute>
   );
 }

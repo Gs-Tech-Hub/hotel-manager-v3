@@ -3,6 +3,7 @@
 import { useState, useEffect } from 'react';
 import { useRouter } from 'next/navigation';
 import { useAuth } from '@/components/auth-context';
+import { ProtectedRoute } from '@/components/protected-route';
 
 interface SessionInfo {
   userId: string;
@@ -20,7 +21,7 @@ interface SessionInfo {
   expiresAt: string;
 }
 
-export default function SessionsPage() {
+function SessionsContent() {
   const router = useRouter();
   const { user, refreshSession } = useAuth();
   const [session, setSession] = useState<SessionInfo | null>(null);
@@ -212,5 +213,13 @@ export default function SessionsPage() {
         </div>
       )}
     </div>
+  );
+}
+
+export default function SessionsPageWrapper() {
+  return (
+    <ProtectedRoute requiredRole="admin">
+      <SessionsContent />
+    </ProtectedRoute>
   );
 }
