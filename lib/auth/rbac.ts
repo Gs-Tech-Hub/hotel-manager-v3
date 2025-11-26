@@ -10,9 +10,7 @@
  *   const roles = await getUserRoles(ctx);
  */
 
-import { PrismaClient } from "@prisma/client";
-
-const prisma = new PrismaClient();
+import { prisma } from "@/lib/prisma";
 
 export interface PermissionContext {
   userId: string;

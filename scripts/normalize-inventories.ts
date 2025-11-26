@@ -36,7 +36,7 @@ async function main() {
     }
   } else if (strategy === 'distribute-even') {
     // For each inventory item, distribute inventoryItem.quantity evenly among departments that match its category
-    const byCategory = new Map<string, any[]>()
+    const byCategory = new Map<string, any>()
     for (const d of departments) {
       // group departments by category mapping (simple code heuristic)
       byCategory.set(d.id, d)

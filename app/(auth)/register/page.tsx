@@ -23,6 +23,7 @@ import {
 	CardDescription,
 	CardHeader,
 	CardTitle,
+	CardFooter,
 } from "@/components/ui/card";
 import { UserPlus, Mail, Lock, User, Loader2 } from "lucide-react";
 import Link from "next/link";

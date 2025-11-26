@@ -2,15 +2,15 @@
 
 import Link from 'next/link'
 
-export default function SectionsList({ children, childrenLoading }: any) {
-  if (childrenLoading) return <div className="text-sm text-muted-foreground">Loading sections...</div>
-  if (!children || children.length === 0) return null
+export default function SectionsList({ sections, loading }: any) {
+  if (loading) return <div className="text-sm text-muted-foreground">Loading sections...</div>
+  if (!sections || sections.length === 0) return null
 
   return (
     <div className="mt-6">
       <h2 className="text-xl font-semibold">Sections</h2>
       <div className="mt-3 space-y-3">
-        {children.map((c: any) => (
+        {sections.map((c: any) => (
           <div key={c.code} className="border rounded p-3 bg-card">
             <div className="flex items-center justify-between">
               <div>

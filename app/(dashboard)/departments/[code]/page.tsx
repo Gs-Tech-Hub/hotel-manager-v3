@@ -1,6 +1,5 @@
 "use client"
 import { useRouter, useParams } from 'next/navigation'
-import Link from 'next/link'
 import { Utensils, Coffee, Activity, Gamepad, BookOpen } from 'lucide-react'
 import { useMemo, useState, useEffect } from 'react'
 import useDepartmentData from '../../../../components/departments/useDepartmentData'
@@ -212,7 +211,7 @@ export default function DepartmentDetail() {
         </div>
       )}
 
-      <SectionsList children={children} childrenLoading={childrenLoading} />
+      <SectionsList sections={children} loading={childrenLoading} />
 
       {decodedCode.includes(':') && (
         <PendingOrdersPanel pending={pendingOrderLines} onOpen={(line: any) => openPendingModal?.(line.productName)} />

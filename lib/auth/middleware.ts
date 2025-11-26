@@ -43,12 +43,12 @@ export function withPermission(
       }
 
       // If no valid JWT, extract from headers (set by auth middleware)
-      let userId = session?.userId || req.headers.get("x-user-id");
-      let userType = (session?.userType || req.headers.get("x-user-type")) as
+      const userId = session?.userId || req.headers.get("x-user-id");
+      const userType = (session?.userType || req.headers.get("x-user-type")) as
         | "admin"
         | "employee"
         | "other";
-      let departmentId = session?.departmentId || req.headers.get("x-department-id");
+      const departmentId = session?.departmentId || req.headers.get("x-department-id");
 
       // Validate required fields
       if (!userId || !userType) {

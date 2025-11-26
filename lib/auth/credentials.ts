@@ -29,7 +29,7 @@ export async function loginUser(
 ): Promise<{ success: boolean; error?: string; token?: string }> {
   try {
     // Try to find admin user first
-    let user = await prisma.adminUser.findUnique({
+    const user = await prisma.adminUser.findUnique({
       where: { email },
       include: { roles: true },
     });
@@ -59,8 +59,8 @@ export async function loginUser(
         userId: employeeUser.id,
         userType: "employee",
         email: employeeUser.email,
-        firstName: employeeUser.firstname,
-        lastName: employeeUser.lastname,
+        firstName: employeeUser.firstname || undefined,
+        lastName: employeeUser.lastname || undefined,
       };
 
       const token = await createToken(session);
@@ -80,8 +80,8 @@ export async function loginUser(
       userId: user.id,
       userType: "admin",
       email: user.email,
-      firstName: user.firstname,
-      lastName: user.lastname,
+      firstName: user.firstname || undefined,
+      lastName: user.lastname || undefined,
     };
 
     const token = await createToken(session);

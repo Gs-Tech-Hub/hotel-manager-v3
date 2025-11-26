@@ -20,7 +20,7 @@ export async function GET(request: NextRequest, { params }: { params: Promise<{ 
     else if (direction === 'received') where.toDepartmentId = dept.id
     else where = { OR: [{ fromDepartmentId: dept.id }, { toDepartmentId: dept.id }] }
 
-    let [items, total] = await Promise.all([
+    const [items, total] = await Promise.all([
       prisma.departmentTransfer.findMany({ where, include: { items: true }, orderBy: { createdAt: 'desc' }, skip, take: pageSize }),
       prisma.departmentTransfer.count({ where }),
     ])

@@ -49,6 +49,11 @@ async function seedAuthUsers() {
       console.log("⏭️  Admin role already exists");
     }
 
+    // Ensure adminUser is present
+    if (!adminUser) {
+      throw new Error('Failed to create or find admin user')
+    }
+
     // Grant admin user the admin role
     const existingAdminRole = await prisma.userRole.findFirst({
       where: {
@@ -61,6 +66,7 @@ async function seedAuthUsers() {
       await prisma.userRole.create({
         data: {
           userId: adminUser.id,
+          userType: "admin",
           roleId: adminRole.id,
           grantedAt: new Date(),
           grantedBy: "system",
@@ -164,6 +170,7 @@ async function seedAuthUsers() {
         await prisma.userRole.create({
           data: {
             userId: employee.id,
+            userType: "employee",
             roleId: role.id,
             grantedAt: new Date(),
             grantedBy: "system",

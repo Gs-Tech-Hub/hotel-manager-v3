@@ -53,8 +53,16 @@ export async function POST(request: NextRequest) {
     let customerId = incomingCustomerId
     if (!customerId) {
       try {
-        const guest = await prisma.customer.create({ data: { name: 'Guest', notes: 'Walk-in / POS guest' } });
-        customerId = guest.id
+        // Create a minimal guest customer record (required fields per schema)
+        const guest = await prisma.customer.create({
+          data: {
+            firstName: 'Guest',
+            lastName: 'Customer',
+            email: `guest+${Date.now()}@local`,
+            phone: '0000000000',
+          },
+        });
+        customerId = guest.id;
       } catch (err) {
         console.error('Failed to create guest customer:', err)
         return NextResponse.json(
@@ -120,6 +128,7 @@ export async function POST(request: NextRequest) {
         // payment should contain amount, paymentTypeId (or paymentMethod), transactionReference
         const paymentPayload = {
           amount: payment.amount,
+          paymentMethod: payment.paymentMethod || payment.paymentMethodId || 'unknown',
           paymentTypeId: payment.paymentTypeId,
           transactionReference: payment.transactionReference,
         };

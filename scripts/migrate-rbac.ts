@@ -97,12 +97,12 @@ async function migrateRBAC() {
         where: {
           action_subject: {
             action: perm.action,
-            subject: perm.subject || null,
+            subject: perm.subject ?? undefined,
           },
         },
         create: {
           action: perm.action,
-          subject: perm.subject || null,
+          subject: perm.subject ?? undefined,
           description: perm.description,
           actionParameters: {},
           conditions: [],
@@ -186,27 +186,31 @@ async function migrateRBAC() {
         const newRoleId = roleMap.get(adminRole.id);
 
         if (newRoleId) {
-          await prisma.userRole.upsert({
+          // avoid using upsert with composite unique where containing optional fields
+          // instead, check existence and create if missing
+          const existing = await prisma.userRole.findFirst({
             where: {
-              userId_userType_roleId_departmentId: {
-                userId: adminUser.id,
-                userType: "admin",
-                roleId: newRoleId,
-                departmentId: null,
-              },
-            },
-            create: {
               userId: adminUser.id,
               userType: "admin",
               roleId: newRoleId,
               departmentId: null,
-              grantedAt: adminUser.createdAt,
-              grantedBy: undefined,
             },
-            update: {},
           });
 
-          userRoleCount++;
+          if (!existing) {
+            await prisma.userRole.create({
+              data: {
+                userId: adminUser.id,
+                userType: "admin",
+                roleId: newRoleId,
+                departmentId: null,
+                grantedAt: adminUser.createdAt,
+                grantedBy: undefined,
+              },
+            });
+
+            userRoleCount++;
+          }
         }
       }
     }
@@ -286,7 +290,7 @@ async function migrateRBAC() {
             userId: employee.id,
             userType: "employee",
             roleId: defaultEmployeeRole.id,
-            departmentId: null,
+            departmentId: undefined,
             grantedAt: new Date(),
             grantedBy: undefined,
           },

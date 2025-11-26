@@ -47,6 +47,8 @@
 		"uuid": "^9.0.1",
 		"bcryptjs": "^2.4.3",
 		"zod": "^3.25.67"
+	,
+		"jose": "^4.15.0"
 	},
 	"devDependencies": {
 		"@eslint/eslintrc": "^3",

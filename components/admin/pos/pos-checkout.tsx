@@ -144,13 +144,13 @@ export default function POSCheckoutShell({ terminalId }: { terminalId?: string }
           setDepartmentSection(null)
         }
       })
-      .catch((err) => {
-        console.error('Failed to fetch sales points', err)
-        if (!mounted) return
-        setDepartmentsError('Failed to load sales points (network)')
-        setDepartmentSection(null)
-      })
-      .finally(() => mounted && setLoadingDepartments(false))
+        .catch((err) => {
+          console.error('Failed to fetch sales points', err)
+          if (!mounted) return
+          setDepartmentsError('Failed to load sales points (network)')
+          setDepartmentSection(null)
+        })
+        .finally(() => { if (mounted) setLoadingDepartments(false) })
 
     return () => {
       mounted = false
@@ -188,7 +188,7 @@ export default function POSCheckoutShell({ terminalId }: { terminalId?: string }
         setTerminalError('Failed to load products (network)')
         setProducts(sampleProducts)
       })
-      .finally(() => mounted && setLoadingProducts(false))
+      .finally(() => { if (mounted) setLoadingProducts(false) })
 
     return () => {
       mounted = false
@@ -238,7 +238,7 @@ export default function POSCheckoutShell({ terminalId }: { terminalId?: string }
           setSalesSummary(null)
         }
       } finally {
-        mounted && setLoadingSummary(false)
+        if (mounted) setLoadingSummary(false)
       }
     }
 
@@ -273,11 +273,10 @@ export default function POSCheckoutShell({ terminalId }: { terminalId?: string }
               const t = mapCategoryToType[category]
               if (t) {
                 displayed = source.filter((p: any) => {
-                  // fetched menu items include a `type` field; sample items do not — handle both
-                  // @ts-ignore
-                  if (p.type) return p.type === t
-                  // fallback: infer by name keywords
-                  return t === 'drink' ? /coffee|espresso|tea|water|juice|soda/i.test(p.name) : /croissant|sandwich|salad|burger|wrap|pastry/i.test(p.name) || t === 'retail'
+                    // fetched menu items include a `type` field; sample items do not — handle both
+                    if (p.type) return p.type === t
+                    // fallback: infer by name keywords
+                    return t === 'drink' ? /coffee|espresso|tea|water|juice|soda/i.test(p.name) : /croissant|sandwich|salad|burger|wrap|pastry/i.test(p.name) || t === 'retail'
                 })
               }
             }
@@ -289,7 +288,7 @@ export default function POSCheckoutShell({ terminalId }: { terminalId?: string }
           <div className="mb-4 p-3 border rounded bg-white shadow-sm">
             <div className="flex items-center justify-between">
               <div>
-                <div className="text-xs text-muted-foreground">Today's Sales</div>
+                <div className="text-xs text-muted-foreground">Today&apos;s Sales</div>
                 <div className="text-lg font-semibold">{departmentSection?.name}</div>
               </div>
               <div>

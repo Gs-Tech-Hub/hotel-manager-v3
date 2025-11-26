@@ -1,15 +1,26 @@
 "use client"
 
+export const dynamic = 'force-dynamic'
+
 import React, { useEffect, useState } from 'react'
 import { mapDeptCodeToCategory } from '@/lib/utils'
-import { useSearchParams, useRouter } from 'next/navigation'
+import Link from 'next/link'
+import { useRouter } from 'next/navigation'
 
 type Item = { id: string; name: string; quantity?: number; available?: number }
 
 export default function InventoryTransferPage() {
-  const search = useSearchParams()
   const router = useRouter()
-  const source = search.get('source')
+  const [source, setSource] = useState<string | null>(null)
+
+  useEffect(() => {
+    try {
+      const params = new URLSearchParams(window.location.search)
+      setSource(params.get('source'))
+    } catch (e) {
+      // window might be undefined during some rendering lifecycles; ignore
+    }
+  }, [])
 
   const [query, setQuery] = useState('')
   const [results, setResults] = useState<Item[]>([])
@@ -131,7 +142,7 @@ export default function InventoryTransferPage() {
       </div>
 
       {!source && (
-        <div className="text-sm text-red-600">No source department selected. Go back to <a className="text-sky-600" href="/inventory">Inventory</a> and pick a source department.</div>
+        <div className="text-sm text-red-600">No source department selected. Go back to <Link className="text-sky-600" href="/inventory">Inventory</Link> and pick a source department.</div>
       )}
 
       <div className="grid grid-cols-1 md:grid-cols-3 gap-6">

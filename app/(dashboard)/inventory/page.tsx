@@ -3,7 +3,7 @@
 import Link from 'next/link'
 import { useEffect, useState } from 'react'
 import { mapDeptCodeToCategory } from '@/lib/utils'
-import { useSearchParams } from 'next/navigation'
+// avoid next/navigation useSearchParams here to prevent prerender/suspense issues
 import TransferAuditPanel from '@/components/departments/TransferAuditPanel'
 
 type Department = { id: string; code: string; name: string }
@@ -73,10 +73,14 @@ export default function InventoryPage() {
   }, [selectedDept])
 
   // Initialize selected department from the URL query (so returning from a transfer keeps the selection)
-  const search = useSearchParams()
   useEffect(() => {
-    const dept = search?.get?.('department')
-    if (dept) setSelectedDept(dept)
+    try {
+      const params = new URLSearchParams(window.location.search)
+      const dept = params.get('department')
+      if (dept) setSelectedDept(dept)
+    } catch (e) {
+      // ignore
+    }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
 

@@ -21,8 +21,11 @@ type ItemDetail = {
   movements?: Movement[]
 }
 
-export default function InventoryDetail({ params }: { params: { id: string } }) {
-  const { id } = params
+export default function InventoryDetail(...args: any[]) {
+  // Accept flexible args to satisfy Next.js generated PageProps typing variations
+  const maybeProps = args[0] || {};
+  const params = maybeProps.params || {};
+  const id = params.id || (typeof maybeProps === 'string' ? maybeProps : undefined);
   const [item, setItem] = useState<ItemDetail | null>(null)
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
@@ -46,7 +49,7 @@ export default function InventoryDetail({ params }: { params: { id: string } }) 
     }
   }
 
-  useEffect(() => { fetchItem() }, [id])
+  useEffect(() => { if (id) fetchItem() }, [id])
 
   const submitRestock = async (e: React.FormEvent) => {
     e.preventDefault()

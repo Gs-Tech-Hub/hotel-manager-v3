@@ -21,9 +21,11 @@ export interface AuthSession {
  * Create a JWT token for a user
  */
 export async function createToken(session: AuthSession): Promise<string> {
-  const token = await new SignJWT(session)
+  // SignJWT expects a plain object payload compatible with JWTPayload
+  const payload = session as unknown as Record<string, unknown>;
+  const token = await new SignJWT(payload)
     .setProtectedHeader({ alg: "HS256" })
-    .setExpirationTime("7d")
+    .setExpirationTime(TOKEN_EXPIRY)
     .sign(SECRET);
 
   return token;
@@ -37,7 +39,7 @@ export async function verifyToken(
 ): Promise<AuthSession | null> {
   try {
     const verified = await jwtVerify(token, SECRET);
-    return verified.payload as AuthSession;
+    return verified.payload as unknown as AuthSession;
   } catch {
     return null;
   }
