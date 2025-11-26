@@ -1,5 +1,5 @@
 "use client";
-import { Bell, Search } from "lucide-react";
+import { Bell, Search, LogOut } from "lucide-react";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
 import {
@@ -13,10 +13,26 @@ import {
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { AppSwitcher } from "./app-switcher";
 import { ThemeToggle } from "@/components/theme-toggle";
+import { useAuth } from "@/components/auth-context";
+import { useRouter } from "next/navigation";
+import { useState } from "react";
 
 
 
 export function Topbar() {
+	const { user, logout, isAuthenticated } = useAuth();
+	const router = useRouter();
+	const [isLoggingOut, setIsLoggingOut] = useState(false);
+
+	const handleLogout = async () => {
+		setIsLoggingOut(true);
+		await logout();
+		router.push("/login");
+		router.refresh();
+	};
+
+	if (!isAuthenticated) return null;
+
 	return (
 		<div className="flex h-16 items-center justify-between border-b px-6 bg-background/95 backdrop-blur supports-[backdrop-filter]:bg-background/60">
 			{/* Search */}
@@ -62,7 +78,7 @@ export function Topbar() {
 							<Avatar className="h-8 w-8 ring-2 ring-background">
 								<AvatarImage src="/avatar.png" alt="User" />
 								<AvatarFallback className="bg-primary text-primary-foreground font-semibold">
-									UN
+									{user?.firstName?.charAt(0)}{user?.lastName?.charAt(0)}
 								</AvatarFallback>
 							</Avatar>
 						</Button>
@@ -73,13 +89,18 @@ export function Topbar() {
 								<Avatar className="h-10 w-10">
 									<AvatarImage src="/avatar.png" alt="User" />
 									<AvatarFallback className="bg-primary text-primary-foreground">
-										UN
+										{user?.firstName?.charAt(0)}{user?.lastName?.charAt(0)}
 									</AvatarFallback>
 								</Avatar>
 								<div className="flex flex-col space-y-1">
-									<p className="text-sm font-medium leading-none">John Doe</p>
+									<p className="text-sm font-medium leading-none">
+										{user?.firstName} {user?.lastName}
+									</p>
 									<p className="text-xs leading-none text-muted-foreground">
-										john.doe@example.com
+										{user?.email}
+									</p>
+									<p className="text-xs leading-none text-muted-foreground font-medium text-blue-600">
+										{user?.userType === 'admin' ? '👑 Administrator' : '👤 ' + (user?.roles?.[0]?.name || 'Employee')}
 									</p>
 								</div>
 							</div>
@@ -92,11 +113,16 @@ export function Topbar() {
 							<span className="flex items-center gap-2">⚙️ Settings</span>
 						</DropdownMenuItem>
 						<DropdownMenuItem className="p-3 cursor-pointer hover:bg-muted rounded-md transition-colors">
-							<span className="flex items-center gap-2">💳 Billing</span>
+							<span className="flex items-center gap-2">🔐 Change Password</span>
 						</DropdownMenuItem>
 						<DropdownMenuSeparator className="my-2" />
-						<DropdownMenuItem className="p-3 cursor-pointer text-red-600 hover:bg-red-50 hover:text-red-700 rounded-md transition-colors">
-							<span className="flex items-center gap-2">🚪 Log out</span>
+						<DropdownMenuItem 
+							onClick={handleLogout}
+							disabled={isLoggingOut}
+							className="p-3 cursor-pointer text-red-600 hover:bg-red-50 hover:text-red-700 rounded-md transition-colors"
+						>
+							<LogOut className="w-4 h-4 mr-2" />
+							{isLoggingOut ? 'Logging out...' : 'Log out'}
 						</DropdownMenuItem>
 					</DropdownMenuContent>
 				</DropdownMenu>

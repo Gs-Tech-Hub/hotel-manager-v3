@@ -1,75 +1,256 @@
+import { NextRequest, NextResponse } from "next/server";
+import { withPermission } from "@/lib/auth/middleware";
+import { prisma } from "@/lib/auth/prisma";
+
 /**
- * GET /api/admin/roles - List all roles
- * POST /api/admin/roles - Create new role
- * 
- * Admin only
+ * GET /api/admin/roles
+ * List all roles with their permissions
  */
-
-import { NextRequest } from 'next/server';
-import { roleManagementService } from '@/services/role-management.service';
-import { extractUserContext, isAdmin } from '@/lib/user-context';
-import { sendSuccess, sendError, validateBody } from '@/lib/api-handler';
-import { ErrorCodes } from '@/lib/api-response';
-
-// GET - List all roles
-export async function GET(req: NextRequest) {
+async function listRoles(req: NextRequest) {
   try {
-    const ctx = extractUserContext(req);
+    const url = new URL(req.url);
+    const type = url.searchParams.get("type"); // admin, employee, or all
+    const page = parseInt(url.searchParams.get("page") || "1");
+    const limit = parseInt(url.searchParams.get("limit") || "50");
 
-    // Check admin access
-    if (!isAdmin(ctx)) {
-      return sendError(ErrorCodes.FORBIDDEN, 'Admin access required');
-    }
+    const skip = (page - 1) * limit;
 
-    const roles = await roleManagementService.getAllRoles();
+    const where = type && type !== "all" ? { type } : {};
 
-    if ('error' in roles) {
-      return sendError(roles.error.code, roles.error.message);
-    }
+    const [roles, total] = await Promise.all([
+      prisma.role.findMany({
+        where,
+        skip,
+        take: limit,
+        include: {
+          rolePermissions: {
+            include: {
+              permission: true,
+            },
+          },
+        },
+      }),
+      prisma.role.count({ where }),
+    ]);
 
-    return sendSuccess(roles, 'Roles fetched successfully');
+    return NextResponse.json(
+      {
+        success: true,
+        data: roles.map((role) => ({
+          id: role.id,
+          code: role.code,
+          name: role.name,
+          description: role.description,
+          type: role.type,
+          isActive: role.isActive,
+          permissions: role.rolePermissions.map((rp) => ({
+            id: rp.permission.id,
+            action: rp.permission.action,
+            subject: rp.permission.subject,
+          })),
+          createdAt: role.createdAt,
+        })),
+        pagination: {
+          page,
+          limit,
+          total,
+          pages: Math.ceil(total / limit),
+        },
+      },
+      { status: 200 }
+    );
   } catch (error) {
-    const message = error instanceof Error ? error.message : 'Failed to fetch roles';
-    return sendError(ErrorCodes.INTERNAL_ERROR, message);
+    console.error("[ADMIN] List roles error:", error);
+    return NextResponse.json(
+      { error: "Failed to list roles" },
+      { status: 500 }
+    );
   }
 }
 
-// POST - Create new role
-export async function POST(req: NextRequest) {
+/**
+ * POST /api/admin/roles
+ * Create a new role
+ */
+async function createRole(req: NextRequest) {
   try {
-    const ctx = extractUserContext(req);
+    const body = await req.json();
+    const { code, name, description, type, permissionIds } = body;
 
-    // Check admin access
-    if (!isAdmin(ctx)) {
-      return sendError(ErrorCodes.FORBIDDEN, 'Admin access required');
+    // Validate input
+    if (!code || !name || !type) {
+      return NextResponse.json(
+        { error: "Missing required fields: code, name, type" },
+        { status: 400 }
+      );
     }
 
-    const { data, error } = await validateBody<{
-      code: string;
-      name: string;
-      description?: string;
-    }>(req, (body) => {
-      if (!body.code || !body.name) {
-        throw new Error('code and name are required');
-      }
-      return body;
+    // Check if role exists
+    const existing = await prisma.role.findUnique({
+      where: { code },
     });
 
-    if (error) return error;
-
-    const result = await roleManagementService.createRole(
-      data.code,
-      data.name,
-      data.description
-    );
-
-    if ('error' in result) {
-      return sendError(result.error.code, result.error.message);
+    if (existing) {
+      return NextResponse.json(
+        { error: "Role with this code already exists" },
+        { status: 409 }
+      );
     }
 
-    return sendSuccess(result, 'Role created successfully', 201);
+    // Create role
+    const role = await prisma.role.create({
+      data: {
+        code,
+        name,
+        description,
+        type,
+        isActive: true,
+      },
+    });
+
+    // Assign permissions if provided
+    if (permissionIds && Array.isArray(permissionIds)) {
+      await Promise.all(
+        permissionIds.map((permId) =>
+          prisma.rolePermission.create({
+            data: {
+              roleId: role.id,
+              permissionId: permId,
+            },
+          })
+        )
+      );
+    }
+
+    console.log(`[ADMIN] Created role: ${code} (ID: ${role.id})`);
+
+    return NextResponse.json(
+      {
+        success: true,
+        data: role,
+      },
+      { status: 201 }
+    );
   } catch (error) {
-    const message = error instanceof Error ? error.message : 'Failed to create role';
-    return sendError(ErrorCodes.INTERNAL_ERROR, message);
+    console.error("[ADMIN] Create role error:", error);
+    return NextResponse.json(
+      { error: "Failed to create role" },
+      { status: 500 }
+    );
   }
 }
+
+/**
+ * PUT /api/admin/roles/[id]
+ * Update a role
+ */
+async function updateRole(req: NextRequest, id: string) {
+  try {
+    const body = await req.json();
+    const { name, description, isActive, permissionIds } = body;
+
+    const role = await prisma.role.update({
+      where: { id },
+      data: {
+        name,
+        description,
+        isActive,
+      },
+    });
+
+    // Update permissions if provided
+    if (permissionIds && Array.isArray(permissionIds)) {
+      // Remove old permissions
+      await prisma.rolePermission.deleteMany({
+        where: { roleId: id },
+      });
+
+      // Add new permissions
+      await Promise.all(
+        permissionIds.map((permId) =>
+          prisma.rolePermission.create({
+            data: {
+              roleId: id,
+              permissionId: permId,
+            },
+          })
+        )
+      );
+    }
+
+    console.log(`[ADMIN] Updated role: ${id}`);
+
+    return NextResponse.json(
+      {
+        success: true,
+        data: role,
+      },
+      { status: 200 }
+    );
+  } catch (error) {
+    console.error("[ADMIN] Update role error:", error);
+    return NextResponse.json(
+      { error: "Failed to update role" },
+      { status: 500 }
+    );
+  }
+}
+
+/**
+ * DELETE /api/admin/roles/[id]
+ * Delete a role (deactivate)
+ */
+async function deleteRole(req: NextRequest, id: string) {
+  try {
+    // Deactivate instead of deleting
+    await prisma.role.update({
+      where: { id },
+      data: { isActive: false },
+    });
+
+    console.log(`[ADMIN] Deactivated role: ${id}`);
+
+    return NextResponse.json(
+      {
+        success: true,
+        message: "Role deactivated successfully",
+      },
+      { status: 200 }
+    );
+  } catch (error) {
+    console.error("[ADMIN] Delete role error:", error);
+    return NextResponse.json(
+      { error: "Failed to delete role" },
+      { status: 500 }
+    );
+  }
+}
+
+// Route handlers with permission checks
+export const GET = withPermission(
+  listRoles,
+  "roles.read"
+);
+
+export const POST = withPermission(
+  createRole,
+  "roles.create"
+);
+
+export const PUT = withPermission(
+  async (req, ctx) => {
+    const url = new URL(req.url);
+    const id = url.pathname.split("/").pop();
+    return updateRole(req, id!);
+  },
+  "roles.update"
+);
+
+export const DELETE = withPermission(
+  async (req, ctx) => {
+    const url = new URL(req.url);
+    const id = url.pathname.split("/").pop();
+    return deleteRole(req, id!);
+  },
+  "roles.delete"
+);

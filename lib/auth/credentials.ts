@@ -1,6 +1,6 @@
 import { prisma } from "./prisma";
 import bcrypt from "bcryptjs";
-import { createToken, AuthSession, setAuthCookie } from "./session";
+import { createToken, createRefreshToken, AuthSession, setAuthCookie } from "./session";
 
 /**
  * Hash password using bcrypt
@@ -63,10 +63,11 @@ export async function loginUser(
         lastName: employeeUser.lastname || undefined,
       };
 
-      const token = await createToken(session);
-      await setAuthCookie(token);
+      const accessToken = await createToken(session);
+      const refreshToken = await createRefreshToken(employeeUser.id);
+      await setAuthCookie(accessToken, refreshToken);
 
-      return { success: true, token };
+      return { success: true, token: accessToken };
     }
 
     // Verify admin password
@@ -84,10 +85,11 @@ export async function loginUser(
       lastName: user.lastname || undefined,
     };
 
-    const token = await createToken(session);
-    await setAuthCookie(token);
+    const accessToken = await createToken(session);
+    const refreshToken = await createRefreshToken(user.id);
+    await setAuthCookie(accessToken, refreshToken);
 
-    return { success: true, token };
+    return { success: true, token: accessToken };
   } catch (error) {
     console.error("Login error:", error);
     return { success: false, error: "Login failed" };

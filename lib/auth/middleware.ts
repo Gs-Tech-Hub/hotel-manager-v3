@@ -4,6 +4,13 @@
  * Next.js middleware for enforcing role-based access control.
  * Use with API routes to protect endpoints.
  * 
+ * Features:
+ * - Single permission check
+ * - Multiple permissions (all required)
+ * - Multiple permissions (any required)
+ * - Auth-only (no specific permission required)
+ * - Comprehensive logging and error handling
+ * 
  * Usage:
  *   export const POST = withPermission(
  *     handler,
@@ -14,7 +21,92 @@
 
 import { NextRequest, NextResponse } from "next/server";
 import { checkPermission, type PermissionContext } from "./rbac";
-import { verifyAuthHeader, extractUserFromHeaders } from "./session";
+import { verifyAuthHeader, extractUserFromHeaders, getSession, validateSession } from "./session";
+
+/**
+ * Helper to extract and validate user context from request
+ */
+async function extractAndValidateContext(
+  req: NextRequest
+): Promise<{ context: PermissionContext | null; error: NextResponse | null }> {
+  try {
+    // Try to verify JWT from Authorization header first
+    const authHeader = req.headers.get("authorization");
+    let session = null;
+
+    if (authHeader) {
+      session = await verifyAuthHeader(authHeader);
+    }
+
+    // If no valid JWT, try to get from cookies
+    if (!session) {
+      session = await getSession();
+    }
+
+    // If still no session, extract from headers (fallback)
+    if (!session) {
+      const headerContext = extractUserFromHeaders(req.headers);
+      if (headerContext.userId && headerContext.userType) {
+        return {
+          context: {
+            userId: headerContext.userId,
+            userType: headerContext.userType as "admin" | "employee",
+            departmentId: headerContext.departmentId,
+          },
+          error: null,
+        };
+      }
+    }
+
+    if (!session) {
+      return {
+        context: null,
+        error: NextResponse.json(
+          {
+            error: "Unauthorized",
+            message: "Authentication required",
+          },
+          { status: 401 }
+        ),
+      };
+    }
+
+    // Validate session is still active
+    const isValid = await validateSession(session);
+    if (!isValid) {
+      return {
+        context: null,
+        error: NextResponse.json(
+          {
+            error: "Unauthorized",
+            message: "Session expired or user inactive",
+          },
+          { status: 401 }
+        ),
+      };
+    }
+
+    const ctx: PermissionContext = {
+      userId: session.userId,
+      userType: session.userType,
+      departmentId: session.departmentId,
+    };
+
+    return { context: ctx, error: null };
+  } catch (error) {
+    console.error("[AUTH] Context extraction error:", error);
+    return {
+      context: null,
+      error: NextResponse.json(
+        {
+          error: "Internal Server Error",
+          message: "Failed to extract user context",
+        },
+        { status: 500 }
+      ),
+    };
+  }
+}
 
 /**
  * Higher-order function to protect API routes with permission checks.
@@ -34,45 +126,25 @@ export function withPermission(
 ) {
   return async (req: NextRequest) => {
     try {
-      // Try to verify JWT from Authorization header first
-      const authHeader = req.headers.get("authorization");
-      let session = null;
+      const { context, error } = await extractAndValidateContext(req);
 
-      if (authHeader) {
-        session = await verifyAuthHeader(authHeader);
+      if (error) {
+        return error;
       }
 
-      // If no valid JWT, extract from headers (set by auth middleware)
-      const userId = session?.userId || req.headers.get("x-user-id");
-      const userType = (session?.userType || req.headers.get("x-user-type")) as
-        | "admin"
-        | "employee"
-        | "other";
-      const departmentId = session?.departmentId || req.headers.get("x-department-id");
-
-      // Validate required fields
-      if (!userId || !userType) {
+      if (!context) {
         return NextResponse.json(
-          {
-            error: "Unauthorized",
-            message: "User context missing from request headers",
-          },
+          { error: "Unauthorized", message: "Invalid context" },
           { status: 401 }
         );
       }
 
-      const ctx: PermissionContext = {
-        userId,
-        userType,
-        departmentId: departmentId || undefined,
-      };
-
       // Check permission
-      const allowed = await checkPermission(ctx, action, subject);
+      const allowed = await checkPermission(context, action, subject);
 
       if (!allowed) {
         console.warn(
-          `[AUTH] Forbidden: ${userId} (${userType}) tried ${action}:${subject}`
+          `[AUTH] Forbidden: ${context.userId} (${context.userType}) tried ${action}:${subject}`
         );
 
         return NextResponse.json(
@@ -84,8 +156,12 @@ export function withPermission(
         );
       }
 
+      console.log(
+        `[AUTH] Allowed: ${context.userId} (${context.userType}) performed ${action}:${subject}`
+      );
+
       // Pass request to handler with context
-      return handler(req, ctx);
+      return handler(req, context);
     } catch (error) {
       console.error("[AUTH] Permission check error:", error);
 
@@ -250,28 +326,24 @@ export function withAuth(
 ) {
   return async (req: NextRequest) => {
     try {
-      const userId = req.headers.get("x-user-id");
-      const userType = req.headers.get("x-user-type") as
-        | "admin"
-        | "employee"
-        | "other";
+      const { context, error } = await extractAndValidateContext(req);
 
-      if (!userId || !userType) {
+      if (error) {
+        return error;
+      }
+
+      if (!context) {
         return NextResponse.json(
-          { error: "Unauthorized", message: "User not authenticated" },
+          { error: "Unauthorized", message: "Invalid context" },
           { status: 401 }
         );
       }
 
-      const departmentId = req.headers.get("x-department-id");
+      console.log(
+        `[AUTH] Authenticated: ${context.userId} (${context.userType})`
+      );
 
-      const ctx: PermissionContext = {
-        userId,
-        userType,
-        departmentId: departmentId || undefined,
-      };
-
-      return handler(req, ctx);
+      return handler(req, context);
     } catch (error) {
       console.error("[AUTH] Authentication check error:", error);
 

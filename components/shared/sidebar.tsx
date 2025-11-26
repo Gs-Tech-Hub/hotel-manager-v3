@@ -111,6 +111,29 @@ const sidebarGroups = [
 					],
 				},
 	{
+		title: "Administration",
+		items: [
+			{
+				title: "Users",
+				href: "/dashboard/admin/users",
+				icon: Users,
+				badge: null,
+			},
+			{
+				title: "Roles & Permissions",
+				href: "/dashboard/admin/roles",
+				icon: Shield,
+				badge: null,
+			},
+			{
+				title: "Sessions",
+				href: "/dashboard/admin/sessions",
+				icon: LogIn,
+				badge: null,
+			},
+		],
+	},
+	{
 		title: "Pages",
 		items: [
 			{
