@@ -6,6 +6,7 @@ import { z } from "zod";
 import { toast } from "sonner";
 import { useRouter } from "next/navigation";
 import { useState } from "react";
+import { useEffect } from 'react';
 
 import { Button } from "@/components/ui/button";
 import {
@@ -41,6 +42,25 @@ export default function LoginPage() {
 	const router = useRouter();
 	const [isLoading, setIsLoading] = useState(false);
 
+	// If a session already exists, redirect to dashboard
+	useEffect(() => {
+		let mounted = true;
+		(async () => {
+			try {
+				const res = await fetch('/api/auth/session', { credentials: 'include' });
+				if (!mounted) return;
+				if (res.ok) {
+					// already authenticated → redirect
+					router.replace('/dashboard');
+				}
+			} catch (err) {
+				// ignore errors — user not authenticated
+			}
+		})();
+
+		return () => { mounted = false; };
+	}, [router]);
+
 	const form = useForm<z.infer<typeof formSchema>>({
 		resolver: zodResolver(formSchema),
 		defaultValues: {
@@ -58,6 +78,7 @@ export default function LoginPage() {
 					"Content-Type": "application/json",
 				},
 				body: JSON.stringify(values),
+				credentials: 'include',
 			});
 
 			const data = await response.json();

@@ -26,7 +26,7 @@ export async function comparePassword(
 export async function loginUser(
   email: string,
   password: string
-): Promise<{ success: boolean; error?: string; token?: string }> {
+): Promise<{ success: boolean; error?: string; token?: string; userId?: string; userType?: "admin" | "employee"; departmentId?: string | null }> {
   try {
     // Try to find admin user first
     const user = await prisma.adminUser.findUnique({
@@ -67,7 +67,7 @@ export async function loginUser(
       const refreshToken = await createRefreshToken(employeeUser.id);
       await setAuthCookie(accessToken, refreshToken);
 
-      return { success: true, token: accessToken };
+      return { success: true, token: accessToken, userId: employeeUser.id, userType: "employee", departmentId: null };
     }
 
     // Verify admin password
@@ -89,7 +89,7 @@ export async function loginUser(
     const refreshToken = await createRefreshToken(user.id);
     await setAuthCookie(accessToken, refreshToken);
 
-    return { success: true, token: accessToken };
+    return { success: true, token: accessToken, userId: user.id, userType: "admin", departmentId: null };
   } catch (error) {
     console.error("Login error:", error);
     return { success: false, error: "Login failed" };

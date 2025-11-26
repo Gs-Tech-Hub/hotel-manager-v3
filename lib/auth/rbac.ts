@@ -12,6 +12,44 @@
 
 import { prisma } from "@/lib/prisma";
 
+// Cached schema detection to support both unified RBAC and legacy admin tables
+let _schemaDetected = false;
+let _hasUnifiedRoles = false; // 'roles' table
+let _hasUserRoles = false; // 'user_roles' table
+let _hasAdminRoles = false; // 'admin_roles' table
+
+async function detectSchema() {
+  if (_schemaDetected) return;
+  try {
+    const rolesRow: any[] = await prisma.$queryRaw`
+      SELECT EXISTS (
+        SELECT FROM information_schema.tables
+        WHERE table_schema = 'public' AND table_name = 'roles'
+      ) as exists`;
+    _hasUnifiedRoles = Array.isArray(rolesRow) && (rolesRow[0]?.exists || false);
+
+    const userRolesRow: any[] = await prisma.$queryRaw`
+      SELECT EXISTS (
+        SELECT FROM information_schema.tables
+        WHERE table_schema = 'public' AND table_name = 'user_roles'
+      ) as exists`;
+    _hasUserRoles = Array.isArray(userRolesRow) && (userRolesRow[0]?.exists || false);
+
+    const adminRolesRow: any[] = await prisma.$queryRaw`
+      SELECT EXISTS (
+        SELECT FROM information_schema.tables
+        WHERE table_schema = 'public' AND table_name = 'admin_roles'
+      ) as exists`;
+    _hasAdminRoles = Array.isArray(adminRolesRow) && (adminRolesRow[0]?.exists || false);
+   
+     console.log('[RBAC] Schema detection: _hasUnifiedRoles=', _hasUnifiedRoles, ', _hasUserRoles=', _hasUserRoles, ', _hasAdminRoles=', _hasAdminRoles);
+  } catch (err) {
+    console.warn("[RBAC] Schema detection failed, defaulting to unified assumptions:", err);
+  }
+
+  _schemaDetected = true;
+}
+
 export interface PermissionContext {
   userId: string;
   userType: "admin" | "employee" | "other";
@@ -33,6 +71,33 @@ export async function checkPermission(
   subject?: string | null
 ): Promise<boolean> {
   try {
+    await detectSchema();
+
+    // If legacy admin roles are present and this is an admin user, use legacy admin tables
+    if (!_hasUserRoles && _hasAdminRoles && ctx.userType === 'admin') {
+      try {
+        const admin = await prisma.adminUser.findUnique({
+          where: { id: ctx.userId },
+          include: { roles: { include: { permissions: true } } },
+        });
+
+        if (!admin) return false;
+
+        for (const r of admin.roles || []) {
+          for (const p of r.permissions || []) {
+            if (p.action === action && (p.subject || null) === (subject || null)) {
+              return true;
+            }
+          }
+        }
+
+        return false;
+      } catch (err) {
+        console.error('[RBAC] Legacy admin permission check failed:', err);
+        return false;
+      }
+    }
+
     // Check 1: Direct user permissions (bypasses role)
     const userPermission = await prisma.userPermission.findFirst({
       where: {
@@ -136,9 +201,34 @@ export async function getUserPermissions(
   ctx: PermissionContext
 ): Promise<string[]> {
   try {
+    await detectSchema();
+
     const permissions = new Set<string>();
 
-    // Fetch direct user permissions
+    // Legacy admin roles: fetch AdminRole -> AdminPermission
+    if (!_hasUserRoles && _hasAdminRoles && ctx.userType === 'admin') {
+      try {
+        const admin = await prisma.adminUser.findUnique({
+          where: { id: ctx.userId },
+          include: { roles: { include: { permissions: true } } },
+        });
+
+        if (!admin) return [];
+
+        for (const role of admin.roles || []) {
+          for (const perm of role.permissions || []) {
+            permissions.add(`${perm.action}:${perm.subject || ""}`);
+          }
+        }
+
+        return Array.from(permissions);
+      } catch (err) {
+        console.error('[RBAC] Failed to fetch legacy admin permissions:', err);
+        return [];
+      }
+    }
+
+    // Unified RBAC (or default)
     const userPerms = await prisma.userPermission.findMany({
       where: {
         userId: ctx.userId,
@@ -156,7 +246,7 @@ export async function getUserPermissions(
       permissions.add(key);
     });
 
-    // Fetch role-based permissions
+    // Fetch role-based permissions (unified)
     const userRoles = await prisma.userRole.findMany({
       where: {
         userId: ctx.userId,
@@ -347,8 +437,10 @@ export async function grantPermission(
   permissionId: string,
   grantedBy: string,
   departmentId?: string | null
-) {
+): Promise<any> {
   try {
+    await detectSchema();
+
     const userPermission = await prisma.userPermission.create({
       data: {
         userId: targetUserId,
@@ -364,7 +456,7 @@ export async function grantPermission(
     });
 
     console.log(
-      `[AUDIT] Permission granted: ${grantedBy} → ${targetUserId} (${userPermission.permission.action})`
+      `[AUDIT] Permission granted: ${grantedBy} → ${targetUserId} (${userPermission.permission?.action || permissionId})`
     );
 
     return userPermission;

@@ -8,6 +8,7 @@ interface ProtectedRouteProps {
   children: ReactNode;
   requiredRole?: string;
   requiredPermission?: string;
+  requiredPermissions?: string[];
   fallback?: ReactNode;
 }
 
@@ -15,6 +16,7 @@ export function ProtectedRoute({
   children,
   requiredRole,
   requiredPermission,
+  requiredPermissions,
   fallback,
 }: ProtectedRouteProps) {
   const { user, isAuthenticated, isLoading, hasRole, hasPermission } = useAuth();
@@ -59,6 +61,7 @@ export function ProtectedRoute({
   }
 
   // Check permission requirement
+  // Single permission check (backwards compatible)
   if (requiredPermission && !hasPermission(requiredPermission)) {
     return (
       fallback || (
@@ -71,6 +74,24 @@ export function ProtectedRoute({
         </div>
       )
     );
+  }
+
+  // Multiple permissions: require ALL provided permissions to be present
+  if (requiredPermissions && requiredPermissions.length > 0) {
+    const allowedAll = requiredPermissions.every((perm) => hasPermission(perm));
+    if (!allowedAll) {
+      return (
+        fallback || (
+          <div className="flex items-center justify-center min-h-screen">
+            <div className="text-center">
+              <h1 className="text-2xl font-bold text-red-600">Access Denied</h1>
+              <p className="text-gray-600 mt-2">You don't have the required permissions to access this page.</p>
+              <p className="text-sm text-gray-500 mt-1">Required permissions: {requiredPermissions.join(', ')}</p>
+            </div>
+          </div>
+        )
+      );
+    }
   }
 
   return <>{children}</>;

@@ -241,26 +241,67 @@ export async function buildSession(
     if (!user) return null;
 
     // Fetch user roles
-    const userRoles = await prisma.userRole.findMany({
-      where: {
-        userId,
-        userType,
-        ...(departmentId ? { departmentId } : {}),
-      },
-      include: {
-        role: true,
-      },
-    });
+      // Check whether unified user_roles table exists. If not, fall back to
+      // legacy relations (e.g., adminUser.roles) to avoid Prisma P2021 errors.
+      try {
+        const hasUserRolesRow: any[] = await prisma.$queryRaw`
+          SELECT EXISTS (
+            SELECT FROM information_schema.tables
+            WHERE table_schema = 'public' AND table_name = 'user_roles'
+          ) as exists`;
+        const hasUserRoles = Array.isArray(hasUserRolesRow) && (hasUserRolesRow[0]?.exists || false);
 
-    return {
-      userId,
-      userType,
-      email,
-      firstName,
-      lastName,
-      departmentId,
-      roles: userRoles.map((ur) => ur.role.code),
-    };
+        let rolesList: string[] = [];
+
+        if (hasUserRoles) {
+          const userRoles = await prisma.userRole.findMany({
+            where: {
+              userId,
+              userType,
+              ...(departmentId ? { departmentId } : {}),
+            },
+            include: {
+              role: true,
+            },
+          });
+
+          rolesList = userRoles.map((ur) => ur.role.code);
+        } else if (userType === "admin") {
+          // Fallback for legacy schema: admin users fetch from AdminRole relation
+          try {
+            const adminWithRoles = await prisma.adminUser.findUnique({
+              where: { id: userId },
+              include: { roles: true },
+            });
+
+            rolesList = (adminWithRoles?.roles || []).map((r: any) => r.code);
+          } catch (err) {
+            console.warn("[AUTH] Legacy admin roles fetch failed:", err);
+            rolesList = [];
+          }
+        }
+
+        return {
+          userId,
+          userType,
+          email,
+          firstName,
+          lastName,
+          departmentId,
+          roles: rolesList,
+        };
+      } catch (err) {
+        console.error("Error fetching user roles (schema detection):", err);
+        return {
+          userId,
+          userType,
+          email,
+          firstName,
+          lastName,
+          departmentId,
+          roles: [],
+        };
+      }
   } catch (error) {
     console.error("Error building session:", error);
     return null;

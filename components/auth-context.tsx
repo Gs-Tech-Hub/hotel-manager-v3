@@ -9,6 +9,7 @@ export interface AuthUser {
   lastName?: string;
   userType: "admin" | "employee";
   roles: string[];
+  permissions?: string[];
   departmentId?: string;
 }
 
@@ -43,7 +44,14 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
       if (res.ok) {
         const { session } = await res.json();
-        setUser(session);
+        // fetch permissions for session
+        const permsRes = await fetch('/api/auth/permissions', { credentials: 'include' });
+        let perms: string[] = [];
+        if (permsRes.ok) {
+          const permsJson = await permsRes.json();
+          perms = permsJson.permissions || [];
+        }
+        setUser({ ...session, permissions: perms });
       } else {
         setUser(null);
       }
@@ -72,7 +80,14 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         }
 
         const { user: userData } = await res.json();
-        setUser(userData);
+        // fetch permissions after login
+        const permsRes = await fetch('/api/auth/permissions', { credentials: 'include' });
+        let perms: string[] = [];
+        if (permsRes.ok) {
+          const permsJson = await permsRes.json();
+          perms = permsJson.permissions || [];
+        }
+        setUser({ ...userData, permissions: perms });
       } catch (error) {
         console.error("Login error:", error);
         throw error;
@@ -107,7 +122,14 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
       if (res.ok) {
         const { user: userData } = await res.json();
-        setUser(userData);
+        // refresh permissions too
+        const permsRes = await fetch('/api/auth/permissions', { credentials: 'include' });
+        let perms: string[] = [];
+        if (permsRes.ok) {
+          const permsJson = await permsRes.json();
+          perms = permsJson.permissions || [];
+        }
+        setUser({ ...userData, permissions: perms });
       } else {
         setUser(null);
       }
@@ -120,9 +142,15 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   const hasPermission = useCallback(
     (permission: string): boolean => {
       if (!user) return false;
-      // In production, expand this to check actual permissions
-      // For now, check if user is admin
-      return user.userType === "admin";
+      // Superuser shortcut
+      if (user.userType === 'admin') return true;
+
+      // Check cached permissions (format: action:subject or action:"")
+      if (user.permissions && user.permissions.length > 0) {
+        return user.permissions.includes(permission);
+      }
+
+      return false;
     },
     [user]
   );
