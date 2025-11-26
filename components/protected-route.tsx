@@ -24,7 +24,11 @@ export function ProtectedRoute({
 
   useEffect(() => {
     if (!isLoading && !isAuthenticated) {
-      router.push('/login');
+      // use replace to avoid extra history entries and guard against
+      // redirecting if we're already on the login page
+      if (window.location.pathname !== '/login') {
+        router.replace('/login');
+      }
     }
   }, [isLoading, isAuthenticated, router]);
 

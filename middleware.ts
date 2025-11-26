@@ -12,6 +12,28 @@ export async function middleware(req: NextRequest) {
   const { pathname } = req.nextUrl;
 
   // Only protect dashboard routes
+  // If this is an auth page (login/register/forgot-password) and the user
+  // already has a valid session, redirect them to the dashboard to avoid
+  // client-side redirect loops.
+  const authPages = ["/login", "/register", "/forgot-password"];
+  if (authPages.includes(pathname)) {
+    const token = req.cookies.get("auth_token")?.value;
+    if (token) {
+      try {
+        const session = await verifyToken(token);
+        if (session) {
+          const url = req.nextUrl.clone();
+          url.pathname = "/dashboard";
+          return NextResponse.redirect(url);
+        }
+      } catch (err) {
+        // ignore and allow visiting auth page
+      }
+    }
+    return NextResponse.next();
+  }
+
+  // Only protect dashboard routes
   if (!pathname.startsWith("/dashboard")) {
     return NextResponse.next();
   }

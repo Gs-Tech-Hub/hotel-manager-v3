@@ -1,6 +1,7 @@
 "use client";
 
 import React, { createContext, useContext, useEffect, useState, useCallback } from "react";
+import { useRouter } from 'next/navigation';
 
 export interface AuthUser {
   id: string;
@@ -30,11 +31,12 @@ const AuthContext = createContext<AuthContextType | undefined>(undefined);
 export function AuthProvider({ children }: { children: React.ReactNode }) {
   const [user, setUser] = useState<AuthUser | null>(null);
   const [isLoading, setIsLoading] = useState(true);
+  const router = useRouter();
 
   // Validate session on mount
   useEffect(() => {
     validateSession();
-  }, []);
+  }, [router]);
 
   const validateSession = useCallback(async () => {
     try {
@@ -106,6 +108,12 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         credentials: "include",
       });
       setUser(null);
+      // Redirect to login after logout
+      try {
+        router.replace('/login');
+      } catch (err) {
+        // ignore if router not ready
+      }
     } catch (error) {
       console.error("Logout error:", error);
     } finally {
