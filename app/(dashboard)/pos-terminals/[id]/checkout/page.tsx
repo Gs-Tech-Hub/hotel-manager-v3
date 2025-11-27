@@ -1,10 +1,13 @@
 "use client"
 
+import React from 'react'
 import POSCheckoutShell from '@/components/admin/pos/pos-checkout'
 
 export default function TerminalCheckoutPage(props: any) {
   const { params } = props;
-  const { id } = params;
+  // `params` may be a Promise in newer Next.js versions — unwrap with React.use()
+  const resolved = React.use(params as any)
+  const { id } = resolved || (params as any) || {}
 
   return (
     <div>

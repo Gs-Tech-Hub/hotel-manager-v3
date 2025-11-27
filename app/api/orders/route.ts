@@ -224,6 +224,7 @@ export async function GET(request: NextRequest) {
     const limit = Math.min(100, Math.max(1, parseInt(searchParams.get('limit') || '20', 10)));
     const customerId = searchParams.get('customerId') || undefined;
     const status = searchParams.get('status') || undefined;
+    const departmentCode = searchParams.get('departmentCode') || undefined;
     const fromDate = searchParams.get('fromDate') ? new Date(searchParams.get('fromDate')!) : undefined;
     const toDate = searchParams.get('toDate') ? new Date(searchParams.get('toDate')!) : undefined;
     const sortBy = searchParams.get('sortBy') || 'createdAt';
@@ -255,6 +256,10 @@ export async function GET(request: NextRequest) {
     if (status) {
       filters.status = status;
     }
+    if (departmentCode) {
+      // filter orders that are routed to the given department code
+      filters.departments = { some: { department: { code: departmentCode } } };
+    }
     if (fromDate || toDate) {
       filters.createdAt = {};
       if (fromDate) filters.createdAt.gte = fromDate;
@@ -273,9 +278,10 @@ export async function GET(request: NextRequest) {
         include: {
           customer: true,
           lines: true,
-          departments: true,
+          departments: { include: { department: true } },
           discounts: true,
           payments: true,
+          fulfillments: true,
         },
         orderBy: sortOptions,
         skip,
@@ -290,8 +296,8 @@ export async function GET(request: NextRequest) {
 
     return NextResponse.json(
       successResponse({
-        orders,
-        pagination: {
+        items: orders,
+        meta: {
           page,
           limit,
           total,

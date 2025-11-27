@@ -13,10 +13,11 @@ type Order = {
     id: string;
     orderNumber?: string;
     customer?: { name?: string; phone?: string } | null;
-    department?: { name?: string } | null;
+    departments?: { department?: { name?: string; code?: string } }[] | null;
     status: string;
     createdAt: string;
     totalPrice: number;
+    fulfillments?: any[];
 };
 
 export default function PosOrdersPage() {
@@ -25,6 +26,8 @@ export default function PosOrdersPage() {
     const [isLoading, setIsLoading] = useState(true);
     const [search, setSearch] = useState("");
     const [statusFilter, setStatusFilter] = useState("");
+    const [departmentFilter, setDepartmentFilter] = useState("");
+    const [departmentsList, setDepartmentsList] = useState<{ code: string; name?: string }[]>([]);
     const [page, setPage] = useState(1);
     const [total, setTotal] = useState(0);
     const limit = 10;
@@ -36,6 +39,7 @@ export default function PosOrdersPage() {
                 const params = new URLSearchParams({ page: String(page), limit: String(limit) });
                 if (search) params.append("search", search);
                 if (statusFilter) params.append("status", statusFilter);
+                if (departmentFilter) params.append("departmentCode", departmentFilter);
                 const res = await fetch(`/api/orders?${params.toString()}`);
                 const data = await res.json();
                 if (data.success) {
@@ -49,35 +53,58 @@ export default function PosOrdersPage() {
             }
         };
         fetchOrders();
-    }, [page, search, statusFilter]);
+    }, [page, search, statusFilter, departmentFilter]);
+
+    useEffect(() => {
+        const fetchDepartments = async () => {
+            try {
+                const res = await fetch(`/api/departments?limit=200`);
+                const data = await res.json();
+                if (data?.success) {
+                    const list = (data.data?.items || []).map((d: any) => ({ code: d.code, name: d.name }));
+                    setDepartmentsList(list);
+                }
+            } catch (err) {
+                console.error("Failed to load departments", err);
+            }
+        };
+        fetchDepartments();
+    }, []);
 
     const columns = useMemo<Column<Order>[]>(
         () => [
-            { key: "orderNumber", label: "Order #", sortable: true, width: "w-36" },
+            { key: "orderNumber", label: "Order #", sortable: true, width: "w-28" },
             {
                 key: "customer",
                 label: "Customer",
-                render: (_v, item) => item.customer?.name || "Guest",
-                width: "w-56",
+                render: (_v, item) => item.customer?.firstName || "Guest",
+                width: "w-32",
             },
             {
-                key: "department",
-                label: "Department",
-                render: (_v, item) => item.department?.name || "-",
+                key: "departments",
+                label: "Departments",
+                render: (_v, item) => {
+                    const names = (item.departments || []).map((d) => d?.department?.name).filter(Boolean);
+                    return <span className="text-xs">{names.length ? names.join(", ") : "-"}</span>;
+                },
                 width: "w-40",
             },
             {
                 key: "createdAt",
                 label: "Created",
                 render: (v) => new Date(String(v)).toLocaleString(),
-                width: "w-44",
+                width: "w-36",
                 sortable: true,
             },
             {
                 key: "totalPrice",
                 label: "Total",
-                render: (v) => `$${(Number(v) / 100).toFixed(2)}`,
-                width: "w-28",
+                render: (v) => {
+                    const num = Number(v);
+                    if (isNaN(num)) return "$0.00";
+                    return `$${(num / 100).toFixed(2)}`;
+                },
+                width: "w-24",
             },
             {
                 key: "status",
@@ -87,26 +114,40 @@ export default function PosOrdersPage() {
                     const cls =
                         s === "pending"
                             ? "bg-yellow-100 text-yellow-800"
+                            : s === "processing"
+                            ? "bg-blue-100 text-blue-800"
                             : s === "completed"
+                            ? "bg-green-100 text-green-800"
+                            : s === "fulfilled"
                             ? "bg-green-100 text-green-800"
                             : s === "cancelled"
                             ? "bg-red-100 text-red-800"
                             : "bg-gray-100 text-gray-800";
                     return <Badge className={cls}>{s}</Badge>;
                 },
-                width: "w-36",
+                width: "w-28",
+            },
+            {
+                key: "fulfillments",
+                label: "Fulfillments",
+                render: (_v, item) => {
+                    const f = item.fulfillments || [];
+                    if (!f.length) return <span className="text-xs text-muted-foreground">-</span>;
+                    const statuses = f.map((ff: any) => ff.status).filter(Boolean);
+                    const unique = Array.from(new Set(statuses));
+                    return <span className="text-xs">{f.length} ({unique.join(", ")})</span>;
+                },
+                width: "w-28",
             },
             {
                 key: "id",
                 label: "Actions",
                 render: (_v, item) => (
-                    <div className="flex gap-2">
-                        <Button size="sm" variant="outline" onClick={(e) => { e.stopPropagation(); router.push(`/dashboard/pos/orders/${item.id}`); }}>
-                            View
-                        </Button>
-                    </div>
+                    <Button size="sm" variant="outline" onClick={(e) => { e.stopPropagation(); router.push(`/dashboard/pos/orders/${item.id}`); }}>
+                        View
+                    </Button>
                 ),
-                width: "w-32",
+                width: "w-20",
             },
         ],
         [router]
@@ -129,16 +170,35 @@ export default function PosOrdersPage() {
                             {
                                 key: "status",
                                 label: "Status",
-                                value: statusFilter,
+                                value: statusFilter || "all",
                                 options: [
+                                    { value: "all", label: "All" },
                                     { value: "pending", label: "Pending" },
                                     { value: "in_progress", label: "In Progress" },
                                     { value: "completed", label: "Completed" },
                                     { value: "cancelled", label: "Cancelled" },
                                 ],
                             },
+                            {
+                                key: "department",
+                                label: "Department",
+                                value: departmentFilter || "all",
+                                options: [
+                                    { value: "all", label: "All Departments" },
+                                    ...departmentsList.map((d) => ({ value: d.code, label: d.name || d.code })),
+                                ],
+                            },
                         ]}
-                        onFilterChange={(k, v) => { if (k === "status") { setStatusFilter(v); setPage(1); } }}
+                        onFilterChange={(k, v) => {
+                            if (k === "status") {
+                                setStatusFilter(v === "all" ? "" : v);
+                                setPage(1);
+                            }
+                            if (k === "department") {
+                                setDepartmentFilter(v === "all" ? "" : v);
+                                setPage(1);
+                            }
+                        }}
                     />
                 </div>
 
