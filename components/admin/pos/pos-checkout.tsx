@@ -79,39 +79,33 @@ export default function POSCheckoutShell({ terminalId }: { terminalId?: string }
 
         const res = await fetch('/api/orders', {
           method: 'POST',
+          credentials: 'include',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify(payload),
         })
 
         const json = await res.json().catch(() => null)
+        if (res.status === 401 || res.status === 403 || (json && json.error && json.error.code === 'UNAUTHORIZED')) {
+          // Authentication/authorization failed — surface error and do NOT print a receipt
+          const msg = (json && json.error && json.error.message) ? json.error.message : 'Not authorized'
+          setTerminalError(`Order failed: ${msg}`)
+          return
+        }
+
         if (res.ok && json && json.success && json.data) {
           // The server returns the created order header (or success payload)
           setReceipt(json.data)
           setCart([])
         } else {
-          // Fallback: show a local receipt if the API failed
-          const receipt = {
-            orderNumber: `T-${Date.now()}`,
-            items: cart,
-            subtotal,
-            tax,
-            total,
-            payment,
-            error: json && json.error ? json.error : undefined,
-          }
-          setReceipt(receipt)
+          // API failure — surface error and DO NOT print a receipt
+          const msg = (json && json.error && json.error.message) ? json.error.message : `Order API error (${res.status})`
+          setTerminalError(`Order failed: ${msg}`)
+          return
         }
       } catch (err) {
         console.error('Error posting order:', err)
-        const receipt = {
-          orderNumber: `T-${Date.now()}`,
-          items: cart,
-          subtotal,
-          tax,
-          total,
-          payment,
-        }
-        setReceipt(receipt)
+        setTerminalError('Order failed due to network or unexpected error')
+        return
       } finally {
         setShowPayment(false)
       }
@@ -132,7 +126,7 @@ export default function POSCheckoutShell({ terminalId }: { terminalId?: string }
     let mounted = true
     setLoadingDepartments(true)
     setDepartmentsError(null)
-    fetch('/api/admin/pos/terminals')
+    fetch('/api/admin/pos/terminals', { credentials: 'include' })
       .then((r) => r.json())
       .then((json) => {
         if (!mounted) return
@@ -169,8 +163,8 @@ export default function POSCheckoutShell({ terminalId }: { terminalId?: string }
     setLoadingProducts(true)
     setTerminalError(null)
 
-    // Use the real departments menu API (DB-backed) instead of the mock
-    fetch(`/api/departments/${encodeURIComponent(code)}/menu`)
+    // Use the real departments menu API (DB-backed)
+    fetch(`/api/departments/${encodeURIComponent(code)}/menu`, { credentials: 'include' })
       .then((r) => r.json())
       .then((json) => {
         if (!mounted) return
@@ -179,14 +173,14 @@ export default function POSCheckoutShell({ terminalId }: { terminalId?: string }
           setProducts(mapped)
         } else {
           setTerminalError('Failed to load products')
-          setProducts(sampleProducts)
+          setProducts([])
         }
       })
       .catch((err) => {
         console.error('Failed to fetch products', err)
         if (!mounted) return
         setTerminalError('Failed to load products (network)')
-        setProducts(sampleProducts)
+        setProducts([])
       })
       .finally(() => { if (mounted) setLoadingProducts(false) })
 
@@ -208,21 +202,11 @@ export default function POSCheckoutShell({ terminalId }: { terminalId?: string }
       setSummaryError(null)
       try {
         // primary endpoint
-        const res = await fetch(`/api/admin/pos/sales-summary?terminalId=${encodeURIComponent(sectionId)}`)
+        const res = await fetch(`/api/admin/pos/sales-summary?terminalId=${encodeURIComponent(sectionId)}`, { credentials: 'include' })
         if (res.ok) {
           const json = await res.json()
           if (mounted && json && json.success && json.data) {
             setSalesSummary({ count: Number(json.data.count || 0), total: Number(json.data.total || 0) })
-            return
-          }
-        }
-
-        // fallback to mock endpoint
-        const mock = await fetch(`/api/mock/sales-summary?terminalId=${encodeURIComponent(sectionId)}`)
-        if (mock.ok) {
-          const mj = await mock.json()
-          if (mounted && mj && mj.success && mj.data) {
-            setSalesSummary({ count: Number(mj.data.count || 0), total: Number(mj.data.total || 0) })
             return
           }
         }
@@ -264,10 +248,10 @@ export default function POSCheckoutShell({ terminalId }: { terminalId?: string }
 
           <POSCategorySelector categories={categories} selectedId={category ?? undefined} onSelect={(id) => setCategory(id)} />
 
-          {/* determine displayed products: prefer fetched products, fall back to sample */}
+          {/* determine displayed products: use fetched products only (no demo fallbacks) */}
           {(() => {
-            const source = products.length ? products : sampleProducts
-            let displayed = source
+            const source = products
+            let displayed = source || []
             if (category) {
               const mapCategoryToType: Record<string, string> = { foods: 'food', drinks: 'drink', retail: 'retail' }
               const t = mapCategoryToType[category]
@@ -275,12 +259,12 @@ export default function POSCheckoutShell({ terminalId }: { terminalId?: string }
                 displayed = source.filter((p: any) => {
                     // fetched menu items include a `type` field; sample items do not — handle both
                     if (p.type) return p.type === t
-                    // fallback: infer by name keywords
-                    return t === 'drink' ? /coffee|espresso|tea|water|juice|soda/i.test(p.name) : /croissant|sandwich|salad|burger|wrap|pastry/i.test(p.name) || t === 'retail'
+                    // if product missing type, conservatively don't include it
+                    return false
                 })
               }
             }
-            return <POSProductGrid products={loadingProducts ? sampleProducts : displayed} onAdd={handleAdd} />
+            return <POSProductGrid products={displayed} onAdd={handleAdd} />
           })()}
         </div>
 

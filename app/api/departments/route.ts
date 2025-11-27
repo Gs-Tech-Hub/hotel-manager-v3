@@ -19,7 +19,7 @@ export async function GET(request: NextRequest) {
     // Extract user context if present. Departments listing is public, so
     // we don't require authentication here — but we still load full roles
     // when headers are provided to allow role-aware responses elsewhere.
-    const ctx = extractUserContext(request);
+    const ctx = await extractUserContext(request);
     let userWithRoles = null as any | null
     if (ctx?.userId) {
       userWithRoles = await loadUserWithRoles(ctx.userId);

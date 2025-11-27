@@ -335,7 +335,13 @@ async function main() {
     }
 
     // 3) run demo seeds (food, drinks, example order)
-    await runDemoSeeds();
+    // Demo seeds are potentially destructive and intended only for explicit dev runs.
+    // Require explicit opt-in via SEED_RUN_DEMO=true to avoid accidentally seeding demo data.
+    if (process.env.SEED_RUN_DEMO === 'true') {
+      await runDemoSeeds();
+    } else {
+      console.log('Skipping demo seeds (SEED_RUN_DEMO !== true). Set SEED_RUN_DEMO=true to enable.');
+    }
 
     // 4) Optionally sync inventory from menu -> inventory items & department inventory
     if (process.env.SEED_SYNC_MENU_INVENTORY === 'true') {

@@ -100,7 +100,7 @@ export function Topbar() {
 										{user?.email}
 									</p>
 									<p className="text-xs leading-none text-muted-foreground font-medium text-blue-600">
-										{user?.userType === 'admin' ? '👑 Administrator' : '👤 ' + (user?.roles?.[0]?.name || 'Employee')}
+										{user?.userType === 'admin' ? '👑 Administrator' : '👤 ' + (user?.roles?.[0] || 'Employee')}
 									</p>
 								</div>
 							</div>

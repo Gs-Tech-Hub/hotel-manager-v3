@@ -23,7 +23,7 @@ interface RouteParams {
 export async function GET(req: NextRequest, { params }: RouteParams) {
   try {
     const { userId } = await params;
-    const ctx = extractUserContext(req);
+    const ctx = await extractUserContext(req);
 
     if (!isAdmin(ctx)) {
       return sendError(ErrorCodes.FORBIDDEN, 'Admin access required');
@@ -42,7 +42,7 @@ export async function GET(req: NextRequest, { params }: RouteParams) {
 export async function POST(req: NextRequest, { params }: RouteParams) {
   try {
     const { userId } = await params;
-    const ctx = extractUserContext(req);
+    const ctx = await extractUserContext(req);
 
     if (!isAdmin(ctx)) {
       return sendError(ErrorCodes.FORBIDDEN, 'Admin access required');
@@ -76,7 +76,7 @@ export async function POST(req: NextRequest, { params }: RouteParams) {
 export async function DELETE(req: NextRequest, { params }: RouteParams) {
   try {
     const { userId, roleId } = await params;
-    const ctx = extractUserContext(req);
+    const ctx = await extractUserContext(req);
 
     if (!isAdmin(ctx)) {
       return sendError(ErrorCodes.FORBIDDEN, 'Admin access required');

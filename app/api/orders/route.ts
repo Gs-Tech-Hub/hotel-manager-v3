@@ -8,6 +8,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { prisma } from '@/lib/prisma';
 import { extractUserContext, loadUserWithRoles, hasAnyRole } from '@/lib/user-context';
+import { checkPermission, type PermissionContext } from '@/lib/auth/rbac';
 import { successResponse, errorResponse, ErrorCodes, getStatusCode } from '@/lib/api-response';
 import { OrderService } from '@/services/order.service';
 
@@ -28,7 +29,7 @@ import { OrderService } from '@/services/order.service';
 export async function POST(request: NextRequest) {
   try {
     // Get user context
-    const ctx = extractUserContext(request);
+    const ctx = await extractUserContext(request);
     if (!ctx.userId) {
       return NextResponse.json(
         errorResponse(ErrorCodes.UNAUTHORIZED, 'Not authenticated'),
@@ -38,9 +39,24 @@ export async function POST(request: NextRequest) {
 
     // Load full user with roles
     const userWithRoles = await loadUserWithRoles(ctx.userId);
-    if (!userWithRoles || !hasAnyRole(userWithRoles, ['admin', 'manager', 'staff'])) {
+    if (!userWithRoles) {
       return NextResponse.json(
         errorResponse(ErrorCodes.FORBIDDEN, 'Insufficient permissions'),
+        { status: getStatusCode(ErrorCodes.FORBIDDEN) }
+      );
+    }
+
+    // Build permission context for RBAC checks
+    const permCtx: PermissionContext = {
+      userId: ctx.userId,
+      userType: userWithRoles.isAdmin ? 'admin' : hasAnyRole(userWithRoles, ['admin', 'manager', 'staff']) ? 'employee' : 'other',
+    };
+
+    // Require explicit permission to create orders
+    const canCreate = await checkPermission(permCtx, 'orders.create', 'orders');
+    if (!canCreate) {
+      return NextResponse.json(
+        errorResponse(ErrorCodes.FORBIDDEN, 'Insufficient permissions to create orders'),
         { status: getStatusCode(ErrorCodes.FORBIDDEN) }
       );
     }
@@ -171,7 +187,7 @@ export async function POST(request: NextRequest) {
 export async function GET(request: NextRequest) {
   try {
     // Get user context
-    const ctx = extractUserContext(request);
+    const ctx = await extractUserContext(request);
     if (!ctx.userId) {
       return NextResponse.json(
         errorResponse(ErrorCodes.UNAUTHORIZED, 'Not authenticated'),
@@ -181,15 +197,21 @@ export async function GET(request: NextRequest) {
 
     // Load full user with roles
     const userWithRoles = await loadUserWithRoles(ctx.userId);
-    if (!userWithRoles || !hasAnyRole(userWithRoles, ['admin', 'manager', 'staff'])) {
-      // Allow customers to view their own orders
-      if (!userWithRoles || !hasAnyRole(userWithRoles, ['customer'])) {
-        return NextResponse.json(
-          errorResponse(ErrorCodes.FORBIDDEN, 'Insufficient permissions'),
-          { status: getStatusCode(ErrorCodes.FORBIDDEN) }
-        );
-      }
+    if (!userWithRoles) {
+      return NextResponse.json(
+        errorResponse(ErrorCodes.FORBIDDEN, 'Insufficient permissions'),
+        { status: getStatusCode(ErrorCodes.FORBIDDEN) }
+      );
     }
+
+    // Build permission context
+    const permCtx: PermissionContext = {
+      userId: ctx.userId,
+      userType: userWithRoles.isAdmin ? 'admin' : hasAnyRole(userWithRoles, ['admin', 'manager', 'staff']) ? 'employee' : 'other',
+    };
+
+    // Check read permission; employees/admins must have 'orders.read'.
+    const hasReadPerm = await checkPermission(permCtx, 'orders.read', 'orders');
 
     // Parse query parameters
     const searchParams = request.nextUrl.searchParams;
@@ -202,10 +224,22 @@ export async function GET(request: NextRequest) {
     const sortBy = searchParams.get('sortBy') || 'createdAt';
     const sortOrder = (searchParams.get('sortOrder') || 'desc') as 'asc' | 'desc';
 
-    // Customers can only view their own orders
+    // Customers can only view their own orders, and customers without 'orders.read' only see their own orders
     let filterCustomerId = customerId;
-    if (userWithRoles && hasAnyRole(userWithRoles, ['customer'])) {
-      filterCustomerId = ctx.userId;
+    if (!hasReadPerm) {
+      if (hasAnyRole(userWithRoles, ['customer'])) {
+        filterCustomerId = ctx.userId;
+      } else {
+        return NextResponse.json(
+          errorResponse(ErrorCodes.FORBIDDEN, 'Insufficient permissions to view orders'),
+          { status: getStatusCode(ErrorCodes.FORBIDDEN) }
+        );
+      }
+    } else {
+      // if user has read permission but is customer, still restrict to own orders
+      if (hasAnyRole(userWithRoles, ['customer'])) {
+        filterCustomerId = ctx.userId;
+      }
     }
 
     // Build filters

@@ -20,7 +20,7 @@ interface RouteParams {
 export async function PUT(req: NextRequest, { params }: RouteParams) {
   try {
     const { userId } = await params;
-    const ctx = extractUserContext(req);
+    const ctx = await extractUserContext(req);
 
     if (!isAdmin(ctx)) {
       return sendError(ErrorCodes.FORBIDDEN, 'Admin access required');

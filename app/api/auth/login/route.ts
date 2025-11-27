@@ -33,7 +33,7 @@ export async function POST(req: NextRequest) {
     }
 
     // Build complete session with roles
-    const session = await buildSession(result.userId!, result.userType!, result.departmentId);
+    const session = await buildSession(result.userId!, result.userType!, result.departmentId || undefined);
 
     if (!session) {
       console.error(`[AUTH] Failed to build session for user: ${result.userId}`);

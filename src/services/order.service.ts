@@ -60,7 +60,17 @@ export class OrderService extends BaseService<IOrderHeader> {
       }
 
       // Create order within transaction
-  const order = await prisma.$transaction(async (tx: any) => {
+      // Pre-fetch department ids for the set of departments to avoid repeated lookups in the transaction
+      const deptCodes = Array.from(departments);
+      const deptMap: Record<string, string> = {};
+      if (deptCodes.length) {
+        const deptRecords = await prisma.department.findMany({ where: { code: { in: deptCodes } } });
+        for (const d of deptRecords) {
+          deptMap[d.code] = (d as any).id;
+        }
+      }
+
+      const order = await prisma.$transaction(async (tx: any) => {
         // 1. Create OrderHeader
         const header = await tx.orderHeader.create({
           data: {
@@ -75,56 +85,52 @@ export class OrderService extends BaseService<IOrderHeader> {
           },
         });
 
-        // 2. Create OrderLines
-        const lines: any[] = [];
-        for (let i = 0; i < data.items.length; i++) {
-          const item = data.items[i];
-          const line = await tx.orderLine.create({
-            data: {
-              lineNumber: i + 1,
-              orderHeaderId: header.id,
-              departmentCode: item.departmentCode,
-              productId: item.productId,
-              productType: item.productType,
-              productName: item.productName,
-              quantity: item.quantity,
-              unitPrice: item.unitPrice,
-              unitDiscount: 0,
-              lineTotal: item.quantity * item.unitPrice,
-              status: 'pending',
-            },
-          });
-          lines.push(line);
+        // 2. Batch create OrderLines
+        const linesData = data.items.map((item: any, idx: number) => ({
+          lineNumber: idx + 1,
+          orderHeaderId: header.id,
+          departmentCode: item.departmentCode,
+          productId: item.productId,
+          productType: item.productType,
+          productName: item.productName,
+          quantity: item.quantity,
+          unitPrice: item.unitPrice,
+          unitDiscount: 0,
+          lineTotal: item.quantity * item.unitPrice,
+          status: 'pending',
+        }));
 
-          // 3. Reserve inventory for inventory-based departments
-          if (['RESTAURANT', 'BAR_CLUB'].includes(item.departmentCode)) {
-            await tx.inventoryReservation.create({
-              data: {
-                inventoryItemId: item.productId,
-                orderHeaderId: header.id,
-                quantity: item.quantity,
-                status: 'reserved',
-              },
-            });
-          }
+        if (linesData.length) {
+          await tx.orderLine.createMany({ data: linesData });
         }
 
-        // 4. Create OrderDepartments for routing
-        for (const dept of departments) {
-          const department = await tx.department.findUnique({ where: { code: dept } });
-          if (department) {
-            await tx.orderDepartment.create({
-              data: {
-                orderHeaderId: header.id,
-                departmentId: department.id,
-                status: 'pending',
-              },
-            });
-          }
+        // 3. Batch create inventory reservations for inventory-based departments
+        const reservationRows = data.items
+          .filter((it: any) => ['RESTAURANT', 'BAR_CLUB'].includes(it.departmentCode))
+          .map((it: any) => ({
+            inventoryItemId: it.productId,
+            orderHeaderId: header.id,
+            quantity: it.quantity,
+            status: 'reserved',
+          }));
+
+        if (reservationRows.length) {
+          await tx.inventoryReservation.createMany({ data: reservationRows });
+        }
+
+        // 4. Batch create OrderDepartments for routing
+        const orderDepartmentRows: any[] = [];
+        for (const code of deptCodes) {
+          const deptId = deptMap[code];
+          if (deptId) orderDepartmentRows.push({ orderHeaderId: header.id, departmentId: deptId, status: 'pending' });
+        }
+
+        if (orderDepartmentRows.length) {
+          await tx.orderDepartment.createMany({ data: orderDepartmentRows });
         }
 
         return header;
-      });
+      }, { timeout: 20000 });
 
       return order;
     } catch (error: unknown) {

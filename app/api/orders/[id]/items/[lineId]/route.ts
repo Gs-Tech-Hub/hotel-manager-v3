@@ -15,7 +15,7 @@ export async function PUT(
     const { id: orderId, lineId } = await params;
 
     // Get user context
-    const ctx = extractUserContext(request);
+    const ctx = await extractUserContext(request);
     if (!ctx.userId) {
       return NextResponse.json(
         errorResponse(ErrorCodes.UNAUTHORIZED, 'Not authenticated'),
@@ -121,7 +121,7 @@ export async function DELETE(
     const { id: orderId, lineId } = await params;
 
     // Get user context
-    const ctx = extractUserContext(request);
+    const ctx = await extractUserContext(request);
     if (!ctx.userId) {
       return NextResponse.json(
         errorResponse(ErrorCodes.UNAUTHORIZED, 'Not authenticated'),

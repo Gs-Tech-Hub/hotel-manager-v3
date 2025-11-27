@@ -34,7 +34,7 @@ import { successResponse, errorResponse, ErrorCodes, getStatusCode } from '@/lib
 export async function POST(request: NextRequest) {
   try {
     // Get user context
-    const ctx = extractUserContext(request);
+    const ctx = await extractUserContext(request);
     if (!ctx.userId) {
       return NextResponse.json(
         errorResponse(ErrorCodes.UNAUTHORIZED, 'Not authenticated'),
@@ -142,7 +142,7 @@ export async function POST(request: NextRequest) {
 export async function GET(request: NextRequest) {
   try {
     // Get user context
-    const ctx = extractUserContext(request);
+    const ctx = await extractUserContext(request);
     if (!ctx.userId) {
       return NextResponse.json(
         errorResponse(ErrorCodes.UNAUTHORIZED, 'Not authenticated'),

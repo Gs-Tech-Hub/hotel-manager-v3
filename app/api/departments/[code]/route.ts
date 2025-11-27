@@ -23,7 +23,7 @@ export async function GET(request: NextRequest, { params }: { params: Promise<{ 
     }
 
     // allow public reads but include role/context if provided
-    const ctx = extractUserContext(request)
+    const ctx = await extractUserContext(request)
     let userWithRoles = null as any | null
     if (ctx?.userId) userWithRoles = await loadUserWithRoles(ctx.userId)
 

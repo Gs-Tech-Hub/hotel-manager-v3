@@ -5,7 +5,7 @@ import { successResponse, errorResponse, ErrorCodes, getStatusCode } from '@/lib
 
 export async function GET(request: NextRequest) {
   try {
-    const ctx = extractUserContext(request);
+    const ctx = await extractUserContext(request);
     if (!ctx.userId) {
       return NextResponse.json(
         errorResponse(ErrorCodes.UNAUTHORIZED, 'Not authenticated'),

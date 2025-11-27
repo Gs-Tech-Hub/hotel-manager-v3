@@ -5,6 +5,7 @@
 
 import { NextRequest } from 'next/server';
 import { prisma } from '@/lib/prisma';
+import { verifyToken } from '@/lib/auth/session';
 
 export type UserContext = {
   userId?: string;
@@ -18,14 +19,43 @@ export type UserContext = {
  * Expects: x-user-id and x-user-role headers (set by auth middleware/reverse proxy)
  * Or manually inject for testing
  */
-export function extractUserContext(req: NextRequest): UserContext {
-  const userId = req.headers.get('x-user-id') || undefined;
-  const userRole = req.headers.get('x-user-role') || undefined;
+export async function extractUserContext(req: NextRequest): Promise<UserContext> {
+  // Prefer explicit headers (set by reverse proxy or middleware)
+  const userIdHeader = req.headers.get('x-user-id') || undefined;
+  const userRoleHeader = req.headers.get('x-user-role') || undefined;
 
-  return {
-    userId,
-    userRole,
-  };
+  if (userIdHeader) {
+    return { userId: userIdHeader, userRole: userRoleHeader };
+  }
+
+  // Try Authorization Bearer token
+  const authHeader = req.headers.get('authorization') || req.headers.get('Authorization');
+  if (authHeader && authHeader.startsWith('Bearer ')) {
+    try {
+      const token = authHeader.slice(7);
+      const session = await verifyToken(token);
+      if (session && session.userId) {
+        return { userId: session.userId, userRole: session.userType };
+      }
+    } catch (err) {
+      // ignore
+    }
+  }
+
+  // Try cookie-based session (auth_token)
+  try {
+    const cookieToken = req.cookies?.get ? req.cookies.get('auth_token')?.value : undefined;
+    if (cookieToken) {
+      const session = await verifyToken(cookieToken);
+      if (session && session.userId) {
+        return { userId: session.userId, userRole: session.userType };
+      }
+    }
+  } catch (err) {
+    // ignore
+  }
+
+  return {};
 }
 
 /**
