@@ -59,15 +59,28 @@ export default function POSCheckoutShell({ terminalId }: { terminalId?: string }
   const handlePaymentComplete = (payment: any) => {
     ;(async () => {
       try {
+        // Ensure a department/terminal is selected — server requires departmentCode
+        if (!departmentSection?.departmentCode) {
+          console.log('[POS] aborting payment - no departmentSection selected')
+          setTerminalError('No terminal or department selected. Cannot complete payment.')
+          return
+        }
+
+        console.log('[POS] handlePaymentComplete - start')
+        console.log('[POS] departmentSection:', departmentSection)
+        console.log('[POS] cart:', cart)
+        console.log('[POS] payment:', payment)
+
         // Build items shaped for the server Order API
         const items = cart.map((c) => ({
           productId: c.productId,
           productType: (c as any).type || 'inventory',
           productName: c.productName,
-          departmentCode: departmentSection?.departmentCode ?? null,
+          departmentCode: departmentSection.departmentCode,
           quantity: c.quantity,
           unitPrice: c.unitPrice,
         }))
+        console.log('[POS] built items:', items)
 
         const payload: any = {
           // customerId is optional for walk-in / guest purchases; server will create guest customer if missing
@@ -77,36 +90,43 @@ export default function POSCheckoutShell({ terminalId }: { terminalId?: string }
           payment,
         }
 
+        console.log('[POS] sending payload to /api/orders:', payload)
         const res = await fetch('/api/orders', {
           method: 'POST',
           credentials: 'include',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify(payload),
         })
+        console.log('[POS] fetch completed, status:', res.status)
 
-        const json = await res.json().catch(() => null)
+        const json = await res.json().catch((e) => { console.log('[POS] failed to parse JSON:', e); return null })
+        console.log('[POS] parsed json:', json)
         if (res.status === 401 || res.status === 403 || (json && json.error && json.error.code === 'UNAUTHORIZED')) {
           // Authentication/authorization failed — surface error and do NOT print a receipt
           const msg = (json && json.error && json.error.message) ? json.error.message : 'Not authorized'
+          console.log('[POS] auth failure, msg:', msg)
           setTerminalError(`Order failed: ${msg}`)
           return
         }
 
         if (res.ok && json && json.success && json.data) {
           // The server returns the created order header (or success payload)
+          console.log('[POS] order created successfully:', json.data)
           setReceipt(json.data)
           setCart([])
         } else {
           // API failure — surface error and DO NOT print a receipt
           const msg = (json && json.error && json.error.message) ? json.error.message : `Order API error (${res.status})`
+          console.log('[POS] api failure, msg:', msg, 'status:', res.status)
           setTerminalError(`Order failed: ${msg}`)
           return
         }
       } catch (err) {
-        console.error('Error posting order:', err)
+        console.error('[POS] Error posting order:', err)
         setTerminalError('Order failed due to network or unexpected error')
         return
       } finally {
+        console.log('[POS] handlePaymentComplete - finished')
         setShowPayment(false)
       }
     })()

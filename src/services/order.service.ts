@@ -59,8 +59,21 @@ export class OrderService extends BaseService<IOrderHeader> {
         }
       }
 
-      // Create order within transaction
-      // Pre-fetch department ids for the set of departments to avoid repeated lookups in the transaction
+      // Create order header first (keep this operation minimal and fast)
+      const header = await prisma.orderHeader.create({
+        data: {
+          orderNumber,
+          customerId: data.customerId,
+          subtotal,
+          discountTotal: 0,
+          tax: 0,
+          total: subtotal,
+          status: 'pending',
+          notes: data.notes,
+        },
+      });
+
+      // Pre-fetch department ids for routing
       const deptCodes = Array.from(departments);
       const deptMap: Record<string, string> = {};
       if (deptCodes.length) {
@@ -70,72 +83,74 @@ export class OrderService extends BaseService<IOrderHeader> {
         }
       }
 
-      const order = await prisma.$transaction(async (tx: any) => {
-        // 1. Create OrderHeader
-        const header = await tx.orderHeader.create({
-          data: {
-            orderNumber,
-            customerId: data.customerId,
-            subtotal,
-            discountTotal: 0,
-            tax: 0,
-            total: subtotal,
-            status: 'pending',
-            notes: data.notes,
-          },
-        });
+      // Helper: chunk array into batches
+      const chunk = (arr: any[], size = 50) => {
+        const out: any[][] = []
+        for (let i = 0; i < arr.length; i += size) out.push(arr.slice(i, i + size))
+        return out
+      }
 
-        // 2. Batch create OrderLines
-        const linesData = data.items.map((item: any, idx: number) => ({
-          lineNumber: idx + 1,
+      // Prepare order lines and reservation rows
+      const linesData = data.items.map((item: any, idx: number) => ({
+        lineNumber: idx + 1,
+        orderHeaderId: header.id,
+        departmentCode: item.departmentCode,
+        productId: item.productId,
+        productType: item.productType,
+        productName: item.productName,
+        quantity: item.quantity,
+        unitPrice: item.unitPrice,
+        unitDiscount: 0,
+        lineTotal: item.quantity * item.unitPrice,
+        status: 'pending',
+      }));
+
+      const reservationRows = data.items
+        .filter((it: any) => ['RESTAURANT', 'BAR_CLUB'].includes(it.departmentCode))
+        .map((it: any) => ({
+          inventoryItemId: it.productId,
           orderHeaderId: header.id,
-          departmentCode: item.departmentCode,
-          productId: item.productId,
-          productType: item.productType,
-          productName: item.productName,
-          quantity: item.quantity,
-          unitPrice: item.unitPrice,
-          unitDiscount: 0,
-          lineTotal: item.quantity * item.unitPrice,
-          status: 'pending',
+          quantity: it.quantity,
+          status: 'reserved',
         }));
 
-        if (linesData.length) {
-          await tx.orderLine.createMany({ data: linesData });
-        }
+      const orderDepartmentRows: any[] = [];
+      for (const code of deptCodes) {
+        const deptId = deptMap[code];
+        if (deptId) orderDepartmentRows.push({ orderHeaderId: header.id, departmentId: deptId, status: 'pending' });
+      }
 
-        // 3. Batch create inventory reservations for inventory-based departments
-        const reservationRows = data.items
-          .filter((it: any) => ['RESTAURANT', 'BAR_CLUB'].includes(it.departmentCode))
-          .map((it: any) => ({
-            inventoryItemId: it.productId,
-            orderHeaderId: header.id,
-            quantity: it.quantity,
-            status: 'reserved',
-          }));
+      // Insert lines/reservations/departments in chunks to avoid long-running single queries
+      const lineBatches = chunk(linesData, 100)
+      for (const b of lineBatches) {
+        if (b.length) await prisma.orderLine.createMany({ data: b })
+      }
 
-        if (reservationRows.length) {
-          await tx.inventoryReservation.createMany({ data: reservationRows });
-        }
+      const resBatches = chunk(reservationRows, 100)
+      for (const b of resBatches) {
+        if (b.length) await prisma.inventoryReservation.createMany({ data: b })
+      }
 
-        // 4. Batch create OrderDepartments for routing
-        const orderDepartmentRows: any[] = [];
-        for (const code of deptCodes) {
-          const deptId = deptMap[code];
-          if (deptId) orderDepartmentRows.push({ orderHeaderId: header.id, departmentId: deptId, status: 'pending' });
-        }
+      const deptBatches = chunk(orderDepartmentRows, 50)
+      for (const b of deptBatches) {
+        if (b.length) await prisma.orderDepartment.createMany({ data: b })
+      }
 
-        if (orderDepartmentRows.length) {
-          await tx.orderDepartment.createMany({ data: orderDepartmentRows });
-        }
-
-        return header;
-      }, { timeout: 20000 });
+      const order = header
 
       return order;
     } catch (error: unknown) {
+      // Log raw error and stack to help diagnose failures during order creation
+      try {
+        // write structured error to log file
+        const logger = await import('@/lib/logger')
+        logger.error(error, { context: 'createOrder' })
+      } catch (logErr) {
+        try { console.error('Error creating order (raw):', error); if (error instanceof Error) console.error(error.stack) } catch {}
+      }
+
       const e = normalizeError(error);
-      console.error('Error creating order:', e);
+      try { const logger = await import('@/lib/logger'); logger.error(e, { context: 'createOrder.normalized' }) } catch {}
       return errorResponse(ErrorCodes.INTERNAL_ERROR, 'Failed to create order');
     }
   }

@@ -162,7 +162,12 @@ export async function POST(request: NextRequest) {
       { status: 201 }
     );
   } catch (error) {
-    console.error('POST /api/orders error:', error);
+    try {
+      const logger = await import('@/lib/logger')
+      logger.error(error, { route: 'POST /api/orders' })
+    } catch (e) {
+      console.error('POST /api/orders error:', error)
+    }
     return NextResponse.json(
       errorResponse(ErrorCodes.INTERNAL_ERROR, 'Failed to create order'),
       { status: getStatusCode(ErrorCodes.INTERNAL_ERROR) }
