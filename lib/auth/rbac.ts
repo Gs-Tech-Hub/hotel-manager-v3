@@ -217,7 +217,14 @@ export async function getUserPermissions(
 
         for (const role of admin.roles || []) {
           for (const perm of role.permissions || []) {
-            permissions.add(`${perm.action}:${perm.subject || ""}`);
+            const key = `${perm.action}:${perm.subject || ""}`;
+            permissions.add(key);
+            // also add action-only form for frontend convenience (e.g., 'orders.create')
+            permissions.add(`${perm.action}`);
+            // wildcard form
+            if ((perm.subject || '') !== '*') {
+              permissions.add(`${perm.action}:*`);
+            }
           }
         }
 
@@ -244,6 +251,12 @@ export async function getUserPermissions(
     userPerms.forEach((up) => {
       const key = `${up.permission.action}:${up.permission.subject || ""}`;
       permissions.add(key);
+      // also add action-only form for frontend convenience
+      permissions.add(`${up.permission.action}`);
+      // add wildcard subject form
+      if ((up.permission.subject || '') !== '*') {
+        permissions.add(`${up.permission.action}:*`);
+      }
     });
 
     // Fetch role-based permissions (unified)
@@ -271,6 +284,11 @@ export async function getUserPermissions(
       ur.role.rolePermissions.forEach((rpm) => {
         const key = `${rpm.permission.action}:${rpm.permission.subject || ""}`;
         permissions.add(key);
+        // also add action-only and wildcard forms
+        permissions.add(`${rpm.permission.action}`);
+        if ((rpm.permission.subject || '') !== '*') {
+          permissions.add(`${rpm.permission.action}:*`);
+        }
       });
     });
 

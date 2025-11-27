@@ -5,8 +5,8 @@ import { useForm } from "react-hook-form";
 import { z } from "zod";
 import { toast } from "sonner";
 import { useRouter } from "next/navigation";
-import { useState } from "react";
-import { useEffect } from 'react';
+import { useState, useEffect } from "react";
+import { useAuth } from '@/components/auth-context';
 
 import { Button } from "@/components/ui/button";
 import {
@@ -41,6 +41,7 @@ const formSchema = z.object({
 export default function LoginPage() {
 	const router = useRouter();
 	const [isLoading, setIsLoading] = useState(false);
+    const auth = useAuth();
 
 	// If a session already exists, redirect to dashboard
 	useEffect(() => {
@@ -72,40 +73,22 @@ export default function LoginPage() {
 	async function onSubmit(values: z.infer<typeof formSchema>) {
 		setIsLoading(true);
 		try {
-			const response = await fetch("/api/auth/login", {
-				method: "POST",
-				headers: {
-					"Content-Type": "application/json",
-				},
-				body: JSON.stringify(values),
-				credentials: 'include',
-			});
+		  setIsLoading(true);
+		  await auth.login(values.email, values.password);
+		  toast.success("Login successful!", {
+			description: "Welcome back! Redirecting...",
+		  });
 
-			const data = await response.json();
-
-			if (!response.ok) {
-				toast.error("Login failed", {
-					description: data.error || "Invalid email or password",
-				});
-				return;
-			}
-
-			toast.success("Login successful!", {
-				description: "Welcome back! Redirecting...",
-			});
-
-			// Wait a bit for toast to show, then redirect
-			setTimeout(() => {
-				router.push("/dashboard");
-				router.refresh();
-			}, 1000);
-		} catch (error) {
-			console.error("Login error:", error);
-			toast.error("Login failed", {
-				description: "An unexpected error occurred",
-			});
+		  // Redirect after login — auth context is already updated by auth.login
+		  router.replace('/dashboard');
+		  router.refresh();
+		} catch (error: any) {
+		  console.error("Login error:", error);
+		  toast.error("Login failed", {
+			description: error?.message || "Invalid email or password",
+		  });
 		} finally {
-			setIsLoading(false);
+		  setIsLoading(false);
 		}
 	}
 

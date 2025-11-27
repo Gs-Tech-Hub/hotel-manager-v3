@@ -10,6 +10,7 @@
 		"test:endpoints": "tsx ../hotelmanager_v2/test-endpoints.ts",
 		"seed": "tsx scripts/seed.ts",
 		"seed:users": "tsx scripts/seed-demo-users.ts",
+		"seed:permissions": "tsx scripts/seed-permissions.ts",
 		"seed:dept-inv": "tsx scripts/seed-department-inventories.ts",
 		"seed:dept-inv-fast": "tsx scripts/seed-department-inventories-fast.ts",
 		"reconcile:dept-inv": "tsx scripts/reconcile-department-inventories.ts",

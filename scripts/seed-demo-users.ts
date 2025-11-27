@@ -100,6 +100,12 @@ async function seedUsers() {
           { action: "admin.edit", subject: "users", description: "Edit admin users" },
           { action: "admin.delete", subject: "users", description: "Delete admin users" },
           { action: "admin.manage", subject: "roles", description: "Manage roles" },
+          // Order permissions
+          { action: "orders.create", subject: "orders", description: "Create orders" },
+          { action: "orders.read", subject: "orders", description: "Read/view orders" },
+          { action: "orders.update", subject: "orders", description: "Update orders" },
+          { action: "orders.delete", subject: "orders", description: "Delete orders" },
+          { action: "orders.cancel", subject: "orders", description: "Cancel orders" },
         ];
 
         for (const perm of corePermissions) {
