@@ -1,24 +1,26 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { useRouter } from "next/navigation";
+import { useParams, useRouter } from "next/navigation";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-import { Loader2, CheckCircle2, Clock } from "lucide-react";
+import { Loader2, CheckCircle2 } from "lucide-react";
 import Link from "next/link";
 import { Badge } from "@/components/ui/badge";
 
-export default function OrderDetailPage(props: any) {
-    const { params } = props;
+export default function OrderDetailPage() {
+    const params = useParams();
+    const id = params?.id;
     const router = useRouter();
     const [order, setOrder] = useState<any | null>(null);
     const [isLoading, setIsLoading] = useState(true);
     const [isUpdating, setIsUpdating] = useState(false);
 
     useEffect(() => {
+        if (!id) return;
         const fetchOrder = async () => {
             try {
-                const res = await fetch(`/api/orders/${params.id}`);
+                const res = await fetch(`/api/orders/${id}`);
                 const data = await res.json();
                 console.log("Order data:", data);
                 if (data.success) setOrder(data.data);
@@ -29,7 +31,7 @@ export default function OrderDetailPage(props: any) {
             }
         };
         fetchOrder();
-    }, [params.id]);
+    }, [id]);
 
     const updateFulfillmentStatus = async (lineId: string, status: 'processing' | 'fulfilled') => {
         if (!order) return;
@@ -46,6 +48,29 @@ export default function OrderDetailPage(props: any) {
             }
         } catch (e) {
             console.error("Error updating fulfillment:", e);
+        } finally {
+            setIsUpdating(false);
+        }
+    };
+
+    const fulfillAll = async () => {
+        if (!order || !order.lines || order.lines.length === 0) return;
+        setIsUpdating(true);
+        try {
+            const promises = order.lines.map((l: any) =>
+                fetch(`/api/orders/${order.id}/fulfillment`, {
+                    method: "PUT",
+                    headers: { "Content-Type": "application/json" },
+                    body: JSON.stringify({ lineItemId: l.id, status: 'fulfilled' }),
+                })
+            );
+            await Promise.all(promises);
+            // refresh
+            const r = await fetch(`/api/orders/${order.id}`);
+            const d = await r.json();
+            if (d.success) setOrder(d.data);
+        } catch (e) {
+            console.error('Error fulfilling all lines:', e);
         } finally {
             setIsUpdating(false);
         }
@@ -94,6 +119,9 @@ export default function OrderDetailPage(props: any) {
                 </div>
                 <div className="flex gap-2">
                     <Button variant="outline" onClick={() => router.push('/dashboard/pos/orders')}>Back</Button>
+                    <Button onClick={fulfillAll} disabled={isUpdating}>
+                        {isUpdating ? 'Working...' : 'Mark All Fulfilled'}
+                    </Button>
                 </div>
             </div>
 
@@ -103,9 +131,9 @@ export default function OrderDetailPage(props: any) {
                         <CardTitle>Customer</CardTitle>
                     </CardHeader>
                     <CardContent>
-                        <p className="font-semibold">{order.customer?.firstName || 'Guest'} {order.customer?.lastName || ''}</p>
-                        <p className="text-sm text-muted-foreground">{order.customer?.phone || ''}</p>
-                        <p className="text-sm text-muted-foreground">{order.customer?.email || ''}</p>
+                        <p className="font-semibold">{(order.customer as any)?.firstName || (order.customer as any)?.name || 'Guest'} {(order.customer as any)?.lastName || ''}</p>
+                        <p className="text-sm text-muted-foreground">{(order.customer as any)?.phone || ''}</p>
+                        <p className="text-sm text-muted-foreground">{(order.customer as any)?.email || ''}</p>
                     </CardContent>
                 </Card>
 

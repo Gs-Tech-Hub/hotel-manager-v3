@@ -11,6 +11,15 @@ export async function middleware(req: NextRequest) {
   const url = req.nextUrl.clone();
   const { pathname } = req.nextUrl;
 
+  // Diagnostic logging: record incoming dashboard requests and token presence
+  try {
+    const tokenPresent = !!req.cookies.get("auth_token")?.value;
+    // Use console.error so it appears in dev server logs reliably
+    console.error(`[middleware] incoming request: ${pathname} tokenPresent=${tokenPresent}`);
+  } catch (err) {
+    console.error('[middleware] logging failed', err);
+  }
+
   // Only protect dashboard routes
   // If this is an auth page (login/register/forgot-password) and the user
   // already has a valid session, redirect them to the dashboard to avoid
