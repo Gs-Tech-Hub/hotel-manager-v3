@@ -204,7 +204,7 @@ export async function PUT(
           data: {
             orderHeaderId: orderId,
             orderLineId: lineItemId,
-            quantity: quantity || lineItem.quantity,
+            fulfilledQuantity: quantity || lineItem.quantity,
             status,
             notes,
             fulfilledAt: status === 'fulfilled' ? new Date() : null,
@@ -216,7 +216,7 @@ export async function PUT(
           data: {
             orderHeaderId: orderId,
             orderLineId: lineItemId,
-            quantity: quantity || lineItem.quantity,
+            fulfilledQuantity: quantity || lineItem.quantity,
             status,
             notes,
             fulfilledAt: status === 'fulfilled' ? new Date() : null,
