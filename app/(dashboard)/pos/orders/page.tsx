@@ -77,7 +77,7 @@ export default function PosOrdersPage() {
             {
                 key: "customer",
                 label: "Customer",
-                render: (_v, item) => item.customer?.firstName || "Guest",
+                render: (_v, item) => item.customer?.name || "Guest",
                 width: "w-32",
             },
             {
@@ -213,7 +213,7 @@ export default function PosOrdersPage() {
                         columns={columns}
                         data={orders}
                         isLoading={isLoading}
-                        onRowClick={(item) => router.push(`/dashboard/pos/orders/${item.id}`)}
+                        onRowClick={(item) => router.push(`/pos/orders/${item.id}`)}
                         pagination={{ total, page, limit, onPageChange: setPage }}
                         sorting={{ field: "createdAt", direction: "desc", onSort: () => {} }}
                     />

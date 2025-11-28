@@ -28,7 +28,7 @@ export default function FoodCreatePage() {
       const res = await fetch('/api/food', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(item) });
       const data = await res.json();
       if (res.ok && data.success) {
-        router.push('/dashboard/pos/food');
+        router.push('/pos/food');
       } else {
         setError(data?.message || 'Failed to create item');
       }
@@ -78,7 +78,7 @@ export default function FoodCreatePage() {
               {error && <div className="text-destructive">{error}</div>}
 
               <div className="flex gap-2 justify-end">
-                <Button variant="outline" onClick={() => router.push('/dashboard/pos/food')}>Cancel</Button>
+                <Button variant="outline" onClick={() => router.push('/pos/food')}>Cancel</Button>
                 <Button type="submit" disabled={isSaving}>{isSaving ? 'Creating...' : 'Create'}</Button>
               </div>
             </div>

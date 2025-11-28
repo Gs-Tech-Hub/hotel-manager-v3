@@ -78,7 +78,13 @@ export async function GET(
       }
     }
 
-    return NextResponse.json(successResponse(order));
+    const payload = successResponse(order);
+    try {
+      console.log('GET /api/orders/[id] payload:', JSON.stringify(payload));
+    } catch (logErr) {
+      console.log('GET /api/orders/[id] payload (non-serializable):', payload);
+    }
+    return NextResponse.json(payload);
   } catch (error) {
     console.error('GET /api/orders/[id] error:', error);
     return NextResponse.json(
@@ -169,9 +175,13 @@ export async function PUT(
       },
     });
 
-    return NextResponse.json(
-      successResponse(updatedOrder, 'Order updated successfully')
-    );
+    const payload = successResponse(updatedOrder, 'Order updated successfully');
+    try {
+      console.log('PUT /api/orders/[id] payload:', JSON.stringify(payload));
+    } catch (logErr) {
+      console.log('PUT /api/orders/[id] payload (non-serializable):', payload);
+    }
+    return NextResponse.json(payload);
   } catch (error) {
     console.error('PUT /api/orders/[id] error:', error);
     return NextResponse.json(
@@ -234,9 +244,13 @@ export async function DELETE(
       );
     }
 
-    return NextResponse.json(
-      successResponse(result, 'Order cancelled successfully')
-    );
+    const payload = successResponse(result, 'Order cancelled successfully');
+    try {
+      console.log('DELETE /api/orders/[id] payload:', JSON.stringify(payload));
+    } catch (logErr) {
+      console.log('DELETE /api/orders/[id] payload (non-serializable):', payload);
+    }
+    return NextResponse.json(payload);
   } catch (error) {
     console.error('DELETE /api/orders/[id] error:', error);
     return NextResponse.json(

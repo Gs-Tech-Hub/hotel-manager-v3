@@ -17,7 +17,7 @@ export default function FoodDetailPage(props: any) {
     useEffect(() => {
         const fetchItem = async () => {
             try {
-                const res = await fetch(`/api/food/${params.id}`);
+                const res = await fetch(`/api/food/${params.id}`, { credentials: 'same-origin' });
                 const data = await res.json();
                 if (data.success) setItem(data.data);
             } catch (e) {
@@ -33,15 +33,15 @@ export default function FoodDetailPage(props: any) {
         if (!confirm("Delete this food item?")) return;
         setIsDeleting(true);
         try {
-            const res = await fetch(`/api/food/${params.id}`, { method: 'DELETE' });
-            if (res.ok) router.push('/dashboard/pos/food');
+            const res = await fetch(`/api/food/${params.id}`, { method: 'DELETE', credentials: 'same-origin' });
+            if (res.ok) router.push('/pos/food');
         } catch (e) {
             console.error(e);
         } finally { setIsDeleting(false); }
     };
 
     if (isLoading) return (<div className="flex items-center justify-center py-12"><Loader2 className="h-8 w-8 animate-spin text-muted-foreground"/></div>);
-    if (!item) return (<div className="text-center py-12"> <p className="text-muted-foreground">Item not found</p> <Link href="/dashboard/pos/food"><Button className="mt-4">Back</Button></Link></div>);
+    if (!item) return (<div className="text-center py-12"> <p className="text-muted-foreground">Item not found</p> <Link href="/pos/food"><Button className="mt-4">Back</Button></Link></div>);
 
     return (
         <div className="space-y-8">
@@ -51,8 +51,8 @@ export default function FoodDetailPage(props: any) {
                     <p className="text-muted-foreground">Category: {item.category}</p>
                 </div>
                 <div className="flex gap-2">
-                    <Button variant="outline" onClick={() => router.push('/dashboard/pos/food')}>Back</Button>
-                    <Button onClick={() => router.push(`/dashboard/pos/food/${item.id}/edit`)}>Edit</Button>
+                    <Button variant="outline" onClick={() => router.push('/pos/food')}>Back</Button>
+                    <Button onClick={() => router.push(`/pos/food/${item.id}/edit`)}>Edit</Button>
                     <Button variant="destructive" onClick={handleDelete} disabled={isDeleting}>{isDeleting ? 'Deleting...' : 'Delete'}</Button>
                 </div>
             </div>

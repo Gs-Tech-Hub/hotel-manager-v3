@@ -132,6 +132,13 @@ export async function PUT(
     const body = await request.json();
     const { lineItemId, status, notes, quantity } = body;
 
+    // Diagnostic log: who is performing the fulfillment update and payload
+    try {
+      console.log('PUT /api/orders/[id]/fulfillment called by:', ctx.userId, 'body:', JSON.stringify(body));
+    } catch (e) {
+      console.log('PUT /api/orders/[id]/fulfillment called by:', ctx.userId, 'body (non-serializable)');
+    }
+
     // Validate input
     if (!lineItemId || !status) {
       return NextResponse.json(
@@ -177,7 +184,10 @@ export async function PUT(
     }
 
     // Update line item and create fulfillment record
+    // Use a slightly longer interactive transaction timeout to reduce P2028 occurrences
+    const txStart = Date.now();
     await prisma.$transaction(async (tx: any) => {
+      const t0 = Date.now();
       // Update line item status
       await tx.orderLine.update({
         where: { id: lineItemId },
@@ -185,27 +195,44 @@ export async function PUT(
           status,
         },
       });
+      const t1 = Date.now();
 
-      // Create fulfillment record
-      await tx.orderFulfillment.create({
-        data: {
-          orderHeaderId: orderId,
-          orderLineId: lineItemId,
-          quantity: quantity || lineItem.quantity,
-          status,
-          notes,
-          fulfilledAt: status === 'fulfilled' ? new Date() : null,
-        },
-      });
+      // Ensure tx exposes orderFulfillment; if not, fallback and log
+      if (!tx.orderFulfillment || typeof tx.orderFulfillment.create !== 'function') {
+        console.warn('tx.orderFulfillment.create not available on transaction client; falling back to top-level client - this reduces atomicity');
+        await (prisma as any).orderFulfillment.create({
+          data: {
+            orderHeaderId: orderId,
+            orderLineId: lineItemId,
+            quantity: quantity || lineItem.quantity,
+            status,
+            notes,
+            fulfilledAt: status === 'fulfilled' ? new Date() : null,
+          },
+        });
+      } else {
+        // Create fulfillment record
+        await tx.orderFulfillment.create({
+          data: {
+            orderHeaderId: orderId,
+            orderLineId: lineItemId,
+            quantity: quantity || lineItem.quantity,
+            status,
+            notes,
+            fulfilledAt: status === 'fulfilled' ? new Date() : null,
+          },
+        });
+      }
+      const t2 = Date.now();
 
-      // If status is fulfilled, check if all lines are fulfilled
+      // If status is fulfilled, check if all lines are fulfilled.
+      // Use a COUNT query instead of fetching all rows to keep transaction fast.
       if (status === 'fulfilled') {
-        const allLines = await tx.orderLine.findMany({
-          where: { orderHeaderId: orderId },
+        const remaining = await tx.orderLine.count({
+          where: { orderHeaderId: orderId, status: { not: 'fulfilled' } },
         });
 
-        const allFulfilled = allLines.every((l: any) => l.status === 'fulfilled');
-        if (allFulfilled) {
+        if (remaining === 0) {
           // Update order status to fulfilled
           await tx.orderHeader.update({
             where: { id: orderId },
@@ -213,7 +240,11 @@ export async function PUT(
           });
         }
       }
-    });
+      const t3 = Date.now();
+      try { console.log(`Fulfillment transaction timings (ms): update=${t1-t0} create=${t2-t1} post=${t3-t2} total=${t3-t0}`); } catch(e){}
+    }, { timeout: 10000 });
+    const txEnd = Date.now();
+    try { console.log('Fulfillment overall transaction duration (ms):', txEnd - txStart); } catch(e){}
 
     // Fetch updated order
     const updatedOrder = await (prisma as any).orderHeader.findUnique({
@@ -229,9 +260,14 @@ export async function PUT(
       },
     });
 
-    return NextResponse.json(
-      successResponse(updatedOrder, 'Fulfillment status updated successfully')
-    );
+    const payload = successResponse(updatedOrder, 'Fulfillment status updated successfully');
+    try {
+      console.log('PUT /api/orders/[id]/fulfillment payload:', JSON.stringify(payload));
+    } catch (logErr) {
+      console.log('PUT /api/orders/[id]/fulfillment payload (non-serializable):', payload);
+    }
+
+    return NextResponse.json(payload);
   } catch (error) {
     console.error('PUT /api/orders/[id]/fulfillment error:', error);
     return NextResponse.json(

@@ -21,7 +21,7 @@ export default function PosIndexPage() {
                     <CardContent>
                         <p className="text-sm text-muted-foreground">View and manage active orders coming from restaurant & bar.</p>
                         <div className="mt-4">
-                            <Link href="/dashboard/pos/orders"><Button>Open Orders</Button></Link>
+                            <Link href="/pos/orders"><Button>Open Orders</Button></Link>
                         </div>
                     </CardContent>
                 </Card>
@@ -33,7 +33,7 @@ export default function PosIndexPage() {
                     <CardContent>
                         <p className="text-sm text-muted-foreground">Manage food items and inventory for the restaurant.</p>
                         <div className="mt-4">
-                            <Link href="/dashboard/pos/food"><Button>Food Menu</Button></Link>
+                            <Link href="/pos/food"><Button>Food Menu</Button></Link>
                         </div>
                     </CardContent>
                 </Card>
@@ -45,7 +45,7 @@ export default function PosIndexPage() {
                     <CardContent>
                         <p className="text-sm text-muted-foreground">Manage drinks, bar menus and inventory.</p>
                         <div className="mt-4">
-                            <Link href="/dashboard/pos/drinks"><Button>Drinks</Button></Link>
+                            <Link href="/pos/drinks"><Button>Drinks</Button></Link>
                         </div>
                     </CardContent>
                 </Card>

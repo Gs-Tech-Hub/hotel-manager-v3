@@ -20,10 +20,15 @@ export default function OrderDetailPage() {
         if (!id) return;
         const fetchOrder = async () => {
             try {
-                const res = await fetch(`/api/orders/${id}`);
+                const res = await fetch(`/api/orders/${id}`, { credentials: 'same-origin' });
                 const data = await res.json();
-                console.log("Order data:", data);
-                if (data.success) setOrder(data.data);
+                console.log("Order data:", data, "status", res.status);
+                if (res.ok && data && data.success) {
+                    setOrder(data.data);
+                } else {
+                    // API returned error (not found, forbidden, etc.) — show not found UI
+                    setOrder(null);
+                }
             } catch (e) {
                 console.error("Error fetching order:", e);
             } finally {
@@ -39,6 +44,7 @@ export default function OrderDetailPage() {
         try {
             const res = await fetch(`/api/orders/${order.id}/fulfillment`, {
                 method: "PUT",
+                credentials: 'same-origin',
                 headers: { "Content-Type": "application/json" },
                 body: JSON.stringify({ lineItemId: lineId, status }),
             });
@@ -60,15 +66,16 @@ export default function OrderDetailPage() {
             const promises = order.lines.map((l: any) =>
                 fetch(`/api/orders/${order.id}/fulfillment`, {
                     method: "PUT",
+                    credentials: 'same-origin',
                     headers: { "Content-Type": "application/json" },
                     body: JSON.stringify({ lineItemId: l.id, status: 'fulfilled' }),
                 })
             );
             await Promise.all(promises);
             // refresh
-            const r = await fetch(`/api/orders/${order.id}`);
+            const r = await fetch(`/api/orders/${order.id}`, { credentials: 'same-origin' });
             const d = await r.json();
-            if (d.success) setOrder(d.data);
+            if (r.ok && d && d.success) setOrder(d.data);
         } catch (e) {
             console.error('Error fulfilling all lines:', e);
         } finally {
@@ -95,7 +102,7 @@ export default function OrderDetailPage() {
         return (
             <div className="text-center py-12">
                 <p className="text-muted-foreground">Order not found</p>
-                <Link href="/dashboard/pos/orders">
+                <Link href="/pos/orders">
                     <Button className="mt-4">Back to Orders</Button>
                 </Link>
             </div>
@@ -118,7 +125,7 @@ export default function OrderDetailPage() {
                     </div>
                 </div>
                 <div className="flex gap-2">
-                    <Button variant="outline" onClick={() => router.push('/dashboard/pos/orders')}>Back</Button>
+                    <Button variant="outline" onClick={() => router.push('/pos/orders')}>Back</Button>
                     <Button onClick={fulfillAll} disabled={isUpdating}>
                         {isUpdating ? 'Working...' : 'Mark All Fulfilled'}
                     </Button>
@@ -148,7 +155,12 @@ export default function OrderDetailPage() {
                                 <div className="flex justify-between text-green-600"><span className="text-sm">Discount</span><span>-{formatPrice(order.discountTotal)}</span></div>
                             )}
                             <div className="flex justify-between"><span className="text-sm text-muted-foreground">Tax</span><span>{formatPrice(order.tax)}</span></div>
-                            <div className="flex justify-between font-bold text-lg"><span>Total</span><span>{formatPrice(order.total)}</span></div>
+                            <div className="flex justify-between font-bold text-lg"><span>Total</span><span>{
+                                // Prefer showing the sum of recorded payments (transaction total) when available
+                                (order.payments && order.payments.length > 0)
+                                    ? formatPrice(order.payments.reduce((s: number, p: any) => s + (p.amount || 0), 0))
+                                    : formatPrice(order.total)
+                            }</span></div>
                         </div>
                     </CardContent>
                 </Card>

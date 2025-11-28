@@ -42,8 +42,25 @@ export async function middleware(req: NextRequest) {
     return NextResponse.next();
   }
 
-  // Only protect dashboard routes
-  if (!pathname.startsWith("/dashboard")) {
+  // Only protect dashboard routes — these correspond to the child folders under (dashboard)
+  const dashboardPrefixes = [
+    "/pos",
+    "/pos-terminals",
+    "/admin",
+    "/bookings",
+    "/customers",
+    "/dashboard",
+    "/departments",
+    "/docs",
+    "/documentation",
+    "/implementation-guide",
+    "/inventory",
+    "/quick-reference",
+    "/rooms",
+  ];
+
+  const isDashboardPath = dashboardPrefixes.some((p) => pathname === p || pathname.startsWith(`${p}/`));
+  if (!isDashboardPath) {
     return NextResponse.next();
   }
 
@@ -80,5 +97,19 @@ export async function middleware(req: NextRequest) {
 }
 
 export const config = {
-  matcher: ["/dashboard/:path*"],
+  matcher: [
+    "/pos/:path*",
+    "/pos-terminals/:path*",
+    "/admin/:path*",
+    "/bookings/:path*",
+    "/customers/:path*",
+    "/dashboard/:path*",
+    "/departments/:path*",
+    "/docs/:path*",
+    "/documentation/:path*",
+    "/implementation-guide/:path*",
+    "/inventory/:path*",
+    "/quick-reference/:path*",
+    "/rooms/:path*",
+  ],
 };
