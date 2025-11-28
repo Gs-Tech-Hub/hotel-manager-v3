@@ -23,6 +23,8 @@ export default function POSCheckoutShell({ terminalId }: { terminalId?: string }
   const [departmentSection, setDepartmentSection] = useState<any | null>(null)
   const [loadingDepartments, setLoadingDepartments] = useState(false)
   const [departmentsError, setDepartmentsError] = useState<string | null>(null)
+  const [discountCode, setDiscountCode] = useState<string>('')
+  const [appliedDiscountCodes, setAppliedDiscountCodes] = useState<string[]>([])
 
   const categories = [
     { id: 'foods', name: 'Foods' },
@@ -85,7 +87,7 @@ export default function POSCheckoutShell({ terminalId }: { terminalId?: string }
         const payload: any = {
           // customerId is optional for walk-in / guest purchases; server will create guest customer if missing
           items,
-          discounts: [],
+          discounts: appliedDiscountCodes,
           notes: `POS sale - terminal ${terminalId || departmentSection?.id || 'unknown'}`,
           payment,
         }
@@ -330,6 +332,38 @@ export default function POSCheckoutShell({ terminalId }: { terminalId?: string }
           </div>
 
           <POSCart items={cart} onRemove={handleRemove} onQty={handleQty} />
+
+          <div className="mt-3 p-3 bg-white border rounded">
+            <div className="text-sm font-medium mb-2">Apply Discount</div>
+            <div className="flex gap-2">
+              <input value={discountCode} onChange={(e) => setDiscountCode(e.target.value)} placeholder="Enter promo code" className="flex-1 border rounded px-2 py-1" />
+              <button
+                onClick={() => {
+                  const code = (discountCode || '').trim()
+                  if (!code) return
+                  if (!appliedDiscountCodes.includes(code)) setAppliedDiscountCodes((s) => [...s, code])
+                  setDiscountCode('')
+                }}
+                className="px-3 py-1 bg-sky-600 text-white rounded"
+              >
+                Add
+              </button>
+            </div>
+            {appliedDiscountCodes.length > 0 && (
+              <div className="mt-2 text-sm">
+                <div className="text-xs text-muted-foreground">Applied codes (final discount amounts calculated at payment)</div>
+                <div className="flex gap-2 mt-1">
+                  {appliedDiscountCodes.map((c) => (
+                    <div key={c} className="px-2 py-1 bg-green-50 border border-green-100 rounded flex items-center gap-2">
+                      <span className="font-semibold text-sm">{c}</span>
+                      <button onClick={() => setAppliedDiscountCodes((s) => s.filter((x) => x !== c))} className="text-red-500 text-xs">✕</button>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
+          </div>
+
           <div className="mt-4">
             <button onClick={() => setShowPayment(true)} disabled={cart.length === 0} className="w-full py-2 bg-emerald-600 text-white rounded">Proceed to Payment</button>
           </div>

@@ -138,6 +138,65 @@ export class OrderService extends BaseService<IOrderHeader> {
 
       const order = header
 
+      // If discounts were provided at creation time, attempt to apply them now
+      if (data.discounts && Array.isArray(data.discounts) && data.discounts.length > 0) {
+        // Loop through codes and attempt to create OrderDiscounts (reuse same validations as applyDiscount)
+        let accumulatedDiscount = 0
+        for (const code of data.discounts) {
+          if (!code) continue
+          const rule = await prisma.discountRule.findUnique({ where: { code } })
+          if (!rule) {
+            // rollback created order? For now, return validation error so client can correct
+            return errorResponse(ErrorCodes.VALIDATION_ERROR, `Discount code not found: ${code}`)
+          }
+
+          if (!rule.isActive) {
+            return errorResponse(ErrorCodes.VALIDATION_ERROR, `Discount code inactive: ${code}`)
+          }
+
+          if (rule.minOrderAmount && subtotal < rule.minOrderAmount) {
+            return errorResponse(ErrorCodes.VALIDATION_ERROR, `Minimum order amount of ${rule.minOrderAmount} required for discount ${code}`)
+          }
+
+          // Calculate discount amount according to rule
+          let discountAmount = 0
+          if (rule.type === 'percentage') {
+            discountAmount = Math.round(subtotal * (Number(rule.value) / 100))
+          } else {
+            discountAmount = Number(rule.value)
+          }
+
+          // Prevent discount exceeding subtotal
+          if (accumulatedDiscount + discountAmount > subtotal) {
+            return errorResponse(ErrorCodes.VALIDATION_ERROR, `Discounts exceed subtotal for code: ${code}`)
+          }
+
+          // Persist order discount
+          await prisma.orderDiscount.create({
+            data: {
+              orderHeaderId: header.id,
+              discountRuleId: rule.id,
+              discountType: rule.type as any,
+              discountCode: rule.code,
+              discountAmount,
+            },
+          })
+
+          accumulatedDiscount += discountAmount
+        }
+
+        // Update order totals to account for applied discounts
+        const updated = await prisma.orderHeader.update({
+          where: { id: header.id },
+          data: {
+            discountTotal: accumulatedDiscount,
+            total: Math.max(0, subtotal - accumulatedDiscount + 0),
+          },
+        })
+
+        return updated
+      }
+
       return order;
     } catch (error: unknown) {
       // Log raw error and stack to help diagnose failures during order creation
@@ -217,6 +276,18 @@ export class OrderService extends BaseService<IOrderHeader> {
         }
       }
 
+      // Validate discount won't result in negative total
+      const allCurrentDiscounts = await (prisma as any).orderDiscount.findMany({ where: { orderHeaderId: orderId } });
+      const currentTotalDiscount = allCurrentDiscounts.reduce((sum: number, d: any) => sum + d.discountAmount, 0);
+      const proposedTotalDiscount = currentTotalDiscount + discountAmount;
+
+      if (proposedTotalDiscount > order.subtotal) {
+        return errorResponse(
+          ErrorCodes.VALIDATION_ERROR,
+          `Total discount (${proposedTotalDiscount}) cannot exceed subtotal (${order.subtotal})`
+        );
+      }
+
       // Create OrderDiscount record
       const discount = await (prisma as any).orderDiscount.create({
         data: {
@@ -231,16 +302,15 @@ export class OrderService extends BaseService<IOrderHeader> {
       });
 
       // Update order totals - DISCOUNT IS NOW ACCOUNTED FOR
-      const allDiscounts = await (prisma as any).orderDiscount.findMany({ where: { orderHeaderId: orderId } });
-      const totalDiscount = allDiscounts.reduce((sum: number, d: any) => sum + d.discountAmount, 0);
-
       const updatedOrder = await (prisma as any).orderHeader.update({
         where: { id: orderId },
         data: {
-          discountTotal: totalDiscount,
-          total: order.subtotal - totalDiscount + order.tax,
+          discountTotal: proposedTotalDiscount,
+          total: Math.max(0, order.subtotal - proposedTotalDiscount + order.tax),
         },
-      });      return { discount, updatedOrder };
+      });
+
+      return { discount, updatedOrder };
     } catch (error: unknown) {
       const e = normalizeError(error);
       console.error('Error applying discount:', e);

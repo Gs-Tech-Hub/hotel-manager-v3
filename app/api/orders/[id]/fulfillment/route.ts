@@ -18,22 +18,22 @@ export async function GET(
   request: NextRequest,
   { params }: { params: Promise<{ id: string }> }
 ) {
-  /**
-   * PUT /api/orders/[id]/fulfillment
-   * Update fulfillment/line items
-   * 
-   * Request body:
-   * {
-   *   lineItemId: string          // Order line ID
-   *   status: "processing" | "fulfilled"
-   *   notes?: string              // Fulfillment notes
-   *   quantity?: number           // Partial fulfillment quantity
-   * }
-   */
-  export async function PUT(
-    request: NextRequest,
-    { params }: { params: Promise<{ id: string }> }
-  ) {
+  try {
+    const { id: orderId } = await params;
+
+    // Get user context
+    const ctx = await extractUserContext(request);
+    if (!ctx.userId) {
+      return NextResponse.json(
+        errorResponse(ErrorCodes.UNAUTHORIZED, 'Not authenticated'),
+        { status: getStatusCode(ErrorCodes.UNAUTHORIZED) }
+      );
+    }
+
+    // Load full user with roles
+    const userWithRoles = await loadUserWithRoles(ctx.userId);
+    if (!userWithRoles || !hasAnyRole(userWithRoles, ['admin', 'manager', 'staff'])) {
+      return NextResponse.json(
         errorResponse(ErrorCodes.FORBIDDEN, 'Only staff can view fulfillment'),
         { status: getStatusCode(ErrorCodes.FORBIDDEN) }
       );
@@ -103,7 +103,7 @@ export async function GET(
  *   quantity?: number           // Partial fulfillment quantity
  * }
  */
-export async function POST(
+export async function PUT(
   request: NextRequest,
   { params }: { params: Promise<{ id: string }> }
 ) {
