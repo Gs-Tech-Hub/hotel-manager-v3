@@ -7,6 +7,7 @@ import { BaseService } from './base.service';
 import type { IOrderHeader } from '../types/entities';
 import { prisma } from '../lib/prisma';
 import { normalizeError } from '@/lib/errors';
+import { normalizeToCents } from '@/lib/price';
 import { UserContext, requireRoleOrOwner, requireRole } from '@/lib/authorization';
 import { errorResponse, ErrorCodes } from '@/lib/api-response';
 
@@ -42,12 +43,15 @@ export class OrderService extends BaseService<IOrderHeader> {
       // Generate unique order number
       const orderNumber = `ORD-${Date.now()}-${Math.random().toString(36).substr(2, 9).toUpperCase()}`;
 
-      // Calculate subtotal and validate inventory
+      // Calculate subtotal and validate inventory (unit prices normalized to cents)
       let subtotal = 0;
       const departments = new Set<string>();
 
       for (const item of data.items) {
-        subtotal += item.quantity * item.unitPrice;
+        const normalizedUnit = normalizeToCents(item.unitPrice)
+        // attach normalized value back for later use
+        ;(item as any)._normalizedUnitPrice = normalizedUnit
+        subtotal += item.quantity * normalizedUnit
         departments.add(item.departmentCode);
 
         // Check inventory availability (for inventory-based departments)
@@ -99,9 +103,9 @@ export class OrderService extends BaseService<IOrderHeader> {
         productType: item.productType,
         productName: item.productName,
         quantity: item.quantity,
-        unitPrice: item.unitPrice,
+        unitPrice: (item as any)._normalizedUnitPrice ?? normalizeToCents(item.unitPrice),
         unitDiscount: 0,
-        lineTotal: item.quantity * item.unitPrice,
+        lineTotal: item.quantity * ((item as any)._normalizedUnitPrice ?? normalizeToCents(item.unitPrice)),
         status: 'pending',
       }));
 
@@ -163,7 +167,8 @@ export class OrderService extends BaseService<IOrderHeader> {
           if (rule.type === 'percentage') {
             discountAmount = Math.round(subtotal * (Number(rule.value) / 100))
           } else {
-            discountAmount = Number(rule.value)
+            // fixed amount is stored in rule.value as Decimal (dollars); convert to cents
+            discountAmount = normalizeToCents(Number(rule.value))
           }
 
           // Prevent discount exceeding subtotal
@@ -272,7 +277,8 @@ export class OrderService extends BaseService<IOrderHeader> {
         if (rule.type === 'percentage') {
           discountAmount = Math.round(order.subtotal * (Number(rule.value) / 100));
         } else {
-          discountAmount = Number(rule.value);
+          // fixed amount in rule.value is Decimal (dollars); convert to cents
+          discountAmount = normalizeToCents(Number(rule.value));
         }
       }
 
@@ -477,16 +483,19 @@ export class OrderService extends BaseService<IOrderHeader> {
         return errorResponse(ErrorCodes.NOT_FOUND, 'Order not found');
       }
 
+      // Normalize incoming amount to cents to keep DB consistent
+  const amount = normalizeToCents(paymentData.amount);
+
       // Check if payment exceeds order total
   const totalPaid = order.payments.reduce((sum: number, p: any) => sum + p.amount, 0);
-      if (totalPaid + paymentData.amount > order.total) {
+      if (totalPaid + amount > order.total) {
         return errorResponse(ErrorCodes.VALIDATION_ERROR, 'Payment amount exceeds order total');
       }
 
       const payment = await (prisma as any).orderPayment.create({
         data: {
           orderHeaderId: orderId,
-          amount: paymentData.amount,
+          amount,
           paymentMethod: paymentData.paymentMethod,
           paymentStatus: 'completed',
           paymentTypeId: paymentData.paymentTypeId,

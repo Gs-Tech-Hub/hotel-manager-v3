@@ -5,6 +5,7 @@ import { useParams, useRouter } from "next/navigation";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Loader2, CheckCircle2 } from "lucide-react";
+import { formatCents } from '@/lib/price';
 import Link from "next/link";
 import { Badge } from "@/components/ui/badge";
 
@@ -83,12 +84,7 @@ export default function OrderDetailPage() {
         }
     };
 
-    const formatPrice = (price: any) => {
-        if (price === null || price === undefined || price === 'NaN') return "$0.00";
-        const num = Number(price);
-        if (isNaN(num)) return "$0.00";
-        return `$${(num / 100).toFixed(2)}`;
-    };
+    const formatPrice = (price: any) => formatCents(price);
 
     if (isLoading) {
         return (

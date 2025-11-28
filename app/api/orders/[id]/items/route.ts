@@ -8,6 +8,7 @@
 
 import { NextRequest, NextResponse } from 'next/server';
 import { prisma } from '@/lib/prisma';
+import { normalizeToCents } from '@/lib/price';
 import { extractUserContext, loadUserWithRoles, hasAnyRole } from '@/lib/user-context';
 import { successResponse, errorResponse, ErrorCodes, getStatusCode } from '@/lib/api-response';
 
@@ -63,7 +64,8 @@ export async function POST(
 
     // Transactionally create line item and update order totals
     const createdLine = await prisma.$transaction(async (tx: any) => {
-      const lineTotal = quantity * unitPrice;
+      const normalizedUnit = normalizeToCents(unitPrice)
+      const lineTotal = quantity * normalizedUnit;
 
       const newLine = await tx.orderLine.create({
         data: {
@@ -73,7 +75,7 @@ export async function POST(
           productName,
           departmentCode,
           quantity,
-          unitPrice,
+          unitPrice: normalizedUnit,
           lineTotal,
           status: 'pending',
         },

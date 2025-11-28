@@ -4,18 +4,19 @@ import { useState, useEffect, useMemo } from "react";
 import Link from "next/link";
 import { DataTable, TableSearchBar, TableFilterBar, Column } from "@/components/admin/tables/data-table";
 import { Badge } from "@/components/ui/badge";
+import { formatCents } from '@/lib/price';
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 import { Loader2 } from "lucide-react";
 
-type Order = {
+    type Order = {
     id: string;
     orderNumber?: string;
     customer?: { name?: string; phone?: string } | null;
     departments?: { department?: { name?: string; code?: string } }[] | null;
     status: string;
     createdAt: string;
-    totalPrice: number;
+        total?: number;
     fulfillments?: any[];
 };
 
@@ -96,13 +97,9 @@ export default function PosOrdersPage() {
                 sortable: true,
             },
             {
-                key: "totalPrice",
+                key: "total",
                 label: "Total",
-                render: (v) => {
-                    const num = Number(v);
-                    if (isNaN(num)) return "$0.00";
-                    return `$${(num / 100).toFixed(2)}`;
-                },
+                render: (_v, item) => formatCents(item.total ?? 0),
                 width: "w-24",
             },
             {

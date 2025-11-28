@@ -5,8 +5,7 @@ import { useMemo, useState, useEffect } from 'react'
 import useDepartmentData from '../../../../components/departments/useDepartmentData'
 import SectionsList from '../../../../components/departments/SectionsList'
 import SectionProductsTable from '../../../../components/departments/SectionProductsTable'
-import PendingOrdersPanel from '../../../../components/departments/PendingOrdersPanel'
-import PendingFulfillModal from '../../../../components/departments/PendingFulfillModal'
+// Pending orders panel removed — counts shown on the products table instead
 
 type DepartmentInfo = {
   code: string
@@ -213,22 +212,10 @@ export default function DepartmentDetail() {
 
       <SectionsList sections={children} loading={childrenLoading} />
 
-      {decodedCode.includes(':') && (
-        <PendingOrdersPanel pending={pendingOrderLines} onOpen={(line: any) => openPendingModal?.(line.productName)} />
-      )}
 
       {/* Transfer audit moved to Inventory page */}
 
-      <PendingFulfillModal
-        open={pendingModalOpen}
-        line={pendingModalItems && pendingModalItems.length > 0 ? pendingModalItems[0] : null}
-        onClose={() => setPendingModalOpen(false)}
-        onFulfilled={async () => {
-          await fetchPendingOrderLines(decodedCode)
-          await fetchSectionProducts(decodedCode)
-          setPendingModalItems(null)
-        }}
-      />
+      {/* Pending orders panel removed — details available via product Pending column */}
       {/* Incoming transfers modal */}
       {incomingModalOpen && (
         <div className="fixed inset-0 z-50 flex items-center justify-center">

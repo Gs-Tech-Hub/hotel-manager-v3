@@ -321,7 +321,8 @@ export default function POSCheckoutShell({ terminalId }: { terminalId?: string }
                     <div className="text-xs text-muted-foreground">transactions</div>
                   </div>
                   <div className="text-sm">
-                    <div className="text-2xl font-bold">{new Intl.NumberFormat(undefined, { style: 'currency', currency: 'USD' }).format(salesSummary.total)}</div>
+                    {/* salesSummary.total is stored as cents in backend; convert to dollars for display */}
+                    <div className="text-2xl font-bold">{new Intl.NumberFormat(undefined, { style: 'currency', currency: 'USD' }).format(Number(salesSummary.total) / 100)}</div>
                     <div className="text-xs text-muted-foreground">gross</div>
                   </div>
                 </div>

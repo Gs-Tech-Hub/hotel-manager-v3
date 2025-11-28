@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { prisma } from '@/lib/prisma';
+import { normalizeToCents } from '@/lib/price';
 import { extractUserContext, loadUserWithRoles, hasAnyRole } from '@/lib/user-context';
 import { successResponse, errorResponse, ErrorCodes, getStatusCode } from '@/lib/api-response';
 
@@ -63,7 +64,7 @@ export async function PUT(
     // Update line item
     const result = await prisma.$transaction(async (tx: any) => {
       const newQuantity = quantity !== undefined ? quantity : lineItem.quantity;
-      const newUnitPrice = unitPrice !== undefined ? unitPrice : lineItem.unitPrice;
+      const newUnitPrice = unitPrice !== undefined ? normalizeToCents(unitPrice) : lineItem.unitPrice;
       const newLineTotal = newQuantity * newUnitPrice;
 
       const updated = await tx.orderLine.update({

@@ -184,7 +184,7 @@ export async function PUT(
     }
 
     // Update line item and create fulfillment record
-    // Use a slightly longer interactive transaction timeout to reduce P2028 occurrences
+    // Increase interactive transaction timeout to reduce P2028 occurrences
     const txStart = Date.now();
     await prisma.$transaction(async (tx: any) => {
       const t0 = Date.now();
@@ -197,32 +197,17 @@ export async function PUT(
       });
       const t1 = Date.now();
 
-      // Ensure tx exposes orderFulfillment; if not, fallback and log
-      if (!tx.orderFulfillment || typeof tx.orderFulfillment.create !== 'function') {
-        console.warn('tx.orderFulfillment.create not available on transaction client; falling back to top-level client - this reduces atomicity');
-        await (prisma as any).orderFulfillment.create({
-          data: {
-            orderHeaderId: orderId,
-            orderLineId: lineItemId,
-            fulfilledQuantity: quantity || lineItem.quantity,
-            status,
-            notes,
-            fulfilledAt: status === 'fulfilled' ? new Date() : null,
-          },
-        });
-      } else {
-        // Create fulfillment record
-        await tx.orderFulfillment.create({
-          data: {
-            orderHeaderId: orderId,
-            orderLineId: lineItemId,
-            fulfilledQuantity: quantity || lineItem.quantity,
-            status,
-            notes,
-            fulfilledAt: status === 'fulfilled' ? new Date() : null,
-          },
-        });
-      }
+      // Create fulfillment record using the transactional client to keep atomicity
+      await (tx as any).orderFulfillment.create({
+        data: {
+          orderHeaderId: orderId,
+          orderLineId: lineItemId,
+          fulfilledQuantity: quantity || lineItem.quantity,
+          status,
+          notes,
+          fulfilledAt: status === 'fulfilled' ? new Date() : null,
+        },
+      });
       const t2 = Date.now();
 
       // If status is fulfilled, check if all lines are fulfilled.
@@ -242,7 +227,7 @@ export async function PUT(
       }
       const t3 = Date.now();
       try { console.log(`Fulfillment transaction timings (ms): update=${t1-t0} create=${t2-t1} post=${t3-t2} total=${t3-t0}`); } catch(e){}
-    }, { timeout: 10000 });
+    }, { timeout: 15000 });
     const txEnd = Date.now();
     try { console.log('Fulfillment overall transaction duration (ms):', txEnd - txStart); } catch(e){}
 
