@@ -2,7 +2,6 @@
 
 import { useState, useEffect, useMemo } from "react";
 import Link from "next/link";
-import { useRouter } from "next/navigation";
 import { DataTable, TableSearchBar, TableFilterBar, Column } from "@/components/admin/tables/data-table";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -21,7 +20,7 @@ type Order = {
 };
 
 export default function PosOrdersPage() {
-    const router = useRouter();
+    
     const [orders, setOrders] = useState<Order[]>([]);
     const [isLoading, setIsLoading] = useState(true);
     const [search, setSearch] = useState("");
@@ -143,14 +142,14 @@ export default function PosOrdersPage() {
                 key: "id",
                 label: "Actions",
                 render: (_v, item) => (
-                    <Button size="sm" variant="outline" onClick={(e) => { e.stopPropagation(); router.push(`/dashboard/pos/orders/${item.id}`); }}>
-                        View
-                    </Button>
+                    <Link href={`/pos/orders/${item.id}`}>
+                        <Button size="sm" variant="outline">View</Button>
+                    </Link>
                 ),
                 width: "w-20",
             },
         ],
-        [router]
+        []
     );
 
     return (
@@ -213,7 +212,7 @@ export default function PosOrdersPage() {
                         columns={columns}
                         data={orders}
                         isLoading={isLoading}
-                        onRowClick={(item) => router.push(`/pos/orders/${item.id}`)}
+                        
                         pagination={{ total, page, limit, onPageChange: setPage }}
                         sorting={{ field: "createdAt", direction: "desc", onSort: () => {} }}
                     />
