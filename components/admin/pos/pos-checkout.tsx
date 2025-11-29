@@ -139,9 +139,8 @@ export default function POSCheckoutShell({ terminalId }: { terminalId?: string }
     s
       .toString()
       .toLowerCase()
-      .trim()
-      .replace(/\s+/g, '-')
-      .replace(/[^a-z0-9\-]/g, '')
+      .replace(/[^a-z0-9]+/g, '-')
+      .replace(/(^-|-$)/g, '')
 
   useEffect(() => {
     // Fetch available department-sections from server and auto-select first one
@@ -153,8 +152,14 @@ export default function POSCheckoutShell({ terminalId }: { terminalId?: string }
       .then((json) => {
         if (!mounted) return
         if (json && json.success && Array.isArray(json.data) && json.data.length > 0) {
-          // Auto-select the first available department-section
-          setDepartmentSection(json.data[0])
+          // If a terminalId was provided via route params, prefer that terminal
+          let selected: any = null
+          if (terminalId) {
+            selected = json.data.find((d: any) => d.id === terminalId || d.departmentCode === terminalId || slugify(d.name) === terminalId)
+          }
+          // Fallback to the first available department-section
+          if (!selected) selected = json.data[0]
+          setDepartmentSection(selected)
         } else {
           setDepartmentsError('No sales points available')
           setDepartmentSection(null)
@@ -167,11 +172,11 @@ export default function POSCheckoutShell({ terminalId }: { terminalId?: string }
           setDepartmentSection(null)
         })
         .finally(() => { if (mounted) setLoadingDepartments(false) })
-
+ 
     return () => {
       mounted = false
     }
-  }, [])
+  }, [terminalId])
 
   useEffect(() => {
     // If a department-section is selected, fetch its products/menu
@@ -209,7 +214,7 @@ export default function POSCheckoutShell({ terminalId }: { terminalId?: string }
     return () => {
       mounted = false
     }
-  }, [departmentSection?.id])
+  }, [departmentSection?.departmentCode])
 
   useEffect(() => {
     // fetch sales summary for today for the selected department section
