@@ -1,6 +1,11 @@
 /**
  * Department Service
  * Handles department routing, fulfillment tracking, and department-specific operations
+ * 
+ * PRICE CONSISTENCY:
+ * - Stats track totalAmount in cents (from lineTotal INT field)
+ * - Department summary prices are always in cents
+ * - Currency conversions handled by price utilities
  */
 
 import { BaseService } from './base.service';
@@ -9,6 +14,7 @@ import { inventoryItemService } from './inventory.service';
 import { prisma } from '../lib/prisma';
 import { UserContext, requireRole } from '@/lib/authorization';
 import { errorResponse, ErrorCodes } from '@/lib/api-response';
+import { validatePrice } from '@/lib/price';
 
 export class DepartmentService extends BaseService<IDepartment> {
   constructor() {
@@ -261,6 +267,9 @@ export class DepartmentService extends BaseService<IDepartment> {
       const totalUnits = totalUnitsRes._sum.quantity || 0;
       const fulfilledUnits = fulfilledUnitsRes._sum.quantity || 0;
       const totalAmount = amountRes._sum.lineTotal || 0;
+
+      // Validate totalAmount is in cents (integer)
+      validatePrice(totalAmount, `departmentStats totalAmount for ${departmentCode}`);
 
       const stats = {
         totalOrders,

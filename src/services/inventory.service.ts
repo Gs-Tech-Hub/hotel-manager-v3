@@ -1,14 +1,20 @@
 /**
  * Inventory Service
  * Handles inventory management for multiple item types (drinks, supplies, equipment, linens, etc.)
+ * 
+ * PRICE CONSISTENCY:
+ * - All unitPrice values are stored in database as Decimal (dollars)
+ * - Service normalizes to cents (Integer) for internal calculations
+ * - Always validates prices and tracks updates
  */
 
 import { BaseService } from './base.service';
 import { IInventoryItem, IInventoryType, IInventoryMovement } from '../types/entities';
 import { prisma } from '../lib/prisma';
 import { normalizeError } from '@/lib/errors';
+import { normalizeToCents, prismaDecimalToCents, validatePrice, centsToDollars } from '@/lib/price';
 
-// Helper mappers
+// Helper mappers - normalize prices to cents
 function mapInventoryItem(item: any): IInventoryItem {
   if (!item) return item;
   return {
@@ -21,8 +27,8 @@ function mapInventoryItem(item: any): IInventoryItem {
     quantity: item.quantity,
     reorderLevel: item.reorderLevel,
     maxQuantity: item.maxQuantity ?? undefined,
-    // Convert Decimal -> number
-    unitPrice: typeof item.unitPrice === 'object' && typeof item.unitPrice.toNumber === 'function' ? item.unitPrice.toNumber() : Number(item.unitPrice),
+    // CRITICAL: Convert Decimal field to cents (integer) for consistency
+    unitPrice: prismaDecimalToCents(item.unitPrice),
     location: item.location ?? undefined,
     supplier: item.supplier ?? undefined,
     lastRestocked: item.lastRestocked ?? undefined,

@@ -1,13 +1,28 @@
 /**
  * Enhanced Order Service
  * Comprehensive order management with multi-department support, discounts, and inventory
+ * 
+ * PRICE CONSISTENCY:
+ * - All prices stored as integers in cents
+ * - Calculations use cents throughout
+ * - Database fields: subtotal, discountTotal, tax, total are all INT (cents)
+ * - OrderLine.unitPrice and lineTotal are INT (cents)
+ * - Discounts applied as cents, not percentages
+ * - Tax calculated as percentage of subtotal (cents)
  */
 
 import { BaseService } from './base.service';
 import type { IOrderHeader } from '../types/entities';
 import { prisma } from '../lib/prisma';
 import { normalizeError } from '@/lib/errors';
-import { normalizeToCents } from '@/lib/price';
+import { 
+  normalizeToCents, 
+  calculateDiscount, 
+  calculateTax, 
+  calculateTotal,
+  validatePrice,
+  sumPrices 
+} from '@/lib/price';
 import { UserContext, requireRoleOrOwner, requireRole } from '@/lib/authorization';
 import { departmentService } from './department.service';
 import { errorResponse, ErrorCodes } from '@/lib/api-response';
@@ -20,6 +35,8 @@ export class OrderService extends BaseService<IOrderHeader> {
   /**
    * Create comprehensive order with validation
    * Handles: inventory allocation, discount application, department routing
+   * 
+   * All prices normalized to cents (integers) for consistency
    */
   async createOrder(data: {
     customerId: string;
@@ -44,15 +61,18 @@ export class OrderService extends BaseService<IOrderHeader> {
       // Generate unique order number
       const orderNumber = `ORD-${Date.now()}-${Math.random().toString(36).substr(2, 9).toUpperCase()}`;
 
-      // Calculate subtotal and validate inventory (unit prices normalized to cents)
+      // Calculate subtotal and validate inventory (all prices normalized to cents)
       let subtotal = 0;
       const departments = new Set<string>();
 
       for (const item of data.items) {
-        const normalizedUnit = normalizeToCents(item.unitPrice)
+        // Normalize unit price to cents (integer)
+        const normalizedUnit = normalizeToCents(item.unitPrice);
+        validatePrice(normalizedUnit, `Item ${item.productName} unitPrice`);
+        
         // attach normalized value back for later use
-        ;(item as any)._normalizedUnitPrice = normalizedUnit
-        subtotal += item.quantity * normalizedUnit
+        ;(item as any)._normalizedUnitPrice = normalizedUnit;
+        subtotal += item.quantity * normalizedUnit;
         departments.add(item.departmentCode);
 
         // Check inventory availability (for inventory-based departments)
@@ -63,6 +83,9 @@ export class OrderService extends BaseService<IOrderHeader> {
           }
         }
       }
+
+      // Validate subtotal
+      validatePrice(subtotal, 'subtotal');
 
       // Create order header first (keep this operation minimal and fast)
       const header = await prisma.orderHeader.create({
@@ -96,19 +119,25 @@ export class OrderService extends BaseService<IOrderHeader> {
       }
 
       // Prepare order lines and reservation rows
-      const linesData = data.items.map((item: any, idx: number) => ({
-        lineNumber: idx + 1,
-        orderHeaderId: header.id,
-        departmentCode: item.departmentCode,
-        productId: item.productId,
-        productType: item.productType,
-        productName: item.productName,
-        quantity: item.quantity,
-        unitPrice: (item as any)._normalizedUnitPrice ?? normalizeToCents(item.unitPrice),
-        unitDiscount: 0,
-        lineTotal: item.quantity * ((item as any)._normalizedUnitPrice ?? normalizeToCents(item.unitPrice)),
-        status: 'pending',
-      }));
+      const linesData = data.items.map((item: any, idx: number) => {
+        const unitPriceCents = (item as any)._normalizedUnitPrice ?? normalizeToCents(item.unitPrice);
+        const lineTotalCents = item.quantity * unitPriceCents;
+        validatePrice(lineTotalCents, `Line ${idx + 1} total`);
+        
+        return {
+          lineNumber: idx + 1,
+          orderHeaderId: header.id,
+          departmentCode: item.departmentCode,
+          productId: item.productId,
+          productType: item.productType,
+          productName: item.productName,
+          quantity: item.quantity,
+          unitPrice: unitPriceCents,
+          unitDiscount: 0,
+          lineTotal: lineTotalCents,
+          status: 'pending',
+        };
+      });
 
       const reservationRows = data.items
         .filter((it: any) => ['RESTAURANT', 'BAR_CLUB'].includes(it.departmentCode))
@@ -158,38 +187,38 @@ export class OrderService extends BaseService<IOrderHeader> {
       // If discounts were provided at creation time, attempt to apply them now
       if (data.discounts && Array.isArray(data.discounts) && data.discounts.length > 0) {
         // Loop through codes and attempt to create OrderDiscounts (reuse same validations as applyDiscount)
-        let accumulatedDiscount = 0
+        let accumulatedDiscount = 0;
+        
         for (const code of data.discounts) {
-          if (!code) continue
-          const rule = await prisma.discountRule.findUnique({ where: { code } })
+          if (!code) continue;
+          const rule = await prisma.discountRule.findUnique({ where: { code } });
           if (!rule) {
-            // rollback created order? For now, return validation error so client can correct
-            return errorResponse(ErrorCodes.VALIDATION_ERROR, `Discount code not found: ${code}`)
+            return errorResponse(ErrorCodes.VALIDATION_ERROR, `Discount code not found: ${code}`);
           }
 
           if (!rule.isActive) {
-            return errorResponse(ErrorCodes.VALIDATION_ERROR, `Discount code inactive: ${code}`)
+            return errorResponse(ErrorCodes.VALIDATION_ERROR, `Discount code inactive: ${code}`);
           }
 
           if (rule.minOrderAmount && subtotal < rule.minOrderAmount) {
-            return errorResponse(ErrorCodes.VALIDATION_ERROR, `Minimum order amount of ${rule.minOrderAmount} required for discount ${code}`)
+            return errorResponse(ErrorCodes.VALIDATION_ERROR, `Minimum order amount of ${rule.minOrderAmount} required for discount ${code}`);
           }
 
-          // Calculate discount amount according to rule
-          let discountAmount = 0
-          if (rule.type === 'percentage') {
-            discountAmount = Math.round(subtotal * (Number(rule.value) / 100))
-          } else {
-            // fixed amount is stored in rule.value as Decimal (dollars); convert to cents
-            discountAmount = normalizeToCents(Number(rule.value))
-          }
+          // Calculate discount amount using utility function (handles percentage and fixed)
+          const discountAmount = calculateDiscount(
+            subtotal,
+            Number(rule.value),
+            rule.type as 'percentage' | 'fixed'
+          );
+          
+          validatePrice(discountAmount, `Discount ${code}`);
 
           // Prevent discount exceeding subtotal
           if (accumulatedDiscount + discountAmount > subtotal) {
-            return errorResponse(ErrorCodes.VALIDATION_ERROR, `Discounts exceed subtotal for code: ${code}`)
+            return errorResponse(ErrorCodes.VALIDATION_ERROR, `Discounts exceed subtotal for code: ${code}`);
           }
 
-          // Persist order discount
+          // Persist order discount (all in cents)
           await prisma.orderDiscount.create({
             data: {
               orderHeaderId: header.id,
@@ -198,21 +227,30 @@ export class OrderService extends BaseService<IOrderHeader> {
               discountCode: rule.code,
               discountAmount,
             },
-          })
+          });
 
-          accumulatedDiscount += discountAmount
+          accumulatedDiscount += discountAmount;
         }
 
         // Update order totals to account for applied discounts
+        // Note: tax is 10% of (subtotal - discounts) 
+        const taxAmount = calculateTax(subtotal - accumulatedDiscount, 10);
+        const totalAmount = calculateTotal(subtotal, accumulatedDiscount, taxAmount);
+        
+        validatePrice(accumulatedDiscount, 'discountTotal');
+        validatePrice(taxAmount, 'tax');
+        validatePrice(totalAmount, 'total');
+
         const updated = await prisma.orderHeader.update({
           where: { id: header.id },
           data: {
             discountTotal: accumulatedDiscount,
-            total: Math.max(0, subtotal - accumulatedDiscount + 0),
+            tax: taxAmount,
+            total: totalAmount,
           },
-        })
+        });
 
-        return updated
+        return updated;
       }
 
       return order;
@@ -234,12 +272,12 @@ export class OrderService extends BaseService<IOrderHeader> {
 
   /**
    * Apply discount to order (handles multiple discount types)
-   * Discount is added to existing order totals
+   * All calculations in cents
    */
   async applyDiscount(orderId: string, discountData: {
     discountCode: string;
     discountType: 'percentage' | 'fixed' | 'employee' | 'bulk';
-    discountAmount?: number; // For fixed discounts or manual entry
+    discountAmount?: number; // For fixed discounts or manual entry (in cents)
   }, ctx?: UserContext) {
     try {
       const forbidden = requireRole(ctx, ['admin', 'manager', 'staff']);

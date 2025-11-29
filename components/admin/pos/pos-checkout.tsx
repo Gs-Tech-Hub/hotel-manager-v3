@@ -6,6 +6,8 @@ import { POSProductGrid, POSProduct } from "@/components/admin/pos/pos-product-g
 import { POSCart, CartLine } from "@/components/admin/pos/pos-cart"
 import { POSPayment } from "@/components/admin/pos/pos-payment"
 import { POSReceipt } from "@/components/admin/pos/pos-receipt"
+import { normalizeToCents, calculateTax, calculateTotal } from "@/lib/price"
+import { formatPriceDisplay, formatOrderTotal } from "@/lib/formatters"
 
 export default function POSCheckoutShell({ terminalId }: { terminalId?: string }) {
   const [category, setCategory] = useState<string | null>(null)
@@ -54,9 +56,13 @@ export default function POSCheckoutShell({ terminalId }: { terminalId?: string }
   const handleRemove = (lineId: string) => setCart((s) => s.filter((l) => l.lineId !== lineId))
   const handleQty = (lineId: string, qty: number) => setCart((s) => s.map((l) => (l.lineId === lineId ? { ...l, quantity: Math.max(1, qty) } : l)))
 
-  const subtotal = cart.reduce((s, c) => s + c.unitPrice * c.quantity, 0)
-  const tax = subtotal * 0.1
-  const total = subtotal + tax
+  // Calculate prices in cents for consistency
+  const subtotal = cart.reduce((s, c) => {
+    const unitCents = normalizeToCents(c.unitPrice)
+    return s + (unitCents * c.quantity)
+  }, 0)
+  const tax = calculateTax(subtotal, 10) // 10% tax rate
+  const total = calculateTotal(subtotal, 0, tax)
 
   const handlePaymentComplete = (payment: any) => {
     ;(async () => {
