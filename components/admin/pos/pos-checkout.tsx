@@ -78,7 +78,7 @@ export default function POSCheckoutShell({ terminalId }: { terminalId?: string }
           productId: c.productId,
           productType: (c as any).type || 'inventory',
           productName: c.productName,
-          departmentCode: departmentSection.departmentCode,
+          departmentCode: departmentSection.id, // Use section code (e.g., "restaurant:main") not parent code
           quantity: c.quantity,
           unitPrice: c.unitPrice,
         }))

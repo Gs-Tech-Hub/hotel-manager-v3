@@ -9,6 +9,7 @@ import { prisma } from '../lib/prisma';
 import { normalizeError } from '@/lib/errors';
 import { normalizeToCents } from '@/lib/price';
 import { UserContext, requireRoleOrOwner, requireRole } from '@/lib/authorization';
+import { departmentService } from './department.service';
 import { errorResponse, ErrorCodes } from '@/lib/api-response';
 
 export class OrderService extends BaseService<IOrderHeader> {
@@ -141,6 +142,16 @@ export class OrderService extends BaseService<IOrderHeader> {
       }
 
       const order = header
+
+      // Recalculate and persist section stats for involved department sections
+      try {
+        for (const code of deptCodes) {
+          if (!code) continue;
+          await departmentService.recalculateSectionStats(code);
+        }
+      } catch (e) {
+        try { const logger = await import('@/lib/logger'); logger.error(e, { context: 'recalculateSectionStats.createOrder' }); } catch {}
+      }
 
       // If discounts were provided at creation time, attempt to apply them now
       if (data.discounts && Array.isArray(data.discounts) && data.discounts.length > 0) {
@@ -411,6 +422,13 @@ export class OrderService extends BaseService<IOrderHeader> {
         data: { subtotal: newSubtotal, total: newSubtotal - order.discountTotal + order.tax },
       });
 
+      // Recalculate section stats for the affected department
+      try {
+        if (item.departmentCode) await departmentService.recalculateSectionStats(item.departmentCode as string);
+      } catch (e) {
+        try { const logger = await import('@/lib/logger'); logger.error(e, { context: 'recalculateSectionStats.addLineItem' }); } catch {}
+      }
+
       return lineItem;
     } catch (error) {
       console.error('Error adding line item:', error);
@@ -453,6 +471,17 @@ export class OrderService extends BaseService<IOrderHeader> {
         where: { id: orderId },
         data: { subtotal: newSubtotal, total: newSubtotal - order.discountTotal + order.tax },
       });
+
+      // Recalculate section stats for all remaining department codes on this order
+      try {
+        const deptCodes = Array.from(new Set(allLines.map((l: any) => l.departmentCode)));
+        for (const code of deptCodes) {
+          if (!code) continue;
+          await departmentService.recalculateSectionStats(code as string);
+        }
+      } catch (e) {
+        try { const logger = await import('@/lib/logger'); logger.error(e, { context: 'recalculateSectionStats.removeLineItem' }); } catch {}
+      }
 
       return { success: true, message: 'Line item removed' };
     } catch (error) {
@@ -515,8 +544,36 @@ export class OrderService extends BaseService<IOrderHeader> {
           await tx.orderHeader.update({ where: { id: orderId }, data: { status: 'processing' } });
           await tx.orderDepartment.updateMany({ where: { orderHeaderId: orderId }, data: { status: 'processing' } });
 
+
           // Find order lines that require inventory consumption
           const lines = await tx.orderLine.findMany({ where: { orderHeaderId: orderId } });
+
+          // Update department section metadata for departments that initiated this transaction
+          try {
+            const involvedDeptCodes = Array.from(new Set(lines.map((l: any) => l.departmentCode)));
+            for (const deptCode of involvedDeptCodes) {
+              if (!deptCode) continue;
+              const dept = await tx.department.findUnique({ where: { code: deptCode } });
+              if (!dept) continue;
+
+              const existingMeta = (dept.metadata as any) || {};
+              const mergedMeta = {
+                ...existingMeta,
+                lastTransaction: {
+                  orderId: orderId,
+                  paymentId: payment.id,
+                  amount: amount,
+                  initiatedBy: (ctx as any)?.userId || null,
+                  at: new Date(),
+                },
+              };
+
+              await tx.department.update({ where: { id: dept.id }, data: { metadata: mergedMeta } });
+            }
+          } catch (metaErr) {
+            // Do not fail the whole payment processing if metadata update fails; log and continue
+            try { const logger = await import('@/lib/logger'); logger.error(metaErr, { context: 'updateDepartmentMetadata' }); } catch {}
+          }
 
           const movementRows: any[] = [];
 
@@ -549,6 +606,17 @@ export class OrderService extends BaseService<IOrderHeader> {
 
           // mark reservations as consumed
           await tx.inventoryReservation.updateMany({ where: { orderHeaderId: orderId, status: 'reserved' }, data: { status: 'consumed', consumedAt: new Date() } });
+
+          // Recalculate section stats for involved departments using the same transaction client
+          try {
+            const involvedDeptCodes = Array.from(new Set(lines.map((l: any) => l.departmentCode)));
+            for (const code of involvedDeptCodes) {
+              if (!code) continue;
+              await departmentService.recalculateSectionStats(code as string, tx);
+            }
+          } catch (e) {
+            try { const logger = await import('@/lib/logger'); logger.error(e, { context: 'recalculateSectionStats.recordPayment' }); } catch {}
+          }
         });
       }
 
@@ -691,6 +759,18 @@ export class OrderService extends BaseService<IOrderHeader> {
           data: { status: 'cancelled' },
         });
       });
+
+      // Recalculate section stats for departments involved in the order
+      try {
+        const lines = await prisma.orderLine.findMany({ where: { orderHeaderId: id } });
+        const deptCodes = Array.from(new Set(lines.map((l: any) => l.departmentCode)));
+        for (const code of deptCodes) {
+          if (!code) continue;
+          await departmentService.recalculateSectionStats(code as string);
+        }
+      } catch (e) {
+        try { const logger = await import('@/lib/logger'); logger.error(e, { context: 'recalculateSectionStats.cancelOrder' }); } catch {}
+      }
 
       return { success: true, message: 'Order cancelled and reservations released' };
     } catch (error) {

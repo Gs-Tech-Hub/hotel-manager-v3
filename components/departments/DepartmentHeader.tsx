@@ -20,6 +20,16 @@ export default function DepartmentHeader({ department, sectionStock, onBack }: a
               <span className="font-medium">Section stock:</span> Low {sectionStock.low} / High {sectionStock.high} / Empty {sectionStock.empty} — Products: {sectionStock.totalProducts}
             </div>
           )}
+
+          {/* Section-level stats (if present in metadata.sectionStats) */}
+          {department?.metadata?.sectionStats && (
+            <div className="text-sm text-muted-foreground mt-2">
+              <span className="font-medium">Orders:</span> {department.metadata.sectionStats.totalOrders ?? 0} •
+              <span className="ml-2 font-medium">Pending:</span> {department.metadata.sectionStats.pendingOrders ?? 0} •
+              <span className="ml-2 font-medium">Units Sold:</span> {department.metadata.sectionStats.fulfilledUnits ?? 0} •
+              <span className="ml-2 font-medium">Amount:</span> ${((department.metadata.sectionStats.totalAmount ?? 0)/100).toFixed(2)}
+            </div>
+          )}
         </div>
       </div>
 

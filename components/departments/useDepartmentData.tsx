@@ -144,17 +144,21 @@ export default function useDepartmentData(decodedCode: string | undefined) {
             (d.referenceId && String(d.referenceId) === String((dept as any).id))
           )
         })
-        .map((d) => ({
-          code: d.code,
-          name: d.name,
-          description: d.description,
-          type: d.type,
-          icon: d.icon,
-          totalOrders: d.totalOrders,
-          pendingOrders: d.pendingOrders,
-          processingOrders: d.processingOrders,
-          fulfilledOrders: d.fulfilledOrders,
-        }))
+        .map((d) => {
+          const stats = (d && d.metadata && d.metadata.sectionStats) ? d.metadata.sectionStats : null
+          return ({
+            code: d.code,
+            name: d.name,
+            description: d.description,
+            type: d.type,
+            icon: d.icon,
+            sectionStats: stats,
+            totalOrders: stats?.totalOrders ?? d.totalOrders ?? 0,
+            pendingOrders: stats?.pendingOrders ?? d.pendingOrders ?? 0,
+            processingOrders: stats?.processingOrders ?? d.processingOrders ?? 0,
+            fulfilledOrders: stats?.fulfilledOrders ?? d.fulfilledOrders ?? 0,
+          })
+        })
 
       setChildren(found)
       return found

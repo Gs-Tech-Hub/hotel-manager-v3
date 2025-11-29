@@ -229,6 +229,70 @@ export class DepartmentService extends BaseService<IDepartment> {
   }
 
   /**
+   * Recalculate and write section-level statistics into department.metadata
+   * If a transaction client (`tx`) is provided, operations run on that client.
+   */
+  async recalculateSectionStats(departmentCode: string, tx?: any) {
+    try {
+      const client = tx || prisma;
+
+      // Basic aggregates scoped to this department section (by departmentCode)
+      // Count DISTINCT orders that have lines for this department section
+      const [totalOrderIds, pendingLineIds, processingLineIds, fulfilledLineIds] = await Promise.all([
+        client.orderLine.findMany({
+          where: { departmentCode },
+          distinct: ['orderHeaderId'],
+          select: { orderHeaderId: true },
+        }),
+        client.orderLine.count({ where: { departmentCode, status: 'pending' } }),
+        client.orderLine.count({ where: { departmentCode, status: 'processing' } }),
+        client.orderLine.count({ where: { departmentCode, status: 'fulfilled' } }),
+      ]);
+
+      const totalOrders = totalOrderIds.length;
+      const pendingOrders = pendingLineIds;
+      const processingOrders = processingLineIds;
+      const fulfilledOrders = fulfilledLineIds;
+
+      const totalUnitsRes: any = await client.orderLine.aggregate({ _sum: { quantity: true }, where: { departmentCode } });
+      const fulfilledUnitsRes: any = await client.orderLine.aggregate({ _sum: { quantity: true }, where: { departmentCode, status: 'fulfilled' } });
+      const amountRes: any = await client.orderLine.aggregate({ _sum: { lineTotal: true }, where: { departmentCode, status: { in: ['fulfilled', 'completed'] } } });
+
+      const totalUnits = totalUnitsRes._sum.quantity || 0;
+      const fulfilledUnits = fulfilledUnitsRes._sum.quantity || 0;
+      const totalAmount = amountRes._sum.lineTotal || 0;
+
+      const stats = {
+        totalOrders,
+        pendingOrders,
+        processingOrders,
+        fulfilledOrders,
+        totalUnits,
+        fulfilledUnits,
+        totalAmount,
+        fulfillmentRate: totalUnits > 0 ? Math.round((fulfilledUnits / totalUnits) * 100) : 0,
+        updatedAt: new Date(),
+      };
+
+      // Find department row by code and merge metadata
+      const dept = await client.department.findUnique({ where: { code: departmentCode } });
+      if (!dept) return stats;
+
+      const existingMeta = (dept.metadata as any) || {};
+      // Write stats into both `sectionStats` (section-aware key) and `stats` (legacy key)
+      const merged = { ...existingMeta, sectionStats: stats, stats };
+
+      await client.department.update({ where: { id: dept.id }, data: { metadata: merged } });
+
+      return stats;
+    } catch (error) {
+      try { const logger = await import('@/lib/logger'); logger.error(error, { context: 'recalculateSectionStats' }); } catch {}
+      console.error('Error recalculating section stats:', error);
+      return null;
+    }
+  }
+
+  /**
    * Get pending items for department
    * Used for kitchen display, bar display, etc.
    */
@@ -327,6 +391,13 @@ export class DepartmentService extends BaseService<IDepartment> {
           where: { id: line.orderHeaderId },
           data: { status: 'fulfilled' },
         });
+      }
+
+      // Recalculate section stats for this line's department
+      try {
+        if (line.departmentCode) await this.recalculateSectionStats(line.departmentCode as string);
+      } catch (e) {
+        try { const logger = await import('@/lib/logger'); logger.error(e, { context: 'recalculateSectionStats.completeLineItem' }); } catch {}
       }
 
       return updatedLine;
