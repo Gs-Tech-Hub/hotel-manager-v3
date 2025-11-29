@@ -161,8 +161,14 @@ export default function DepartmentDetail() {
             <h1 className="text-2xl font-bold">{department?.name || code}</h1>
             {department?.description && <div className="text-sm text-muted-foreground">{department.description}</div>}
             {sectionStock && (
-              <div className="text-sm text-muted-foreground mt-2">
-                <span className="font-medium">Section stock:</span> Low {sectionStock.low} / High {sectionStock.high} / Empty {sectionStock.empty} — Products: {sectionStock.totalProducts}
+              <div className="mt-3 p-3 bg-blue-50 rounded border border-blue-200">
+                <div className="text-sm font-medium text-blue-900">Stock Summary</div>
+                <div className="text-sm text-blue-800 mt-1 grid grid-cols-2 gap-2">
+                  <div><span className="font-semibold">Available:</span> {sectionStock.high}</div>
+                  <div><span className="font-semibold">Low Stock:</span> {sectionStock.low}</div>
+                  <div><span className="font-semibold">Out of Stock:</span> {sectionStock.empty}</div>
+                  <div><span className="font-semibold">Total Products:</span> {sectionStock.totalProducts}</div>
+                </div>
               </div>
             )}
           </div>
@@ -196,20 +202,37 @@ export default function DepartmentDetail() {
       </div>
 
       {decodedCode.includes(':') && (
-        <div className="mt-6">
-          <h2 className="text-xl font-semibold">Products</h2>
-          <div className="mt-3">
-            {sectionProductsLoading ? (
-              <div className="text-sm text-muted-foreground">Loading products...</div>
-            ) : (
-              <>
-                <SectionProductsTable products={sectionProducts} />
+        <>
+          {/* Order Stats Card */}
+          {department?.metadata?.sectionStats && (
+            <div className="p-4 bg-green-50 rounded border border-green-200">
+              <div className="text-sm font-medium text-green-900">Order Fulfillment Stats</div>
+              <div className="text-sm text-green-800 mt-2 grid grid-cols-2 md:grid-cols-5 gap-3">
+                <div><span className="font-semibold">{department.metadata.sectionStats.totalOrders ?? 0}</span> <span className="block text-xs text-green-700">Total Orders</span></div>
+                <div><span className="font-semibold">{department.metadata.sectionStats.pendingOrders ?? 0}</span> <span className="block text-xs text-green-700">Pending</span></div>
+                <div><span className="font-semibold">{department.metadata.sectionStats.processingOrders ?? 0}</span> <span className="block text-xs text-green-700">Processing</span></div>
+                <div><span className="font-semibold">{department.metadata.sectionStats.fulfilledOrders ?? 0}</span> <span className="block text-xs text-green-700">Fulfilled</span></div>
+                <div><span className="font-semibold">${((department.metadata.sectionStats.totalAmount ?? 0)/100).toFixed(2)}</span> <span className="block text-xs text-green-700">Total Revenue</span></div>
+              </div>
+            </div>
+          )}
 
-                
-              </>
-            )}
+          {/* Products Table */}
+          <div className="mt-6">
+            <h2 className="text-xl font-semibold">Products</h2>
+            <div className="mt-3">
+              {sectionProductsLoading ? (
+                <div className="text-sm text-muted-foreground">Loading products...</div>
+              ) : (
+                <>
+                  <SectionProductsTable products={sectionProducts} />
+
+                  
+                </>
+              )}
+            </div>
           </div>
-        </div>
+        </>
       )}
 
       <SectionsList sections={children} loading={childrenLoading} />

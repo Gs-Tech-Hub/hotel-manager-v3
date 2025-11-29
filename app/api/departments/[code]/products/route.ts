@@ -37,12 +37,16 @@ export async function GET(request: NextRequest, { params }: { params: Promise<{ 
 
       if (includeDetails && mapped.length > 0) {
         const ids = mapped.map((m) => m.id)
+        const allPossibleIds = [...ids, ...ids.map((id) => `menu-${id}`)]
         // Units sold and amount sold (completed or fulfilled lines)
         const soldGroups = await prisma.orderLine.groupBy({
           by: ['productId'],
           where: {
-            productId: { in: ids },
-            OR: [ { orderHeader: { status: 'completed' } }, { status: 'fulfilled' } ],
+            productId: { in: allPossibleIds },
+              OR: [ 
+                { orderHeader: { status: { in: ['completed', 'fulfilled'] } } },
+                { status: 'fulfilled' }
+              ],
             ...(sectionFilter ? { departmentCode: sectionFilter } : {}),
           },
           _sum: { quantity: true, lineTotal: true },
@@ -51,7 +55,7 @@ export async function GET(request: NextRequest, { params }: { params: Promise<{ 
         const pendingGroups = await prisma.orderLine.groupBy({
           by: ['productId'],
           where: {
-            productId: { in: ids },
+            productId: { in: allPossibleIds },
             status: { in: ['pending', 'processing'] },
             orderHeader: { status: { not: 'cancelled' } },
             ...(sectionFilter ? { departmentCode: sectionFilter } : {}),
@@ -64,9 +68,9 @@ export async function GET(request: NextRequest, { params }: { params: Promise<{ 
 
         mapped = mapped.map((m) => ({
           ...m,
-          unitsSold: (soldMap.get(m.id) as any)?.quantity || 0,
-          amountSold: (soldMap.get(m.id) as any)?.lineTotal || 0,
-          pendingQuantity: (pendingMap.get(m.id) as any)?.quantity || 0,
+          unitsSold: (soldMap.get(m.id) as any)?.quantity || (soldMap.get(`menu-${m.id}`) as any)?.quantity || 0,
+          amountSold: (soldMap.get(m.id) as any)?.lineTotal || (soldMap.get(`menu-${m.id}`) as any)?.lineTotal || 0,
+          pendingQuantity: (pendingMap.get(m.id) as any)?.quantity || (pendingMap.get(`menu-${m.id}`) as any)?.quantity || 0,
         }))
       }
 
@@ -84,11 +88,15 @@ export async function GET(request: NextRequest, { params }: { params: Promise<{ 
 
       if (includeDetails && mapped.length > 0) {
         const ids = mapped.map((m) => m.id)
+        const allPossibleIds = [...ids, ...ids.map((id) => `menu-${id}`)]
         const soldGroups = await prisma.orderLine.groupBy({
           by: ['productId'],
           where: {
-            productId: { in: ids },
-            OR: [ { orderHeader: { status: 'completed' } }, { status: 'fulfilled' } ],
+            productId: { in: allPossibleIds },
+              OR: [ 
+                { orderHeader: { status: { in: ['completed', 'fulfilled'] } } },
+                { status: 'fulfilled' }
+              ],
             ...(sectionFilter ? { departmentCode: sectionFilter } : {}),
           },
           _sum: { quantity: true, lineTotal: true },
@@ -97,7 +105,7 @@ export async function GET(request: NextRequest, { params }: { params: Promise<{ 
         const pendingGroups = await prisma.orderLine.groupBy({
           by: ['productId'],
           where: {
-            productId: { in: ids },
+            productId: { in: allPossibleIds },
             status: { in: ['pending', 'processing'] },
             orderHeader: { status: { not: 'cancelled' } },
             ...(sectionFilter ? { departmentCode: sectionFilter } : {}),
@@ -110,9 +118,9 @@ export async function GET(request: NextRequest, { params }: { params: Promise<{ 
 
         mapped = mapped.map((m) => ({
           ...m,
-          unitsSold: (soldMap.get(m.id) as any)?.quantity || 0,
-          amountSold: (soldMap.get(m.id) as any)?.lineTotal || 0,
-          pendingQuantity: (pendingMap.get(m.id) as any)?.quantity || 0,
+          unitsSold: (soldMap.get(m.id) as any)?.quantity || (soldMap.get(`menu-${m.id}`) as any)?.quantity || 0,
+          amountSold: (soldMap.get(m.id) as any)?.lineTotal || (soldMap.get(`menu-${m.id}`) as any)?.lineTotal || 0,
+          pendingQuantity: (pendingMap.get(m.id) as any)?.quantity || (pendingMap.get(`menu-${m.id}`) as any)?.quantity || 0,
         }))
       }
 
@@ -199,12 +207,16 @@ export async function GET(request: NextRequest, { params }: { params: Promise<{ 
 
       if (includeDetails && mapped.length > 0) {
         const ids = mapped.map((m) => m.id)
+        const allPossibleIds = [...ids, ...ids.map((id) => `menu-${id}`)]
 
         const soldGroups = await prisma.orderLine.groupBy({
           by: ['productId'],
           where: {
-            productId: { in: ids },
-            OR: [ { orderHeader: { status: 'completed' } }, { status: 'fulfilled' } ],
+            productId: { in: allPossibleIds },
+              OR: [ 
+                { orderHeader: { status: { in: ['completed', 'fulfilled'] } } },
+                { status: 'fulfilled' }
+              ],
             ...(sectionFilter ? { departmentCode: sectionFilter } : {}),
           },
           _sum: { quantity: true, lineTotal: true },
@@ -213,7 +225,7 @@ export async function GET(request: NextRequest, { params }: { params: Promise<{ 
         const pendingGroups = await prisma.orderLine.groupBy({
           by: ['productId'],
           where: {
-            productId: { in: ids },
+            productId: { in: allPossibleIds },
             status: { in: ['pending', 'processing'] },
             orderHeader: { status: { not: 'cancelled' } },
             ...(sectionFilter ? { departmentCode: sectionFilter } : {}),
@@ -242,9 +254,9 @@ export async function GET(request: NextRequest, { params }: { params: Promise<{ 
 
         mapped = mapped.map((m) => ({
           ...m,
-          unitsSold: (soldMap.get(m.id) as any)?.quantity || 0,
-          amountSold: (soldMap.get(m.id) as any)?.lineTotal || 0,
-          pendingQuantity: (pendingMap.get(m.id) as any)?.quantity || 0,
+          unitsSold: (soldMap.get(m.id) as any)?.quantity || (soldMap.get(`menu-${m.id}`) as any)?.quantity || 0,
+          amountSold: (soldMap.get(m.id) as any)?.lineTotal || (soldMap.get(`menu-${m.id}`) as any)?.lineTotal || 0,
+          pendingQuantity: (pendingMap.get(m.id) as any)?.quantity || (pendingMap.get(`menu-${m.id}`) as any)?.quantity || 0,
           reservedQuantity: (resMap.get(m.id) as any)?.quantity || 0,
         }))
       }

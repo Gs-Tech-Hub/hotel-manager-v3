@@ -28,7 +28,7 @@ async function inspectLine(lineItemId: string) {
 
       const orderDepartments = await prisma.orderDepartment.findMany({ where: { orderHeaderId: line.orderHeaderId } })
       console.log('\n-- OrderDepartment rows for header --')
-      console.log(orderDepartments.map((od) => ({ id: od.id, departmentId: od.departmentId, status: od.status, departmentCode: od.departmentCode })))
+        console.log(orderDepartments.map((od) => ({ id: od.id, departmentId: od.departmentId, status: od.status })))
 
       // reservations for this header
       const reservations = await prisma.inventoryReservation.findMany({ where: { orderHeaderId: line.orderHeaderId } })

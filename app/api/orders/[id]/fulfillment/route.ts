@@ -210,9 +210,61 @@ export async function PUT(
       });
       const t2 = Date.now();
 
-      // If status is fulfilled, check if all lines are fulfilled.
-      // Use a COUNT query instead of fetching all rows to keep transaction fast.
+      // If status is fulfilled, perform inventory consumption for this line,
+      // then check if all lines are fulfilled.
       if (status === 'fulfilled') {
+        try {
+          // Re-fetch the line within the transaction to get authoritative data
+          const txLine = await tx.orderLine.findUnique({ where: { id: lineItemId } });
+          const fulfilledQty = quantity || (txLine?.quantity || 0);
+
+          // If this line is an inventory-backed item, decrement dept inventory and record movement
+          if (txLine && txLine.productType && ['inventoryItem', 'food', 'drink'].includes(txLine.productType)) {
+            try {
+              const dept = await tx.department.findUnique({ where: { code: txLine.departmentCode } });
+              if (dept) {
+                const res = await tx.departmentInventory.updateMany({
+                  where: { departmentId: dept.id, inventoryItemId: txLine.productId, quantity: { gte: fulfilledQty } },
+                  data: { quantity: { decrement: fulfilledQty } },
+                });
+
+                if (res.count && res.count > 0) {
+                  await tx.inventoryMovement.create({
+                    data: {
+                      movementType: 'out',
+                      quantity: fulfilledQty,
+                      reason: 'sale',
+                      reference: orderId,
+                      inventoryItemId: txLine.productId,
+                    },
+                  });
+                } else {
+                  // If updateMany didn't find sufficient stock, log a warning but continue
+                  console.warn(`Insufficient inventory to decrement for line ${lineItemId} (product ${txLine.productId})`);
+                }
+
+                // Consume any existing reservation(s) for this order + inventoryItem
+                await tx.inventoryReservation.updateMany({
+                  where: { orderHeaderId: orderId, inventoryItemId: txLine.productId, status: 'reserved' },
+                  data: { status: 'consumed', consumedAt: new Date() },
+                });
+
+                // Recalculate section stats for this department within the transaction
+                try {
+                  const { departmentService } = await import('@/services/department.service');
+                  await departmentService.recalculateSectionStats(dept.code as string, tx);
+                } catch (e) {
+                  console.error('Error recalculating section stats during fulfillment tx:', e);
+                }
+              }
+            } catch (invErr) {
+              console.error('Inventory decrement during fulfillment failed:', invErr);
+            }
+          }
+        } catch (e) {
+          console.error('Error handling inventory consumption during fulfillment:', e);
+        }
+
         const remaining = await tx.orderLine.count({
           where: { orderHeaderId: orderId, status: { not: 'fulfilled' } },
         });

@@ -20,7 +20,7 @@ async function dumpDeptStats() {
       console.log('---')
       console.log('code:', d.code)
       console.log('id:', d.id)
-      console.log('metadata.stats:', (d.metadata || {}).stats || null)
+        console.log('metadata.stats:', (d.metadata as any)?.stats || null)
       console.log('orderDepartment counts:', map)
     }
   } catch (e) {
