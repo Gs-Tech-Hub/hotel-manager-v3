@@ -251,6 +251,20 @@ export async function PUT(
       console.log('PUT /api/orders/[id]/fulfillment payload (non-serializable):', payload);
     }
 
+    // After fulfillment update, roll up parent stats for all departments involved
+    try {
+      const { departmentService } = await import('@/services/department.service');
+      const lines = await prisma.orderLine.findMany({ where: { orderHeaderId: orderId } });
+      const deptCodes = Array.from(new Set(lines.map((l: any) => l.departmentCode)));
+      for (const code of deptCodes) {
+        if (!code) continue;
+        await departmentService.rollupParentStats(code);
+      }
+    } catch (rollupErr) {
+      console.error('Error rolling up parent stats after fulfillment:', rollupErr);
+      // Don't fail the request; just log
+    }
+
     return NextResponse.json(payload);
   } catch (error) {
     console.error('PUT /api/orders/[id]/fulfillment error:', error);

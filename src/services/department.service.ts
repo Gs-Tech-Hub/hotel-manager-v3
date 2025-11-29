@@ -293,6 +293,88 @@ export class DepartmentService extends BaseService<IDepartment> {
   }
 
   /**
+   * Roll up section stats into parent department metadata
+   * Called after transactions to keep parent totals current
+   */
+  async rollupParentStats(departmentCode: string, tx?: any) {
+    try {
+      const client = tx || prisma;
+
+      // Extract parent code from section code (e.g., "restaurant:main" -> "restaurant")
+      const parentCode = departmentCode.split(':')[0];
+      if (!parentCode || parentCode === departmentCode) {
+        // This is already a parent; no rollup needed
+        return;
+      }
+
+      // Get parent department
+      const parent = await client.department.findUnique({ where: { code: parentCode } });
+      if (!parent) return;
+
+      // Find all section departments for this parent
+      const prefix = `${parentCode}:`;
+      const sections = await client.department.findMany({
+        where: { code: { startsWith: prefix }, isActive: true },
+        select: { id: true, code: true, metadata: true },
+      });
+
+      if (!sections || sections.length === 0) return;
+
+      // Collect stats from each section
+      const sectionStatsList: any[] = [];
+      for (const s of sections) {
+        const meta = (s.metadata || {}) as any;
+        const stats = meta?.sectionStats || meta?.stats;
+        if (stats) sectionStatsList.push({ code: s.code, id: s.id, stats });
+      }
+
+      // Sum stats across sections
+      const rollup = {
+        totalOrders: 0,
+        pendingOrders: 0,
+        processingOrders: 0,
+        fulfilledOrders: 0,
+        totalUnits: 0,
+        fulfilledUnits: 0,
+        totalAmount: 0,
+      };
+
+      for (const s of sectionStatsList) {
+        const st = s.stats as any;
+        rollup.totalOrders += Number(st.totalOrders || st.total || 0);
+        rollup.pendingOrders += Number(st.pendingOrders || st.pending || 0);
+        rollup.processingOrders += Number(st.processingOrders || st.processing || 0);
+        rollup.fulfilledOrders += Number(st.fulfilledOrders || st.fulfilled || 0);
+        rollup.totalUnits += Number(st.totalUnits || 0);
+        rollup.fulfilledUnits += Number(st.fulfilledUnits || 0);
+        rollup.totalAmount += Number(st.totalAmount || st.amount || 0);
+      }
+
+      const fulfillmentRate = rollup.totalUnits > 0 ? Math.round((rollup.fulfilledUnits / rollup.totalUnits) * 100) : 0;
+
+      const parentStats = {
+        total: rollup.totalOrders,
+        pending: rollup.pendingOrders,
+        processing: rollup.processingOrders,
+        fulfilled: rollup.fulfilledOrders,
+        totalUnits: rollup.totalUnits,
+        fulfilledUnits: rollup.fulfilledUnits,
+        totalAmount: rollup.totalAmount,
+        fulfillmentRate,
+        updatedAt: new Date(),
+      };
+
+      // Merge into parent metadata
+      const existingMeta = (parent.metadata as any) || {};
+      const merged = { ...existingMeta, stats: parentStats, sectionRollups: sectionStatsList };
+      await client.department.update({ where: { id: parent.id }, data: { metadata: merged } });
+    } catch (error) {
+      try { const logger = await import('@/lib/logger'); logger.error(error, { context: 'rollupParentStats' }); } catch {}
+      console.error('Error rolling up parent stats:', error);
+    }
+  }
+
+  /**
    * Get pending items for department
    * Used for kitchen display, bar display, etc.
    */

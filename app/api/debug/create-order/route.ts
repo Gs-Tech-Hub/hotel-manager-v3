@@ -9,10 +9,10 @@ export async function GET(_req: NextRequest) {
     // create a guest customer
     const guest = await prisma.customer.create({ data: { firstName: 'DBG', lastName: 'Guest', email: `dbg+${Date.now()}@local`, phone: '000' } })
 
-    // build a sample payload with multiple items
+    // build a sample payload with multiple items targeting the restaurant:main section
     const items = [] as any[]
-    for (let i = 0; i < 8; i++) {
-      items.push({ productId: `dbg-prod-${i}`, productType: 'inventory', productName: `Debug Item ${i}`, departmentCode: 'RESTAURANT', quantity: 1, unitPrice: 5 })
+    for (let i = 0; i < 3; i++) {
+      items.push({ productId: `dbg-prod-${i}`, productType: 'inventory', productName: `Debug Item ${i}`, departmentCode: 'restaurant:main', quantity: 1, unitPrice: 500 })
     }
 
     const svc = new OrderService()

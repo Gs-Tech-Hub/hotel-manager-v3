@@ -148,6 +148,8 @@ export class OrderService extends BaseService<IOrderHeader> {
         for (const code of deptCodes) {
           if (!code) continue;
           await departmentService.recalculateSectionStats(code);
+          // Also roll up to parent if this is a section code
+          await departmentService.rollupParentStats(code);
         }
       } catch (e) {
         try { const logger = await import('@/lib/logger'); logger.error(e, { context: 'recalculateSectionStats.createOrder' }); } catch {}
@@ -618,6 +620,17 @@ export class OrderService extends BaseService<IOrderHeader> {
             try { const logger = await import('@/lib/logger'); logger.error(e, { context: 'recalculateSectionStats.recordPayment' }); } catch {}
           }
         });
+
+        // After transaction completes, roll up parent stats (outside of transaction)
+        try {
+          const involvedDeptCodes = Array.from(new Set((await prisma.orderLine.findMany({ where: { orderHeaderId: orderId } })).map((l: any) => l.departmentCode)));
+          for (const code of involvedDeptCodes) {
+            if (!code) continue;
+            await departmentService.rollupParentStats(code);
+          }
+        } catch (e) {
+          try { const logger = await import('@/lib/logger'); logger.error(e, { context: 'rollupParentStats.recordPayment' }); } catch {}
+        }
       }
 
       return payment;
@@ -767,6 +780,8 @@ export class OrderService extends BaseService<IOrderHeader> {
         for (const code of deptCodes) {
           if (!code) continue;
           await departmentService.recalculateSectionStats(code as string);
+          // Also roll up to parent
+          await departmentService.rollupParentStats(code);
         }
       } catch (e) {
         try { const logger = await import('@/lib/logger'); logger.error(e, { context: 'recalculateSectionStats.cancelOrder' }); } catch {}
