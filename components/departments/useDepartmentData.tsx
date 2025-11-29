@@ -256,6 +256,47 @@ export default function useDepartmentData(decodedCode: string | undefined) {
     fetchDepartment()
   }, [decodedCode, fetchMenu, fetchPendingOrderLines, fetchSectionProducts, loadChildrenForDepartment])
 
+  // Expose a refresh function so callers can re-fetch department + section data on demand
+  const refreshDepartment = async (code?: string) => {
+    const useCode = code ?? decodedCode
+    if (!useCode) return
+    setDeptLoading(true)
+    try {
+      const res = await fetch(`/api/departments/${encodeURIComponent(useCode)}`)
+      if (!res.ok) throw new Error('Failed to fetch')
+      const json = await res.json()
+      const d = json.data || json
+      setDepartment(d || null)
+
+      if (d) {
+        if (useCode.includes(':')) {
+          try {
+            const sRes = await fetch(`/api/departments/${encodeURIComponent(useCode)}/stock`)
+            if (sRes.ok) {
+              const sj = await sRes.json()
+              setSectionStock(sj?.data || sj || null)
+            }
+            await fetchSectionProducts(useCode)
+            await fetchPendingOrderLines(useCode)
+          } catch (e) {
+            setSectionStock(null)
+          }
+        } else {
+          const found = await loadChildrenForDepartment(d)
+          if (!found || found.length === 0) {
+            await fetchMenu(useCode)
+          } else {
+            setMenu([])
+          }
+        }
+      }
+    } catch (e) {
+      console.error('refreshDepartment error', e)
+    } finally {
+      setDeptLoading(false)
+    }
+  }
+
   return {
     menu,
     loading,
@@ -277,6 +318,7 @@ export default function useDepartmentData(decodedCode: string | undefined) {
     refreshPendingForModal,
     fetchSectionProducts,
     fetchPendingOrderLines,
+    refreshDepartment,
     setPendingModalOpen,
     setPendingModalItems,
   }

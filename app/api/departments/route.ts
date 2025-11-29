@@ -62,10 +62,40 @@ export async function GET(request: NextRequest) {
       if (row.status === 'fulfilled') countsByDept[deptId].fulfilled += cnt;
     }
 
-    // Calculate stats for each department
-    const departmentsWithStats = departments.map((dept: any) => {
-      const stats = countsByDept[dept.id] || { total: 0, pending: 0, processing: 0, fulfilled: 0 };
-      return {
+    // Calculate stats for each department (handle sections specially)
+    const departmentsWithStats: any[] = [];
+    for (const dept of departments) {
+      let stats = countsByDept[dept.id] || { total: 0, pending: 0, processing: 0, fulfilled: 0 };
+      try {
+        const codeStr = (dept.code || '').toString();
+        if (codeStr.includes(':')) {
+          // compute based on order lines referencing this section code
+          const headerRows = await (prisma as any).orderLine.findMany({
+            where: { departmentCode: dept.code },
+            distinct: ['orderHeaderId'],
+            select: { orderHeaderId: true },
+          });
+          const headerIds = (headerRows || []).map((h: any) => h.orderHeaderId).filter(Boolean);
+          if (headerIds.length) {
+            const hdrCounts = await (prisma as any).orderHeader.groupBy({ by: ['status'], where: { id: { in: headerIds } }, _count: { _all: true } });
+            const tmp: any = { total: 0, pending: 0, processing: 0, fulfilled: 0 };
+            for (const r of hdrCounts) {
+              const cnt = (r as any)._count?._all || 0;
+              tmp.total += cnt;
+              if (r.status === 'pending') tmp.pending += cnt;
+              if (r.status === 'processing') tmp.processing += cnt;
+              if (r.status === 'fulfilled') tmp.fulfilled += cnt;
+            }
+            stats = tmp;
+          } else {
+            stats = { total: 0, pending: 0, processing: 0, fulfilled: 0 };
+          }
+        }
+      } catch (e) {
+        // ignore and fallback to countsByDept
+      }
+
+      departmentsWithStats.push({
         id: dept.id,
         code: dept.code,
         name: dept.name,
@@ -82,8 +112,8 @@ export async function GET(request: NextRequest) {
         pendingOrders: stats.pending,
         processingOrders: stats.processing,
         fulfilledOrders: stats.fulfilled,
-      };
-    });
+      });
+    }
 
     return NextResponse.json(successResponse(departmentsWithStats));
   } catch (error) {

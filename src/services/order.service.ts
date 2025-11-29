@@ -511,8 +511,9 @@ export class OrderService extends BaseService<IOrderHeader> {
       if (totalPayments >= order.total) {
         // Fully paid: move to processing and consume reserved inventory for inventory-based departments
         await prisma.$transaction(async (tx: any) => {
-          // Update order status
+          // Update order status and sync department rows atomically
           await tx.orderHeader.update({ where: { id: orderId }, data: { status: 'processing' } });
+          await tx.orderDepartment.updateMany({ where: { orderHeaderId: orderId }, data: { status: 'processing' } });
 
           // Find order lines that require inventory consumption
           const lines = await tx.orderLine.findMany({ where: { orderHeaderId: orderId } });
@@ -643,12 +644,14 @@ export class OrderService extends BaseService<IOrderHeader> {
       const forbidden = requireRole(ctx, ['admin', 'manager']);
       if (forbidden) return forbidden;
 
-      const order = await (prisma as any).orderHeader.update({
-        where: { id },
-        data: { status: newStatus },
+      // Ensure header and related orderDepartment rows are updated atomically
+      const result = await prisma.$transaction(async (tx: any) => {
+        const updated = await tx.orderHeader.update({ where: { id }, data: { status: newStatus } });
+        await tx.orderDepartment.updateMany({ where: { orderHeaderId: id }, data: { status: newStatus } });
+        return updated;
       });
 
-      return order;
+      return result;
     } catch (error) {
       console.error('Error updating order status:', error);
       return errorResponse(ErrorCodes.INTERNAL_ERROR, 'Failed to update order status');
@@ -669,11 +672,12 @@ export class OrderService extends BaseService<IOrderHeader> {
       }
 
   await prisma.$transaction(async (tx: any) => {
-        // Mark order as cancelled
+        // Mark order as cancelled and propagate to department rows
         await tx.orderHeader.update({
           where: { id },
           data: { status: 'cancelled' },
         });
+        await tx.orderDepartment.updateMany({ where: { orderHeaderId: id }, data: { status: 'cancelled' } });
 
         // Release inventory reservations
         await tx.inventoryReservation.updateMany({

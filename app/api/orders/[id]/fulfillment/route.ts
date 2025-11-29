@@ -219,10 +219,9 @@ export async function PUT(
 
         if (remaining === 0) {
           // Update order status to fulfilled
-          await tx.orderHeader.update({
-            where: { id: orderId },
-            data: { status: 'fulfilled' },
-          });
+          // Update header and sync department statuses atomically
+          await tx.orderHeader.update({ where: { id: orderId }, data: { status: 'fulfilled' } });
+          await tx.orderDepartment.updateMany({ where: { orderHeaderId: orderId }, data: { status: 'fulfilled' } });
         }
       }
       const t3 = Date.now();

@@ -160,20 +160,27 @@ export async function PUT(
     // Update order
     const updateData: any = {};
     if (notes !== undefined) updateData.notes = notes;
-    if (status !== undefined) updateData.status = status;
 
-    const updatedOrder = await (prisma as any).orderHeader.update({
-      where: { id: orderId },
-      data: updateData,
-      include: {
-        customer: true,
-        lines: true,
-        departments: true,
-        discounts: true,
-        payments: true,
-        fulfillments: true,
-      },
-    });
+    let updatedOrder: any = null;
+    if (status !== undefined) {
+      // Use service to update status and ensure department rows are synced
+      const orderService = new OrderService();
+      const res = await orderService.updateOrderStatus(orderId, status as string, userWithRoles as any);
+      if ('error' in res) {
+        return NextResponse.json(res, { status: getStatusCode(res.error.code) });
+      }
+
+      // Apply additional fields (notes) if provided
+      if (notes !== undefined) {
+        updatedOrder = await (prisma as any).orderHeader.update({ where: { id: orderId }, data: { notes }, include: { customer: true, lines: true, departments: true, discounts: true, payments: true, fulfillments: true } });
+      } else {
+        updatedOrder = await (prisma as any).orderHeader.findUnique({ where: { id: orderId }, include: { customer: true, lines: true, departments: true, discounts: true, payments: true, fulfillments: true } });
+      }
+    } else {
+      // No status change; only update other fields
+      if (notes !== undefined) updateData.notes = notes;
+      updatedOrder = await (prisma as any).orderHeader.update({ where: { id: orderId }, data: updateData, include: { customer: true, lines: true, departments: true, discounts: true, payments: true, fulfillments: true } });
+    }
 
     const payload = successResponse(updatedOrder, 'Order updated successfully');
     try {

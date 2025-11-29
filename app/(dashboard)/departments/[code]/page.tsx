@@ -78,6 +78,7 @@ export default function DepartmentDetail() {
     fetchSectionProducts,
     fetchPendingOrderLines,
     setPendingModalOpen,
+    refreshDepartment,
     setPendingModalItems,
   } = useDepartmentData(decodedCode)
 
@@ -171,6 +172,7 @@ export default function DepartmentDetail() {
             <button onClick={() => setIncomingModalOpen(true)} className="px-3 py-1 border rounded text-sm">Incoming{pendingTransfers && pendingTransfers.length > 0 ? ` (${pendingTransfers.length})` : ''}</button>
           )}
           <button onClick={() => router.back()} className="px-3 py-1 border rounded text-sm">Back</button>
+          <UpdateStatsButton code={decodedCode} refresh={() => { fetchSectionProducts(decodedCode); fetchPendingOrderLines(decodedCode); /* also refresh department metadata */ (refreshDepartment as any)?.(decodedCode) }} />
         </div>
       </div>
                 
@@ -245,5 +247,36 @@ export default function DepartmentDetail() {
         </div>
       )}
     </div>
+  )
+}
+
+function UpdateStatsButton({ code, refresh }: { code: string; refresh: () => Promise<void> | void }) {
+  const [busy, setBusy] = useState(false)
+
+  const run = async () => {
+    if (!code) return
+    setBusy(true)
+    try {
+      const res = await fetch(`/api/departments/${encodeURIComponent(code)}/update-stats`, { method: 'POST' })
+      const j = await res.json()
+      if (!res.ok || !j?.success) {
+        alert(j?.error?.message || 'Update failed')
+        return
+      }
+      // Refresh local data
+      try { await refresh() } catch (e) { console.warn('refresh after update failed', e) }
+      alert('Department stats updated')
+    } catch (e: any) {
+      console.error('Update stats error', e)
+      alert(e?.message || 'Update failed')
+    } finally {
+      setBusy(false)
+    }
+  }
+
+  return (
+    <button onClick={run} className="px-3 py-1 border rounded text-sm" disabled={busy}>
+      {busy ? 'Updating…' : 'Update Stats'}
+    </button>
   )
 }
