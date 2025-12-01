@@ -1,4 +1,4 @@
-import { NextResponse } from "next/server"
+import { NextResponse, NextRequest } from "next/server"
 import { exchangeRateManager } from "@/lib/currency"
 import { extractUserContext, isAdmin } from '@/lib/user-context'
 import { setRatePersistent, getRatesForBase } from '@/lib/exchangeRateStore'
@@ -9,7 +9,7 @@ if (typeof window === 'undefined') {
   bootstrapCurrency().catch((e) => console.warn('bootstrapCurrency failed', e));
 }
 
-export async function GET(req: Request) {
+export async function GET(req: NextRequest) {
   try {
     const base = req.nextUrl.searchParams.get("base") || "USD"
     // Prefer persisted rates if present
@@ -24,7 +24,7 @@ export async function GET(req: Request) {
   }
 }
 
-export async function PUT(req: Request) {
+export async function PUT(req: NextRequest) {
   // Require admin via existing user-context helper
   const ctx = await extractUserContext(req as any)
   if (!isAdmin(ctx)) return NextResponse.json({ error: 'Forbidden' }, { status: 403 })

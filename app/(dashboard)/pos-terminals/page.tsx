@@ -1,9 +1,8 @@
 "use client"
 
-"use client"
-
 import Link from "next/link"
 import { useEffect, useState } from "react"
+import Price from '@/components/ui/Price'
 
 type Terminal = {
   id: string
@@ -66,7 +65,7 @@ export default function POSTerminalsIndex() {
                   {t.today ? (
                     <>
                       <div className="text-sm font-semibold">{t.today.count} tx</div>
-                      <div className="text-xs text-muted-foreground">{new Intl.NumberFormat(undefined, { style: 'currency', currency: 'USD' }).format(t.today.total)}</div>
+                      <div className="text-xs text-muted-foreground"><Price amount={Math.round(t.today.total * 100)} isMinor={true} /></div>
                     </>
                   ) : (
                     <div className="text-xs text-muted-foreground">No data</div>

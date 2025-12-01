@@ -6,6 +6,7 @@ import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Loader2 } from "lucide-react";
 import Link from "next/link";
+import Price from '@/components/ui/Price'
 
 export default function FoodDetailPage(props: any) {
     const { params } = props;
@@ -62,7 +63,7 @@ export default function FoodDetailPage(props: any) {
                     <CardHeader><CardTitle>Details</CardTitle></CardHeader>
                     <CardContent>
                         <div className="space-y-2">
-                            <div><strong>Price:</strong> ${(item.price/100).toFixed(2)}</div>
+                            <div><strong>Price:</strong> <Price amount={item.price} isMinor={true} /></div>
                             <div><strong>Stock:</strong> {item.stock ?? 'N/A'}</div>
                             <div><strong>Active:</strong> {item.active ? 'Yes' : 'No'}</div>
                             <div className="text-sm text-muted-foreground">{item.description}</div>

@@ -5,6 +5,7 @@ import { useEffect, useState } from 'react'
 import { mapDeptCodeToCategory } from '@/lib/utils'
 // avoid next/navigation useSearchParams here to prevent prerender/suspense issues
 import TransferAuditPanel from '@/components/departments/TransferAuditPanel'
+import Price from '@/components/ui/Price'
 
 type Department = { id: string; code: string; name: string }
 
@@ -131,7 +132,7 @@ export default function InventoryPage() {
                 <td className="p-2 text-xs text-muted-foreground">{it.sku}</td>
                 <td className="p-2">{it.category}</td>
                 <td className="p-2">{it.quantity}</td>
-                <td className="p-2">{new Intl.NumberFormat(undefined, { style: 'currency', currency: 'USD' }).format(Number(it.unitPrice))}</td>
+                <td className="p-2"><Price amount={Number(it.unitPrice)} isMinor={false} /></td>
                 <td className="p-2">
                   <Link href={`/inventory/${encodeURIComponent(it.id)}`} className="px-2 py-1 bg-sky-600 text-white rounded text-sm">Open</Link>
                 </td>

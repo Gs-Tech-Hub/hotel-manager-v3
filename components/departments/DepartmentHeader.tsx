@@ -2,6 +2,7 @@
 
 import Link from 'next/link'
 import { BookOpen, Utensils, Coffee, Activity, Gamepad } from 'lucide-react'
+import Price from '@/components/ui/Price'
 
 export default function DepartmentHeader({ department, sectionStock, onBack }: any) {
   const iconForType: Record<string, any> = { restaurants: Utensils, bars: Coffee, gyms: Activity, games: Gamepad }
@@ -27,7 +28,7 @@ export default function DepartmentHeader({ department, sectionStock, onBack }: a
               <span className="font-medium">Orders:</span> {department.metadata.sectionStats.totalOrders ?? 0} •
               <span className="ml-2 font-medium">Pending:</span> {department.metadata.sectionStats.pendingOrders ?? 0} •
               <span className="ml-2 font-medium">Units Sold:</span> {department.metadata.sectionStats.fulfilledUnits ?? 0} •
-              <span className="ml-2 font-medium">Amount:</span> ${((department.metadata.sectionStats.totalAmount ?? 0)/100).toFixed(2)}
+              <span className="ml-2 font-medium">Amount:</span> <Price amount={department.metadata.sectionStats.totalAmount ?? 0} isMinor={true} />
             </div>
           )}
         </div>

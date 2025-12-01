@@ -6,7 +6,8 @@ import { POSProductGrid, POSProduct } from "@/components/admin/pos/pos-product-g
 import { POSCart, CartLine } from "@/components/admin/pos/pos-cart"
 import { POSPayment } from "@/components/admin/pos/pos-payment"
 import { POSReceipt } from "@/components/admin/pos/pos-receipt"
-import { normalizeToCents, calculateTax, calculateTotal } from "@/lib/price"
+import { normalizeToCents, calculateTax, calculateTotal, centsToDollars } from "@/lib/price"
+import Price from '@/components/ui/Price'
 import { formatPriceDisplay, formatOrderTotal } from "@/lib/formatters"
 
 export default function POSCheckoutShell({ terminalId }: { terminalId?: string }) {
@@ -333,7 +334,7 @@ export default function POSCheckoutShell({ terminalId }: { terminalId?: string }
                   </div>
                   <div className="text-sm">
                     {/* salesSummary.total is stored as cents in backend; convert to dollars for display */}
-                    <div className="text-2xl font-bold">{new Intl.NumberFormat(undefined, { style: 'currency', currency: 'USD' }).format(Number(salesSummary.total) / 100)}</div>
+                    <div className="text-2xl font-bold"><Price amount={salesSummary.total} isMinor={true} /></div>
                     <div className="text-xs text-muted-foreground">gross</div>
                   </div>
                 </div>
@@ -382,7 +383,7 @@ export default function POSCheckoutShell({ terminalId }: { terminalId?: string }
         </div>
       </div>
 
-      {showPayment && <POSPayment total={total} onComplete={handlePaymentComplete} onCancel={() => setShowPayment(false)} />}
+      {showPayment && <POSPayment total={centsToDollars(total)} onComplete={handlePaymentComplete} onCancel={() => setShowPayment(false)} />}
       {receipt && <POSReceipt receipt={receipt} onClose={() => setReceipt(null)} />}
     </div>
   )

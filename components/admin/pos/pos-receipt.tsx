@@ -1,6 +1,7 @@
 "use client"
 
 import { useRef } from "react"
+import Price from '@/components/ui/Price'
 
 export function POSReceipt({ receipt, onClose }: { receipt: any; onClose?: () => void }) {
   const ref = useRef<HTMLDivElement | null>(null)
@@ -25,11 +26,11 @@ export function POSReceipt({ receipt, onClose }: { receipt: any; onClose?: () =>
             {(receipt?.items ?? []).map((it: any) => (
               <div key={it.lineId} className="flex justify-between">
                 <span>{it.productName} x{it.quantity}</span>
-                <span>${(it.unitPrice * it.quantity).toFixed(2)}</span>
+                <span><Price amount={it.unitPrice * it.quantity} isMinor={true} /></span>
               </div>
             ))}
           </div>
-          <div className="border-t mt-2 pt-2 flex justify-between font-bold"> <span>Total</span> <span>${receipt?.total?.toFixed?.(2) ?? '0.00'}</span> </div>
+          <div className="border-t mt-2 pt-2 flex justify-between font-bold"> <span>Total</span> <span><Price amount={receipt?.total ?? 0} isMinor={true} /></span> </div>
         </div>
 
         <div className="flex gap-2 mt-4">

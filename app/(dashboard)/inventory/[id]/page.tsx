@@ -2,6 +2,7 @@
 
 import { useEffect, useState } from 'react'
 import { useRouter } from 'next/navigation'
+import Price from '@/components/ui/Price'
 
 type Movement = {
   id: string
@@ -101,7 +102,7 @@ export default function InventoryDetail(...args: any[]) {
           <div><strong>SKU:</strong> {item.sku}</div>
           <div><strong>Category:</strong> {item.category}</div>
           <div><strong>Quantity:</strong> {item.quantity}</div>
-          <div><strong>Unit price:</strong> {new Intl.NumberFormat(undefined, { style: 'currency', currency: 'USD' }).format(Number(item.unitPrice))}</div>
+          <div><strong>Unit price:</strong> <Price amount={Number(item.unitPrice)} isMinor={false} /></div>
         </div>
 
         <div className="border rounded p-4 bg-white">

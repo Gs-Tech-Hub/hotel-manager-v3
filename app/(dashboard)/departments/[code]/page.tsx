@@ -2,6 +2,7 @@
 import { useRouter, useParams } from 'next/navigation'
 import { Utensils, Coffee, Activity, Gamepad, BookOpen } from 'lucide-react'
 import { useMemo, useState, useEffect } from 'react'
+import Price from '@/components/ui/Price'
 import useDepartmentData from '../../../../components/departments/useDepartmentData'
 import SectionsList from '../../../../components/departments/SectionsList'
 import SectionProductsTable from '../../../../components/departments/SectionProductsTable'
@@ -189,14 +190,14 @@ export default function DepartmentDetail() {
         {(!decodedCode.includes(':') && children.length === 0) && menu.map((m: MenuItem) => (
           <div key={m.id} className="border rounded p-4 bg-white">
             <div className="flex justify-between items-center">
-              <div>
-                <div className="font-semibold">{m.name}</div>
-                <div className="text-xs text-muted-foreground">{m.available ? 'Available' : 'Unavailable'}</div>
+                <div>
+                  <div className="font-semibold">{m.name}</div>
+                  <div className="text-xs text-muted-foreground">{m.available ? 'Available' : 'Unavailable'}</div>
+                </div>
+                <div className="text-right">
+                  <div className="font-medium">{m.price ? <Price amount={Number(m.price)} isMinor={false} /> : '-'}</div>
+                </div>
               </div>
-              <div className="text-right">
-                <div className="font-medium">{m.price ? new Intl.NumberFormat(undefined, { style: 'currency', currency: 'USD' }).format(Number(m.price)) : '-'}</div>
-              </div>
-            </div>
           </div>
         ))}
       </div>
@@ -212,7 +213,7 @@ export default function DepartmentDetail() {
                 <div><span className="font-semibold">{department.metadata.sectionStats.pendingOrders ?? 0}</span> <span className="block text-xs text-green-700">Pending</span></div>
                 <div><span className="font-semibold">{department.metadata.sectionStats.processingOrders ?? 0}</span> <span className="block text-xs text-green-700">Processing</span></div>
                 <div><span className="font-semibold">{department.metadata.sectionStats.fulfilledOrders ?? 0}</span> <span className="block text-xs text-green-700">Fulfilled</span></div>
-                <div><span className="font-semibold">${((department.metadata.sectionStats.totalAmount ?? 0)/100).toFixed(2)}</span> <span className="block text-xs text-green-700">Total Revenue</span></div>
+                <div><span className="font-semibold"><Price amount={department.metadata.sectionStats.totalAmount ?? 0} isMinor={true} /></span> <span className="block text-xs text-green-700">Total Revenue</span></div>
               </div>
             </div>
           )}

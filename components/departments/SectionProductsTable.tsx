@@ -1,6 +1,7 @@
 "use client"
 
 import Link from 'next/link'
+import Price from '@/components/ui/Price'
 
 export default function SectionProductsTable({ products }: any) {
   if (!products || products.length === 0) return <div className="text-sm text-muted-foreground">No items in this section</div>
@@ -27,12 +28,12 @@ export default function SectionProductsTable({ products }: any) {
                 {p.sku && <div className="text-xs text-muted-foreground">{p.sku}</div>}
               </td>
               <td className="text-right py-2 px-2 text-muted-foreground">
-                {p.unitPrice ? `$${Number(p.unitPrice)/100}` : '—'}
+                {p.unitPrice ? <Price amount={p.unitPrice} isMinor={true} /> : '—'}
               </td>
               <td className="text-right py-2 px-2 font-medium">{p.available ?? 0}</td>
               <td className="text-right py-2 px-2">{p.unitsSold ?? 0}</td>
               <td className="text-right py-2 px-2">
-                {p.amountSold ? `$${(p.amountSold/100).toFixed(2)}` : '$0.00'}
+                {p.amountSold ? <Price amount={p.amountSold} isMinor={true} /> : <Price amount={0} isMinor={true} />}
               </td>
               <td className="text-right py-2 px-2">{p.pendingQuantity ?? 0}</td>
               <td className="text-right py-2 px-2">
