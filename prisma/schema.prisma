@@ -1565,11 +1565,29 @@ model OrganisationInfo {
   instagram String?
   twitter   String?
   youTube   String?
+  // Organisation currency (ISO 4217) - used as the base currency for prices
+  currency   String  @default("USD")
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
   @@map("organisation_infos")
+}
+
+/// Persisted exchange rates (admin-managed or imported from external APIs)
+model ExchangeRate {
+  id           String   @id @default(cuid())
+  fromCurrency String
+  toCurrency   String
+  rate         Decimal  @db.Decimal(24, 12)
+  source       String?  // e.g., 'manual', 'ECB', 'exchangerapi'
+  updatedBy    String?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@unique([fromCurrency, toCurrency])
+  @@map("exchange_rates")
 }
 
 model SpecialInfo {

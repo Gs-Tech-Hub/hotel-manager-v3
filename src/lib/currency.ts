@@ -33,6 +33,10 @@ export interface CurrencyContext {
   autoConvert?: boolean; // Auto-convert prices to display currency
 }
 
+// Lazy persistence loader (only used on server)
+import prisma from './prisma'
+import { loadAllPersistedRates } from './exchangeRateStore'
+
 // ==================== BUILT-IN CURRENCY CATALOG ====================
 
 export const CURRENCY_CATALOG: Record<CurrencyCode, CurrencyConfig> = {
@@ -80,7 +84,7 @@ export const CURRENCY_CATALOG: Record<CurrencyCode, CurrencyConfig> = {
   // Asian currencies
   CNY: {
     code: 'CNY',
-    symbol: '¥',
+    symbol: 'CN¥',
     name: 'Chinese Yuan',
     decimals: 2,
     locale: 'zh-CN',
@@ -130,10 +134,18 @@ export const CURRENCY_CATALOG: Record<CurrencyCode, CurrencyConfig> = {
   },
   EGP: {
     code: 'EGP',
-    symbol: '£',
+    symbol: 'E£',
     name: 'Egyptian Pound',
     decimals: 2,
     locale: 'ar-EG',
+    minorUnit: 100,
+  },
+  NGN: {
+    code: 'NGN',
+    symbol: '₦',
+    name: 'Nigerian Naira',
+    decimals: 2,
+    locale: 'en-NG',
     minorUnit: 100,
   },
 };
@@ -318,7 +330,15 @@ export function convertCurrency(
     );
   }
 
-  return Math.round(amount * exchangeRate);
+  // amount is provided in minor units of fromCurrency (e.g., cents)
+  // exchangeRate is defined as: 1 major unit of `fromCurrency` = exchangeRate major units of `toCurrency`.
+  // To convert minor->minor correctly we need to account for differing minor unit scales:
+  // minor_to = amount_minor * exchangeRate * (minorUnit_to / minorUnit_from)
+  const minorFrom = getMinorUnit(fromCurrency);
+  const minorTo = getMinorUnit(toCurrency);
+
+  const converted = amount * exchangeRate * (minorTo / minorFrom);
+  return Math.round(converted);
 }
 
 /**
@@ -528,3 +548,8 @@ export function formatPrices(
 ): string[] {
   return amounts.map(amount => formatCurrencyAmount(amount, currency, locale));
 }
+
+// NOTE: Server-only bootstrap (loading OrganisationInfo and persisted exchange
+// rates) has been moved to `src/lib/bootstrapCurrency.ts` to avoid importing
+// Prisma in modules that may be bundled to the client. Import and run the
+// bootstrap from a server-only entry (e.g., API route) during server startup.

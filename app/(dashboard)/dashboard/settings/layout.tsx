@@ -70,6 +70,10 @@ const sidebarNavItems = [
 		href: "/dashboard/settings/display",
 	},
 	{
+		title: "Organisation",
+		href: "/dashboard/settings/organisation",
+	},
+	{
 		title: "API Keys",
 		href: "/dashboard/settings/api-keys",
 	},

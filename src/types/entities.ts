@@ -779,6 +779,7 @@ export interface IOrganisationInfo {
   instagram?: string;
   twitter?: string;
   youTube?: string;
+  currency?: string; // ISO 4217 code (e.g. USD)
   createdAt: Date;
   updatedAt: Date;
 }

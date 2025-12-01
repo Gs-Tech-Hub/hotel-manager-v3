@@ -52,6 +52,8 @@ export default function DisplayPage() {
 				</CardContent>
 			</Card>
 
+
+
 			<Card>
 				<CardHeader>
 					<CardTitle>Interface</CardTitle>

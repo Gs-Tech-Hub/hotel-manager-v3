@@ -16,6 +16,9 @@
 		"reconcile:dept-inv": "tsx scripts/reconcile-department-inventories.ts",
 		"cleanup:depts": "tsx scripts/cleanup-departments.ts",
 		"consolidate:inventory": "tsx scripts/consolidate-inventory.ts"
+		,"db:migrate": "prisma migrate dev --name add-organisation-currency"
+		,"db:seed-org": "tsx scripts/seed-organisation-info.ts"
+		,"db:setup": "npm run db:migrate && npm run db:seed-org"
 	},
 	"engines": {
 		"node": ">=18"
