@@ -171,12 +171,25 @@ export function validatePrice(cents: number, fieldName: string = 'price'): void 
 // ==================== FORMATTING & DISPLAY ====================
 
 /**
- * Format cents to currency string (USD)
- * Examples: 450 → "$4.50", 0 → "$0.00"
+ * Format cents to currency string with symbol
+ * Examples: 450 USD → "$4.50", 450 NGN → "₦4.50", 0 → "₦0.00"
+ * Uses Intl formatting to get locale-appropriate symbol for the currency
  */
-export function formatCents(n: any, locale: string = 'en-US', currency: string = 'USD'): string {
-  const dollars = centsToDollars(n)
-  return new Intl.NumberFormat(locale, { style: 'currency', currency }).format(dollars)
+export function formatCents(n: any, locale?: string, currency?: string): string {
+  const useCurrency = currency || currencyContextManager.getDisplayCurrency() || DEFAULT_CURRENCY
+  const useLocale = locale || getCurrencyConfig(useCurrency).locale || currencyContextManager.getLocale() || 'en-US'
+  const dollars = centsToDollars(n, getMinorUnit(useCurrency))
+  
+  // Format with Intl to get symbol. Intl.NumberFormat returns formatted string with symbol
+  // e.g., "$4.50" for USD or "₦4.50" for NGN depending on locale
+  const formatted = new Intl.NumberFormat(useLocale, { 
+    style: 'currency', 
+    currency: useCurrency,
+    minimumFractionDigits: getCurrencyConfig(useCurrency).decimals,
+    maximumFractionDigits: getCurrencyConfig(useCurrency).decimals,
+  }).format(dollars)
+  
+  return formatted
 }
 
 /**

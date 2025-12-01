@@ -5,6 +5,7 @@ import { Label } from "@/components/ui/label"
 import { Input } from "@/components/ui/input"
 import { Button } from "@/components/ui/button"
 import { toast } from "sonner"
+import { CURRENCY_CATALOG, getCurrencySymbol } from "@/lib/currency"
 
 interface RatesResponse {
   base: string
@@ -53,14 +54,14 @@ export default function ExchangeRateManager() {
   return (
     <div className="space-y-4">
       <div>
-        <Label>Exchange Rates (base: {base})</Label>
+        <Label>Exchange Rates (base: {base} {getCurrencySymbol(base)})</Label>
         <div className="mt-2">
           {Object.entries(rates).length === 0 ? (
             <p className="text-sm text-muted-foreground">No rates set for this base.</p>
           ) : (
-            <ul className="text-sm">
+            <ul className="text-sm space-y-1">
               {Object.entries(rates).map(([k, v]) => (
-                <li key={k}>{k}: {v}</li>
+                <li key={k}>{getCurrencySymbol(k)} {k}: {v.toFixed(4)}</li>
               ))}
             </ul>
           )}
@@ -68,9 +69,28 @@ export default function ExchangeRateManager() {
       </div>
 
       <div className="grid grid-cols-3 gap-2">
-        <Input value={from} onChange={(e) => setFrom(e.target.value.toUpperCase())} />
-        <Input value={to} onChange={(e) => setTo(e.target.value.toUpperCase())} />
-        <Input type="number" value={rateValue} onChange={(e) => setRateValue(Number(e.target.value))} />
+        <div>
+          <Input 
+            value={from} 
+            placeholder="USD"
+            onChange={(e) => setFrom(e.target.value.toUpperCase())} 
+          />
+          <p className="text-xs text-muted-foreground mt-1">{from && CURRENCY_CATALOG[from as any]?.symbol ? `${CURRENCY_CATALOG[from as any]?.symbol} - ${CURRENCY_CATALOG[from as any]?.name}` : 'From'}</p>
+        </div>
+        <div>
+          <Input 
+            value={to} 
+            placeholder="NGN"
+            onChange={(e) => setTo(e.target.value.toUpperCase())} 
+          />
+          <p className="text-xs text-muted-foreground mt-1">{to && CURRENCY_CATALOG[to as any]?.symbol ? `${CURRENCY_CATALOG[to as any]?.symbol} - ${CURRENCY_CATALOG[to as any]?.name}` : 'To'}</p>
+        </div>
+        <Input 
+          type="number" 
+          value={rateValue} 
+          placeholder="Rate"
+          onChange={(e) => setRateValue(Number(e.target.value))} 
+        />
       </div>
       <div className="flex gap-2">
         <Button onClick={setRate} disabled={saving}>{saving ? 'Saving…' : 'Set Rate'}</Button>

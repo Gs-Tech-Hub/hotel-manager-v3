@@ -65,7 +65,7 @@ export default function CurrencySelector() {
           <SelectContent>
             {Object.values(CURRENCY_CATALOG).map((c) => (
               <SelectItem key={c.code} value={c.code}>
-                {c.code} — {c.name}
+                {c.symbol} {c.code} — {c.name}
               </SelectItem>
             ))}
           </SelectContent>

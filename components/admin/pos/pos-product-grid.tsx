@@ -1,6 +1,7 @@
 "use client"
 
 import { useState } from "react"
+import Price from '@/components/ui/Price'
 
 export interface POSProduct {
   id: string
@@ -21,9 +22,9 @@ export function POSProductGrid({ products, onAdd }: { products: POSProduct[]; on
           disabled={!p.available}
           className={`p-3 rounded-lg text-left transition-all ${p.available ? 'bg-white border hover:shadow' : 'bg-slate-100 text-slate-400 cursor-not-allowed'}`}
         >
-          <div className="flex justify-between items-baseline">
+            <div className="flex justify-between items-baseline">
             <div className="font-semibold text-sm">{p.name}</div>
-            <div className="text-sm text-sky-600">${p.price.toFixed(2)}</div>
+            <div className="text-sm text-sky-600"><Price amount={p.price} isMinor={false} /></div>
           </div>
           <div className="text-xs text-muted-foreground mt-2">Qty: {qty}</div>
         </button>

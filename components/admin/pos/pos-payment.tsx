@@ -1,6 +1,7 @@
 "use client"
 
 import { useState } from "react"
+import Price from '@/components/ui/Price'
 
 export function POSPayment({ total, onComplete, onCancel }: { total: number; onComplete: (r: { method: string; amount: number }) => void; onCancel?: () => void }) {
   const [method, setMethod] = useState<'cash'|'card'>('cash')
@@ -20,12 +21,12 @@ export function POSPayment({ total, onComplete, onCancel }: { total: number; onC
         </div>
         <div className="mb-3">
           <label className="block text-sm">Total</label>
-          <div className="font-bold text-xl">${total.toFixed(2)}</div>
+          <div className="font-bold text-xl"><Price amount={total} isMinor={false} /></div>
         </div>
         <div className="mb-4">
           <label className="block text-sm">Amount Tendered</label>
           <input type="number" value={tendered} onChange={(e) => setTendered(Number(e.target.value))} className="w-full border rounded px-3 py-2" />
-          <div className={`mt-2 font-semibold ${change>=0 ? 'text-green-600' : 'text-red-600'}`}>Change: ${change.toFixed(2)}</div>
+          <div className={`mt-2 font-semibold ${change>=0 ? 'text-green-600' : 'text-red-600'}`}>Change: <Price amount={change} isMinor={false} /></div>
         </div>
         <div className="flex gap-2">
           <button onClick={onCancel} className="flex-1 px-4 py-2 border rounded">Cancel</button>

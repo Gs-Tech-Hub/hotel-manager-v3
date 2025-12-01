@@ -8,10 +8,12 @@
 // ==================== CURRENCY TYPES ====================
 
 export type CurrencyCode = string; // ISO 4217 code (USD, EUR, GBP, etc.)
+export type MinorUnitAmount = number; // Amount in minor units (cents, pence, etc.)
+export type CurrencySymbol = string; // Currency symbol ($, €, £, etc.)
 
 export interface CurrencyConfig {
   code: CurrencyCode;
-  symbol: string;
+  symbol: CurrencySymbol;
   name: string;
   decimals: number;
   locale?: string; // Default locale for this currency (e.g., 'en-US', 'de-DE')
@@ -29,6 +31,7 @@ export interface ExchangeRate {
 export interface CurrencyContext {
   baseCurrency: CurrencyCode;
   displayCurrency?: CurrencyCode; // For multi-currency display
+  displayCurrencySymbol?: CurrencySymbol;
   locale: string;
   autoConvert?: boolean; // Auto-convert prices to display currency
 }
@@ -281,8 +284,12 @@ class CurrencyContextManager {
   /**
    * Get display currency (or base if not set)
    */
-  getDisplayCurrency(): CurrencyCode {
-    return this.context.displayCurrency || this.context.baseCurrency;
+  // getDisplayCurrency(): CurrencyCode {
+  //   return this.context.displayCurrency || this.context.baseCurrency;
+  // }
+
+  getDisplayCurrency(): CurrencySymbol {
+    return this.context.displayCurrencySymbol || this.context.baseCurrency;
   }
 
   /**

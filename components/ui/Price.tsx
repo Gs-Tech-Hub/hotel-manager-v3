@@ -21,10 +21,13 @@ export default function Price({ amount, currency, autoConvert = true, showOrigin
   const [converted, setConverted] = useState<number | null>(null)
   const [formatted, setFormatted] = useState<string | null>(null)
 
+  const sourceCurrency = currency || displayCurrency
+  const majorNumber = isMinor ? Number(amount || 0) / 100 : Number(amount || 0)
+
   useEffect(() => {
     let mounted = true
     async function doConvert() {
-      const sourceCurrency = currency || displayCurrency || 'USD'
+      const sourceCurrency = currency || displayCurrency
       if (!autoConvert || !displayCurrency || displayCurrency === sourceCurrency) {
         setConverted(null)
         setFormatted(null)
@@ -61,34 +64,57 @@ export default function Price({ amount, currency, autoConvert = true, showOrigin
 
   // If converted exists, show that; otherwise show formatted original using Intl
   if (formatted) {
-    return (
-      <span>
-        {formatted}
-        {showOriginal ? (
-          <small className="ml-2 text-muted-foreground">({(isMinor ? (amount / 100).toFixed(2) : Number(amount).toFixed(2))} {currency || (displayCurrency ?? 'USD')})</small>
-        ) : null}
-      </span>
-    )
+    // showOriginal: display the original amount formatted with Intl (uses currency symbol)
+    if (showOriginal) {
+      if (sourceCurrency) {
+        try {
+          const orig = new Intl.NumberFormat(undefined, { style: 'currency', currency: sourceCurrency }).format(majorNumber)
+          return (
+            <span>
+              {formatted}
+              <small className="ml-2 text-muted-foreground">({orig})</small>
+            </span>
+          )
+        } catch (e) {
+          return (
+            <span>
+              {formatted}
+              <small className="ml-2 text-muted-foreground">({(isMinor ? (amount / 100).toFixed(2) : Number(amount).toFixed(2))} {sourceCurrency})</small>
+            </span>
+          )
+        }
+      }
+      // no known source currency — show plain number as original
+      return (
+        <span>
+          {formatted}
+          <small className="ml-2 text-muted-foreground">({majorNumber.toFixed(2)})</small>
+        </span>
+      )
+    }
+    return <span>{formatted}</span>
   }
 
-  // Fallback formatting for original amount — respect `isMinor` flag
-  const sourceCurrency = currency || displayCurrency || 'USD'
-  const majorNumber = isMinor ? Number(amount || 0) / 100 : Number(amount || 0)
-
-  try {
-    const formattedOriginal = new Intl.NumberFormat(undefined, { style: 'currency', currency: sourceCurrency }).format(majorNumber)
-    return (
-      <span>
-        {formattedOriginal}
-      </span>
-    )
-  } catch (e) {
-    // Fallback to simple numeric formatting
-    const major = majorNumber.toFixed(2)
-    return (
-      <span>
-        {major} {sourceCurrency}
-      </span>
-    )
+  // Fallback formatting for original amount — respect `isMinor` flag and prefer currency symbol
+  if (sourceCurrency) {
+    try {
+      const formattedOriginal = new Intl.NumberFormat(undefined, { style: 'currency', currency: sourceCurrency }).format(majorNumber)
+      return (
+        <span>
+          {formattedOriginal}
+        </span>
+      )
+    } catch (e) {
+      // Fallback to numeric + currency code
+      const major = majorNumber.toFixed(2)
+      return (
+        <span>
+          {major} {sourceCurrency}
+        </span>
+      )
+    }
   }
+
+  // No currency available — show plain number
+  return <span>{majorNumber.toFixed(2)}</span>
 }
