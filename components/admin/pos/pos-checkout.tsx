@@ -203,7 +203,14 @@ export default function POSCheckoutShell({ terminalId }: { terminalId?: string }
       .then((json) => {
         if (!mounted) return
         if (json && json.success && Array.isArray(json.data)) {
-          const mapped: POSProduct[] = json.data.map((m: any) => ({ id: m.id, name: m.name, price: Number(m.price || 0), available: !!m.available, type: m.type }))
+          const mapped: POSProduct[] = json.data.map((m: any) => ({
+            id: m.id,
+            name: m.name,
+            // backend `m.price` is stored in cents (minor units). Convert to major units for the POS UI
+            price: centsToDollars(Number(m.price || 0)),
+            available: !!m.available,
+            type: m.type,
+          }))
           setProducts(mapped)
         } else {
           setTerminalError('Failed to load products')

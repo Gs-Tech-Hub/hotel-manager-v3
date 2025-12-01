@@ -65,18 +65,30 @@ export default function Price({ amount, currency, autoConvert = true, showOrigin
       <span>
         {formatted}
         {showOriginal ? (
-          <small className="ml-2 text-muted-foreground">({(amount / 100).toFixed(2)} {currency})</small>
+          <small className="ml-2 text-muted-foreground">({(isMinor ? (amount / 100).toFixed(2) : Number(amount).toFixed(2))} {currency || (displayCurrency ?? 'USD')})</small>
         ) : null}
       </span>
     )
   }
 
-  // Fallback formatting for original amount (assume 100 minorUnits)
+  // Fallback formatting for original amount — respect `isMinor` flag
   const sourceCurrency = currency || displayCurrency || 'USD'
-  const major = (amount / 100).toFixed(2)
-  return (
-    <span>
-      {major} {sourceCurrency}
-    </span>
-  )
+  const majorNumber = isMinor ? Number(amount || 0) / 100 : Number(amount || 0)
+
+  try {
+    const formattedOriginal = new Intl.NumberFormat(undefined, { style: 'currency', currency: sourceCurrency }).format(majorNumber)
+    return (
+      <span>
+        {formattedOriginal}
+      </span>
+    )
+  } catch (e) {
+    // Fallback to simple numeric formatting
+    const major = majorNumber.toFixed(2)
+    return (
+      <span>
+        {major} {sourceCurrency}
+      </span>
+    )
+  }
 }

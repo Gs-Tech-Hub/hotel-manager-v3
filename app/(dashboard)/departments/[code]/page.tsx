@@ -195,7 +195,7 @@ export default function DepartmentDetail() {
                   <div className="text-xs text-muted-foreground">{m.available ? 'Available' : 'Unavailable'}</div>
                 </div>
                 <div className="text-right">
-                  <div className="font-medium">{m.price ? <Price amount={Number(m.price)} isMinor={false} /> : '-'}</div>
+                  <div className="font-medium">{m.price ? <Price amount={Number(m.price)} isMinor={true} /> : '-'}</div>
                 </div>
               </div>
           </div>

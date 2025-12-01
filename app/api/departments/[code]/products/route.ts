@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { prisma } from '@/lib/prisma'
+import { prismaDecimalToCents } from '@/lib/price'
 import { successResponse, errorResponse, ErrorCodes, getStatusCode } from '@/lib/api-response'
 
 /**
@@ -33,7 +34,7 @@ export async function GET(request: NextRequest, { params }: { params: Promise<{ 
         prisma.drink.count({ where }),
       ])
 
-      let mapped = items.map((d) => ({ id: d.id, name: d.name, type: 'drink', available: d.barStock ?? d.quantity ?? 0, unitPrice: d.price }))
+      let mapped = items.map((d) => ({ id: d.id, name: d.name, type: 'drink', available: d.barStock ?? d.quantity ?? 0, unitPrice: prismaDecimalToCents(d.price) }))
 
       if (includeDetails && mapped.length > 0) {
         const ids = mapped.map((m) => m.id)
@@ -84,7 +85,7 @@ export async function GET(request: NextRequest, { params }: { params: Promise<{ 
         prisma.foodItem.findMany({ where, skip, take: pageSize, orderBy: { name: 'asc' } }),
         prisma.foodItem.count({ where }),
       ])
-      let mapped = items.map((f) => ({ id: f.id, name: f.name, type: 'food', available: f.availability ? 1 : 0, unitPrice: (f.price as any) }))
+      let mapped = items.map((f) => ({ id: f.id, name: f.name, type: 'food', available: f.availability ? 1 : 0, unitPrice: prismaDecimalToCents(f.price) }))
 
       if (includeDetails && mapped.length > 0) {
         const ids = mapped.map((m) => m.id)
@@ -203,7 +204,7 @@ export async function GET(request: NextRequest, { params }: { params: Promise<{ 
 
       const balancesMap = new Map(balances.map((b: any) => [b.inventoryItemId, b.quantity]))
 
-      let mapped = items.map((it) => ({ id: it.id, name: it.name, type: 'inventoryItem', available: balancesMap.get(it.id) ?? it.quantity ?? 0, unitPrice: it.unitPrice }))
+      let mapped = items.map((it) => ({ id: it.id, name: it.name, type: 'inventoryItem', available: balancesMap.get(it.id) ?? it.quantity ?? 0, unitPrice: prismaDecimalToCents(it.unitPrice) }))
 
       if (includeDetails && mapped.length > 0) {
         const ids = mapped.map((m) => m.id)

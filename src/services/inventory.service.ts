@@ -104,6 +104,22 @@ export class InventoryItemService extends BaseService<IInventoryItem> {
   }
 
   /**
+   * Override findById to normalize unitPrice to minor units (cents)
+   */
+  async findById(id: string): Promise<IInventoryItem | null> {
+    try {
+      const row = await prisma.inventoryItem.findUnique({
+        where: { id },
+        include: { inventoryType: true },
+      });
+      return mapInventoryItem(row as any);
+    } catch (error) {
+      console.error(`Error finding inventoryItem with ID ${id}:`, error);
+      return null;
+    }
+  }
+
+  /**
    * Get all inventory items with optional filtering
    */
   async getAllItems(filters?: {
