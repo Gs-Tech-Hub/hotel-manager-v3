@@ -284,12 +284,16 @@ class CurrencyContextManager {
   /**
    * Get display currency (or base if not set)
    */
-  // getDisplayCurrency(): CurrencyCode {
-  //   return this.context.displayCurrency || this.context.baseCurrency;
-  // }
+  getDisplayCurrency(): CurrencyCode {
+    return this.context.displayCurrency || this.context.baseCurrency;
+  }
 
-  getDisplayCurrency(): CurrencySymbol {
-    return this.context.displayCurrencySymbol || this.context.baseCurrency;
+  /**
+   * Get display currency symbol (UI only)
+   */
+  getDisplayCurrencySymbol(): CurrencySymbol {
+    const code = this.getDisplayCurrency();
+    return getCurrencyConfig(code).symbol;
   }
 
   /**
@@ -457,17 +461,13 @@ export function formatCurrencyAmount(
 ): string {
   const code = currency || currencyContextManager.getBaseCurrency();
   const config = getCurrencyConfig(code);
-  const useLocale = locale || config.locale || currencyContextManager.getLocale();
 
   // Convert minor units to major units
   const majorUnits = minorUnits / (config.minorUnit || 100);
 
-  return new Intl.NumberFormat(useLocale, {
-    style: 'currency',
-    currency: code,
-    minimumFractionDigits: config.decimals,
-    maximumFractionDigits: config.decimals,
-  }).format(majorUnits);
+  // Manual symbol injection so UI always shows symbol (e.g., $100.00)
+  const numberFormatted = majorUnits.toFixed(config.decimals);
+  return `${config.symbol}${numberFormatted}`;
 }
 
 /**
@@ -507,7 +507,11 @@ export function convertAndFormat(
 ): string {
   const targetCurrency = toCurrency || currencyContextManager.getDisplayCurrency();
   const converted = convertCurrency(amount, fromCurrency, targetCurrency, rate);
-  return formatCurrencyAmount(converted, targetCurrency);
+
+  const { symbol, decimals } = getCurrencyConfig(targetCurrency);
+  const major = converted / getMinorUnit(targetCurrency);
+
+  return `${symbol}${major.toFixed(decimals)}`;
 }
 
 /**
