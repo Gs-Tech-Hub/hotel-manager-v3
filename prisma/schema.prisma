@@ -528,6 +528,9 @@ model InventoryItem {
   lastRestocked DateTime?
   expiry        DateTime?
 
+  isActive      Boolean   @default(true)
+  deletedAt     DateTime?
+
   inventoryTypeId String
   inventoryType   InventoryType @relation(fields: [inventoryTypeId], references: [id], onDelete: Cascade)
 
@@ -788,6 +791,9 @@ model Department {
   orderDepartments OrderDepartment[]
   terminals Terminal[]
 
+  // sections under this department
+  sections DepartmentSection[]
+
   // transfers where this department is the source
   transfersFrom DepartmentTransfer[] @relation("DepartmentTransferFrom")
   // transfers where this department is the destination
@@ -804,6 +810,24 @@ model Department {
   updatedAt DateTime @updatedAt
 
   @@map("departments")
+}
+
+model DepartmentSection {
+  id           String    @id @default(cuid())
+  name         String
+  slug         String?   @unique
+
+  departmentId String
+  department   Department @relation(fields: [departmentId], references: [id], onDelete: Cascade)
+
+  metadata     Json?     @default("{}")
+  isActive     Boolean   @default(true)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([departmentId])
+  @@map("department_sections")
 }
 
 // POS Terminals (point-of-sale devices / logical terminals)
@@ -952,6 +976,22 @@ model OrderDiscount {
 
   @@index([orderHeaderId])
   @@map("order_discounts")
+}
+
+/// Audit log for admin actions (create/update/delete)
+model AdminAuditLog {
+  id         String   @id @default(cuid())
+  actorId    String?
+  actorType  String?  // admin | employee | system
+  action     String   // create, update, delete
+  subject    String?  // e.g., departments, inventory_items
+  subjectId  String?  // id of the subject
+  details    Json?    @default("{}")
+
+  createdAt DateTime @default(now())
+
+  @@index([actorId])
+  @@map("admin_audit_logs")
 }
 
 model OrderPayment {
