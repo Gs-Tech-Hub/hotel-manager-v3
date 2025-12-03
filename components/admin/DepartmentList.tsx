@@ -1,9 +1,11 @@
 "use client";
 import React, { useEffect, useState } from 'react';
+import { useAuth } from '@/components/auth-context';
 import DepartmentForm from './DepartmentForm';
 import ConfirmDialog from './ConfirmDialog';
 
 export default function DepartmentList() {
+  const { hasPermission } = useAuth();
   const [departments, setDepartments] = useState<any[]>([]);
   const [loading, setLoading] = useState(false);
   const [showCreate, setShowCreate] = useState(false);
@@ -43,7 +45,9 @@ export default function DepartmentList() {
     <div className="p-4">
       <div className="flex items-center justify-between">
         <h2 className="text-2xl font-semibold">Departments</h2>
-        <button className="px-3 py-2 bg-blue-600 text-white rounded" onClick={() => setShowCreate(true)}>Create Department</button>
+        {hasPermission('departments.create') && (
+          <button className="px-3 py-2 bg-blue-600 text-white rounded" onClick={() => setShowCreate(true)}>Create Department</button>
+        )}
       </div>
 
       <div className="mt-4">
@@ -66,7 +70,9 @@ export default function DepartmentList() {
                   <td className="p-2">{d.name}</td>
                   <td className="p-2">{d.type || '-'}</td>
                   <td className="p-2">
-                    <button className="px-2 py-1 bg-red-600 text-white rounded" onClick={() => setDeletingId(d.id)}>Delete</button>
+                    {hasPermission('departments.delete') && (
+                      <button className="px-2 py-1 bg-red-600 text-white rounded" onClick={() => setDeletingId(d.id)}>Delete</button>
+                    )}
                   </td>
                 </tr>
               ))}

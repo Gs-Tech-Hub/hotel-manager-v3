@@ -217,13 +217,13 @@ export async function getUserPermissions(
 
         for (const role of admin.roles || []) {
           for (const perm of role.permissions || []) {
-            const key = `${perm.action}:${perm.subject || ""}`;
-            permissions.add(key);
-            // also add action-only form for frontend convenience (e.g., 'orders.create')
-            permissions.add(`${perm.action}`);
-            // wildcard form
-            if ((perm.subject || '') !== '*') {
-              permissions.add(`${perm.action}:*`);
+            const subject = perm.subject || '';
+            // Build permission as 'action.subject' for matching UI checks (e.g., 'departments.create')
+            if (subject) {
+              permissions.add(`${perm.action}.${subject}`);
+              permissions.add(`${perm.action}:${subject}`); // legacy format
+            } else {
+              permissions.add(`${perm.action}`);
             }
           }
         }
@@ -249,13 +249,13 @@ export async function getUserPermissions(
     });
 
     userPerms.forEach((up) => {
-      const key = `${up.permission.action}:${up.permission.subject || ""}`;
-      permissions.add(key);
-      // also add action-only form for frontend convenience
-      permissions.add(`${up.permission.action}`);
-      // add wildcard subject form
-      if ((up.permission.subject || '') !== '*') {
-        permissions.add(`${up.permission.action}:*`);
+      const subject = up.permission.subject || '';
+      // Build permission as 'action.subject' for matching UI checks (e.g., 'inventory_items.create')
+      if (subject) {
+        permissions.add(`${up.permission.action}.${subject}`);
+        permissions.add(`${up.permission.action}:${subject}`); // legacy format
+      } else {
+        permissions.add(`${up.permission.action}`);
       }
     });
 
@@ -282,12 +282,13 @@ export async function getUserPermissions(
 
     userRoles.forEach((ur) => {
       ur.role.rolePermissions.forEach((rpm) => {
-        const key = `${rpm.permission.action}:${rpm.permission.subject || ""}`;
-        permissions.add(key);
-        // also add action-only and wildcard forms
-        permissions.add(`${rpm.permission.action}`);
-        if ((rpm.permission.subject || '') !== '*') {
-          permissions.add(`${rpm.permission.action}:*`);
+        const subject = rpm.permission.subject || '';
+        // Build permission as 'action.subject' for matching UI checks (e.g., 'departments.create')
+        if (subject) {
+          permissions.add(`${rpm.permission.action}.${subject}`);
+          permissions.add(`${rpm.permission.action}:${subject}`); // legacy format
+        } else {
+          permissions.add(`${rpm.permission.action}`);
         }
       });
     });
