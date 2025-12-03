@@ -105,3 +105,31 @@ export async function POST(req: NextRequest) {
     return sendError(ErrorCodes.INTERNAL_ERROR, message);
   }
 }
+
+/**
+ * DELETE /api/inventory/:id
+ * Delete/deactivate an inventory item (admin only)
+ */
+export async function DELETE(req: NextRequest) {
+  try {
+    // Extract ID from URL path
+    const url = new URL(req.url);
+    const id = url.pathname.split('/').pop();
+
+    if (!id || id === 'route.ts') {
+      return sendError(ErrorCodes.VALIDATION_ERROR, 'Inventory item ID is required');
+    }
+
+    // Call service to delete
+    const item = await inventoryItemService.delete(id);
+
+    if (!item) {
+      return sendError(ErrorCodes.NOT_FOUND, 'Inventory item not found');
+    }
+
+    return sendSuccess(item, 'Inventory item deleted successfully');
+  } catch (error) {
+    const message = error instanceof Error ? error.message : 'Failed to delete inventory item';
+    return sendError(ErrorCodes.INTERNAL_ERROR, message);
+  }
+}

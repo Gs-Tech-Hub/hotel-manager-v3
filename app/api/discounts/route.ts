@@ -224,7 +224,57 @@ export async function GET(request: NextRequest) {
   }
 }
 
+/**
+ * DELETE /api/discounts/:id
+ * Delete/deactivate a discount rule (admin only)
+ */
+export async function DELETE(request: NextRequest) {
+  try {
+    const ctx = await extractUserContext(request);
+    if (!ctx.userId) {
+      return NextResponse.json(
+        errorResponse(ErrorCodes.UNAUTHORIZED, 'Not authenticated'),
+        { status: getStatusCode(ErrorCodes.UNAUTHORIZED) }
+      );
+    }
+
+    const userWithRoles = await loadUserWithRoles(ctx.userId);
+    if (!userWithRoles || !hasAnyRole(userWithRoles, ['admin', 'manager'])) {
+      return NextResponse.json(
+        errorResponse(ErrorCodes.FORBIDDEN, 'Only admins/managers can delete discounts'),
+        { status: getStatusCode(ErrorCodes.FORBIDDEN) }
+      );
+    }
+
+    // Extract ID from URL path
+    const url = new URL(request.url);
+    const id = url.pathname.split('/').pop();
+
+    if (!id || id === 'route.ts') {
+      return NextResponse.json(
+        errorResponse(ErrorCodes.VALIDATION_ERROR, 'Discount ID is required'),
+        { status: getStatusCode(ErrorCodes.VALIDATION_ERROR) }
+      );
+    }
+
+    // Soft delete by marking as inactive
+    const discount = await (prisma as any).discountRule.update({
+      where: { id },
+      data: { isActive: false },
+    });
+
+    return NextResponse.json(successResponse(discount));
+  } catch (error) {
+    console.error('DELETE /api/discounts error:', error);
+    return NextResponse.json(
+      errorResponse(ErrorCodes.INTERNAL_ERROR, 'Failed to delete discount'),
+      { status: getStatusCode(ErrorCodes.INTERNAL_ERROR) }
+    );
+  }
+}
+
 // NOTE: The GET_ACTIVE handler was moved to `app/api/discounts/active/route.ts`
 // to comply with Next.js App Router route handler conventions (each HTTP method
 // must be exported as GET/POST/etc. from the route file). Keeping the function
 // here would add non-standard exports and break Next.js type checks.
+

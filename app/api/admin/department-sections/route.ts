@@ -42,7 +42,11 @@ export const DELETE = withPermission(
   async (req, ctx) => {
     try {
       const url = new URL(req.url);
-      const id = url.pathname.split('/').pop();
+      // Try to get ID from query string first (for dashboard delete), then from pathname (for direct DELETE calls)
+      let id = url.searchParams.get('id');
+      if (!id) {
+        id = url.pathname.split('/').pop();
+      }
       if (!id) return NextResponse.json({ error: 'Missing section id' }, { status: 400 });
 
       const section = await deleteSection(id!, { userId: ctx.userId, userType: ctx.userType });

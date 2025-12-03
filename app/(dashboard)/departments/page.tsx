@@ -2,7 +2,8 @@
 
 import Link from 'next/link'
 import React, { useEffect, useState } from 'react'
-import { Utensils, Coffee, Activity, Gamepad, BookOpen } from 'lucide-react'
+import { Utensils, Coffee, Activity, Gamepad, BookOpen, Plus, Trash2 } from 'lucide-react'
+import { useAuth } from '@/components/auth-context'
 
 type Department = {
   id: string
@@ -27,9 +28,14 @@ const iconForType: Record<string, any> = {
 }
 
 export default function DepartmentsPage() {
+  const { hasPermission } = useAuth()
   const [departments, setDepartments] = useState<Department[]>([])
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
+  const [showForm, setShowForm] = useState(false)
+  const [deletingId, setDeletingId] = useState<string | null>(null)
+  const [formData, setFormData] = useState({ code: '', name: '', description: '', type: '' })
+  const [formLoading, setFormLoading] = useState(false)
 
   const fetchDepartments = async () => {
     setLoading(true)
@@ -57,16 +63,110 @@ export default function DepartmentsPage() {
     }
   }
 
+  const handleCreateDepartment = async (e: React.FormEvent) => {
+    e.preventDefault()
+    setFormLoading(true)
+    try {
+      const res = await fetch('/api/departments', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(formData),
+      })
+      if (!res.ok) throw new Error('Failed to create department')
+      const json = await res.json()
+      setDepartments([json.data, ...departments])
+      setFormData({ code: '', name: '', description: '', type: '' })
+      setShowForm(false)
+    } catch (err: any) {
+      console.error(err)
+      alert(err.message || 'Failed to create department')
+    } finally {
+      setFormLoading(false)
+    }
+  }
+
+  const handleDeleteDepartment = async (id: string) => {
+    if (!confirm('Are you sure you want to delete this department?')) return
+    try {
+      const res = await fetch(`/api/departments/${id}`, { method: 'DELETE' })
+      if (!res.ok) throw new Error('Failed to delete department')
+      setDepartments(departments.filter(d => d.id !== id))
+      setDeletingId(null)
+    } catch (err: any) {
+      console.error(err)
+      alert(err.message || 'Failed to delete department')
+    }
+  }
+
   useEffect(() => { fetchDepartments() }, [])
+
+  const canManage = hasPermission('departments.create') || hasPermission('departments.delete')
 
   return (
     <div className="space-y-6">
       <div className="flex items-center justify-between">
         <h1 className="text-2xl font-bold">Departments</h1>
-        <div>
-          <button onClick={fetchDepartments} className="px-3 py-1 border rounded text-sm">Refresh</button>
+        <div className="flex gap-2">
+          {canManage && (
+            <button 
+              onClick={() => setShowForm(!showForm)}
+              className="px-4 py-2 bg-blue-600 text-white rounded-lg flex items-center gap-2 hover:bg-blue-700"
+            >
+              <Plus className="h-4 w-4" />
+              Add Department
+            </button>
+          )}
+          <button onClick={fetchDepartments} className="px-3 py-2 border rounded text-sm hover:bg-muted">Refresh</button>
         </div>
       </div>
+
+      {/* Create Form */}
+      {showForm && canManage && (
+        <div className="border rounded-lg p-4 bg-muted">
+          <form onSubmit={handleCreateDepartment} className="space-y-4">
+            <div className="grid grid-cols-2 gap-4">
+              <input
+                type="text"
+                placeholder="Code (e.g., 'restaurant')"
+                value={formData.code}
+                onChange={e => setFormData({ ...formData, code: e.target.value })}
+                className="px-3 py-2 border rounded text-sm"
+                required
+              />
+              <input
+                type="text"
+                placeholder="Name"
+                value={formData.name}
+                onChange={e => setFormData({ ...formData, name: e.target.value })}
+                className="px-3 py-2 border rounded text-sm"
+                required
+              />
+              <input
+                type="text"
+                placeholder="Type (optional)"
+                value={formData.type}
+                onChange={e => setFormData({ ...formData, type: e.target.value })}
+                className="px-3 py-2 border rounded text-sm col-span-2"
+              />
+              <textarea
+                placeholder="Description (optional)"
+                value={formData.description}
+                onChange={e => setFormData({ ...formData, description: e.target.value })}
+                className="px-3 py-2 border rounded text-sm col-span-2"
+                rows={2}
+              />
+            </div>
+            <div className="flex gap-2">
+              <button type="submit" disabled={formLoading} className="px-4 py-2 bg-blue-600 text-white rounded text-sm hover:bg-blue-700 disabled:opacity-50">
+                {formLoading ? 'Creating...' : 'Create'}
+              </button>
+              <button type="button" onClick={() => setShowForm(false)} className="px-4 py-2 border rounded text-sm hover:bg-muted">
+                Cancel
+              </button>
+            </div>
+          </form>
+        </div>
+      )}
 
       {loading && <div className="text-sm text-muted-foreground">Loading departments...</div>}
       {error && <div className="text-sm text-red-600">{error}</div>}
@@ -76,40 +176,42 @@ export default function DepartmentsPage() {
           const key = (d.type || d.code || '').toString().toLowerCase()
           const Icon = iconForType[key] ?? BookOpen
           return (
-            <Link
-              key={d.code}
-              href={`/departments/${encodeURIComponent(d.code)}`}
-              className="block border rounded-lg p-5 bg-card hover:shadow-lg transition-shadow"
-            >
-              <div className="flex items-start justify-between gap-4">
-                <div className="flex items-start gap-4 flex-1">
-                  <div className="p-2 bg-muted rounded-md">
-                    <Icon className="h-6 w-6 text-foreground" />
-                   </div>
-                  <div>
-                    <h3 className="text-lg font-semibold">{d.name}</h3>
-                    {d.description ? (
-                      <p className="text-sm text-muted-foreground mt-1">{d.description}</p>
-                    ) : (
-                      <p className="text-sm text-muted-foreground mt-1">Manage inventory, orders and KPIs for this department.</p>
-                    )}
-                    <div className="text-sm text-muted-foreground mt-3">Code: <span className="font-mono">{d.code}</span></div>
+            <div key={d.id} className="border rounded-lg p-5 bg-card hover:shadow-lg transition-shadow">
+              <Link
+                href={`/departments/${encodeURIComponent(d.code)}`}
+                className="block"
+              >
+                <div className="flex items-start justify-between gap-4">
+                  <div className="flex items-start gap-4 flex-1">
+                    <div className="p-2 bg-muted rounded-md">
+                      <Icon className="h-6 w-6 text-foreground" />
+                    </div>
+                    <div>
+                      <h3 className="text-lg font-semibold">{d.name}</h3>
+                      {d.description ? (
+                        <p className="text-sm text-muted-foreground mt-1">{d.description}</p>
+                      ) : (
+                        <p className="text-sm text-muted-foreground mt-1">Manage inventory, orders and KPIs for this department.</p>
+                      )}
+                      <div className="text-sm text-muted-foreground mt-3">Code: <span className="font-mono">{d.code}</span></div>
+                    </div>
                   </div>
                 </div>
+              </Link>
 
-                <div className="flex flex-col items-end justify-center gap-2">
-                  {/* <div className="text-sm">Orders <span className="font-medium">{d.totalOrders ?? 0}</span></div> */}
-                  {/* <div className="flex items-center gap-2">
-                    {d.pendingOrders && d.pendingOrders > 0 ? (
-                      <div className="text-xs bg-amber-100 text-amber-800 px-2 py-1 rounded">{d.pendingOrders} pending</div>
-                    ) : (
-                      <div className="text-xs text-muted-foreground">No pending</div>
-                    )}
-                    <div className="text-sm text-sky-600 font-medium">Open →</div>
-                  </div> */}
+              {/* Delete Button */}
+              {canManage && (
+                <div className="mt-3 flex gap-2">
+                  <button
+                    onClick={() => handleDeleteDepartment(d.id)}
+                    className="flex-1 px-2 py-1 bg-red-100 text-red-700 text-sm rounded hover:bg-red-200 flex items-center justify-center gap-1"
+                  >
+                    <Trash2 className="h-3 w-3" />
+                    Delete
+                  </button>
                 </div>
-              </div>
-            </Link>
+              )}
+            </div>
           )
         })}
       </div>

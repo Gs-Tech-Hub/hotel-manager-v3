@@ -2,13 +2,16 @@
  * Department Management API Routes
  * 
  * GET /api/departments             - List departments
- * GET /api/departments/[code]     - Get department details
+ * POST /api/departments            - Create department (admin only)
+ * DELETE /api/departments/[id]     - Delete department (admin only)
+ * GET /api/departments/[code]      - Get department details
  */
 
 import { NextRequest, NextResponse } from 'next/server';
 import { prisma } from '@/lib/prisma';
 import { extractUserContext, loadUserWithRoles } from '@/lib/user-context';
 import { successResponse, errorResponse, ErrorCodes, getStatusCode } from '@/lib/api-response';
+import { withPermission } from '@/lib/auth/middleware';
 
 /**
  * GET /api/departments
@@ -124,3 +127,118 @@ export async function GET(request: NextRequest) {
     );
   }
 }
+
+/**
+ * POST /api/departments
+ * Create a new department (admin only)
+ */
+export async function POST(request: NextRequest) {
+  try {
+    const ctx = await extractUserContext(request);
+    
+    // Check admin permission
+    if (ctx?.userType !== 'admin') {
+      return NextResponse.json(
+        errorResponse(ErrorCodes.FORBIDDEN, 'Only admins can create departments'),
+        { status: 403 }
+      );
+    }
+
+    const body = await request.json();
+    const { code, name, description, type, icon, image } = body;
+
+    if (!code || !name) {
+      return NextResponse.json(
+        errorResponse(ErrorCodes.VALIDATION_ERROR, 'code and name are required'),
+        { status: 400 }
+      );
+    }
+
+    // Check if department code already exists
+    const existing = await (prisma as any).department.findUnique({ where: { code } });
+    if (existing) {
+      return NextResponse.json(
+        errorResponse(ErrorCodes.CONFLICT, 'Department with this code already exists'),
+        { status: 409 }
+      );
+    }
+
+    // Create new department
+    const department = await (prisma as any).department.create({
+      data: {
+        code,
+        name,
+        description: description || null,
+        type: type || null,
+        icon: icon || null,
+        image: image || null,
+        isActive: true,
+        slug: code.toLowerCase(),
+      },
+    });
+
+    return NextResponse.json(
+      successResponse(department),
+      { status: 201 }
+    );
+  } catch (error) {
+    console.error('POST /api/departments error:', error);
+    return NextResponse.json(
+      errorResponse(ErrorCodes.INTERNAL_ERROR, 'Failed to create department'),
+      { status: 500 }
+    );
+  }
+}
+
+/**
+ * DELETE /api/departments/:id
+ * Delete/deactivate a department (admin only)
+ */
+export async function DELETE(request: NextRequest) {
+  try {
+    const ctx = await extractUserContext(request);
+    
+    // Check admin permission
+    if (ctx?.userType !== 'admin') {
+      return NextResponse.json(
+        errorResponse(ErrorCodes.FORBIDDEN, 'Only admins can delete departments'),
+        { status: 403 }
+      );
+    }
+
+    const url = new URL(request.url);
+    const id = url.pathname.split('/').pop();
+
+    if (!id) {
+      return NextResponse.json(
+        errorResponse(ErrorCodes.VALIDATION_ERROR, 'Department ID is required'),
+        { status: 400 }
+      );
+    }
+
+    // Find department
+    const department = await (prisma as any).department.findUnique({
+      where: { id },
+    });
+
+    if (!department) {
+      return NextResponse.json(
+        errorResponse(ErrorCodes.NOT_FOUND, 'Department not found'),
+        { status: 404 }
+      );
+    }
+
+    // Soft delete by marking as inactive
+    const updated = await (prisma as any).department.update({
+      where: { id },
+      data: { isActive: false },
+    });
+
+    return NextResponse.json(successResponse(updated));
+  } catch (error) {
+    console.error('DELETE /api/departments error:', error);
+    return NextResponse.json(
+      errorResponse(ErrorCodes.INTERNAL_ERROR, 'Failed to delete department'),
+      { status: 500 }
+    );
+  }
