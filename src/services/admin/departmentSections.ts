@@ -2,17 +2,20 @@ import { prisma } from '@/lib/auth/prisma';
 
 type Actor = { userId?: string; userType?: string } | undefined;
 
-export async function listSections({ page = 1, limit = 50 } = {}) {
+export async function listSections({ page = 1, limit = 50, departmentId }: { page?: number; limit?: number; departmentId?: string } = {}) {
   const skip = (page - 1) * limit;
 
+  const whereClause: any = { isActive: true };
+  if (departmentId) whereClause.departmentId = departmentId;
+
   const [rows, total] = await Promise.all([
-    prisma.departmentSection.findMany({ 
-      skip, 
-      take: limit, 
-      where: { isActive: true },
-      orderBy: { createdAt: 'desc' } 
+    prisma.departmentSection.findMany({
+      skip,
+      take: limit,
+      where: whereClause,
+      orderBy: { createdAt: 'desc' },
     }),
-    prisma.departmentSection.count({ where: { isActive: true } }),
+    prisma.departmentSection.count({ where: whereClause }),
   ]);
 
   return { rows, total };

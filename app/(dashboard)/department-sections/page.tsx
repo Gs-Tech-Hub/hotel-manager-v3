@@ -1,6 +1,7 @@
 "use client"
 
 import { useEffect, useState } from 'react'
+import { useSearchParams } from 'next/navigation'
 import { useAuth } from '@/components/auth-context'
 import { Plus, Trash2 } from 'lucide-react'
 
@@ -23,6 +24,8 @@ export default function DepartmentSectionsPage() {
   const [formData, setFormData] = useState({ name: '', departmentId: '' })
   const [formLoading, setFormLoading] = useState(false)
   const [formError, setFormError] = useState<string | null>(null)
+  const searchParams = useSearchParams()
+  const urlDepartmentId = searchParams?.get('departmentId') || ''
 
   const fetchSections = async () => {
     setLoading(true)
@@ -58,6 +61,14 @@ export default function DepartmentSectionsPage() {
     fetchDepartments()
     fetchSections()
   }, [])
+
+  // If a departmentId is present in the URL, auto-select it and open the form.
+  useEffect(() => {
+    if (!urlDepartmentId) return
+    // pre-fill department and open form if user can create
+    setFormData((prev) => ({ ...prev, departmentId: urlDepartmentId }))
+    if (hasPermission('department_sections.create')) setShowForm(true)
+  }, [urlDepartmentId, hasPermission])
 
   const handleCreateSection = async () => {
     if (!formData.name || !formData.departmentId) {

@@ -349,6 +349,7 @@ function UpdateStatsButton({ code, refresh }: { code: string; refresh: () => Pro
     setBusy(true)
     try {
       const res = await fetch(`/api/departments/${encodeURIComponent(code)}/update-stats`, { method: 'POST' })
+      
       const j = await res.json()
       if (!res.ok || !j?.success) {
         alert(j?.error?.message || 'Update failed')

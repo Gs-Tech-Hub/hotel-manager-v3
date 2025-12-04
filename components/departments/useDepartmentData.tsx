@@ -170,6 +170,36 @@ export default function useDepartmentData(decodedCode: string | undefined) {
     }
   }, [])
 
+  // Fetch department_sections (separate table) for a given department and map
+  // them into the same shape used by `children` so UI can render them alongside
+  // child departments (which are stored in the departments table).
+  const fetchSectionsForDepartment = useCallback(async (dept: any) => {
+    try {
+      if (!dept || !dept.id) return []
+      const res = await fetch(`/api/admin/department-sections?departmentId=${encodeURIComponent(dept.id)}`)
+      if (!res.ok) return []
+      const j = await res.json()
+      const rows = j.data || []
+      const mapped = (rows as any[]).map((s) => ({
+        code: `${dept.code}:${s.slug || s.id}`,
+        name: s.name,
+        description: s.metadata?.description || s.metadata?.note || null,
+        type: dept.type,
+        icon: dept.icon,
+        // Section-level stats may live in metadata
+        sectionStats: s.metadata?.sectionStats || null,
+        totalOrders: s.metadata?.sectionStats?.totalOrders ?? 0,
+        pendingOrders: s.metadata?.sectionStats?.pendingOrders ?? 0,
+        processingOrders: s.metadata?.sectionStats?.processingOrders ?? 0,
+        fulfilledOrders: s.metadata?.sectionStats?.fulfilledOrders ?? 0,
+      }))
+      return mapped
+    } catch (e) {
+      console.error('fetchSectionsForDepartment error', e)
+      return []
+    }
+  }, [])
+
   const refreshPendingForModal = useCallback(async (productName: string | null, code?: string) => {
     if (!productName || !code) return
     setPendingModalLoading(true)
@@ -242,12 +272,16 @@ export default function useDepartmentData(decodedCode: string | undefined) {
               setSectionStock(null)
             }
           } else {
-            const found = await loadChildrenForDepartment(d)
-            if (!found || found.length === 0) {
-              await fetchMenu(decodedCode)
-            } else {
-              setMenu([])
-            }
+              const found = await loadChildrenForDepartment(d)
+              // Also include any department_sections linked to this department
+              const secs = await fetchSectionsForDepartment(d)
+              const merged = [...found, ...secs]
+              if (!merged || merged.length === 0) {
+                await fetchMenu(decodedCode)
+              } else {
+                setMenu([])
+              }
+              setChildren(merged)
           }
         }
       } catch (e) {
@@ -287,11 +321,14 @@ export default function useDepartmentData(decodedCode: string | undefined) {
           }
         } else {
           const found = await loadChildrenForDepartment(d)
-          if (!found || found.length === 0) {
+          const secs = await fetchSectionsForDepartment(d)
+          const merged = [...found, ...secs]
+          if (!merged || merged.length === 0) {
             await fetchMenu(useCode)
           } else {
             setMenu([])
           }
+          setChildren(merged)
         }
       }
     } catch (e) {

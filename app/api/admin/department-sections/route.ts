@@ -9,7 +9,8 @@ export const GET = withPermission(
       const page = parseInt(url.searchParams.get('page') || '1');
       const limit = parseInt(url.searchParams.get('limit') || '50');
 
-      const { rows, total } = await listSections({ page, limit });
+      const departmentId = url.searchParams.get('departmentId') || undefined;
+      const { rows, total } = await listSections({ page, limit, departmentId });
 
       return NextResponse.json({ success: true, data: rows, pagination: { page, limit, total, pages: Math.ceil(total / limit) } }, { status: 200 });
     } catch (error) {
