@@ -29,10 +29,29 @@ export default function TransferPanel({ sourceCode, onClose, initialTarget }: { 
 
   async function fetchDepartments() {
     try {
-      const res = await fetch('/api/departments')
-      const j = await res.json()
-      const list = j.data || j || []
-      setDepartments(list.map((d: any) => ({ id: d.id, code: d.code, name: d.name })))
+      const [deptRes, sectionsRes] = await Promise.all([
+        fetch('/api/departments'),
+        fetch(`/api/admin/department-sections?departmentCode=${encodeURIComponent(sourceCode)}`)
+      ])
+      const deptData = await deptRes.json()
+      const sectionsData = await sectionsRes.json()
+      
+      // Map departments
+      const list = deptData.data || deptData || []
+      const depts = list.map((d: any) => ({ id: d.id, code: d.code, name: d.name }))
+      
+      // Get the source department to get its ID for filtering sections
+      const sourceDept = depts.find((d: any) => d.code === sourceCode)
+      
+      // Map sections - only include sections from the source department
+      const sections = (sectionsData?.data || [])
+        .filter((s: any) => s.departmentId === sourceDept?.id)
+        .map((s: any) => {
+          const sectionCode = `${sourceCode}:${s.slug || s.id}`
+          return { id: s.id, code: sectionCode, name: `${s.name}` }
+        })
+      
+      setDepartments([...depts, ...sections])
     } catch (e) {
       console.error('failed to load departments', e)
     }
