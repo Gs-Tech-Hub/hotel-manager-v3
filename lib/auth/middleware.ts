@@ -139,12 +139,22 @@ export function withPermission(
         );
       }
 
+      // Parse permission string if it contains a dot (e.g., "departments.create" -> action="departments", subject="create")
+      let permAction = action;
+      let permSubject = subject;
+      
+      if (action.includes('.') && !subject) {
+        const [act, subj] = action.split('.');
+        permAction = act;
+        permSubject = subj;
+      }
+
       // Check permission
-      const allowed = await checkPermission(context, action, subject);
+      const allowed = await checkPermission(context, permAction, permSubject);
 
       if (!allowed) {
         console.warn(
-          `[AUTH] Forbidden: ${context.userId} (${context.userType}) tried ${action}:${subject}`
+          `[AUTH] Forbidden: ${context.userId} (${context.userType}) tried ${permAction}:${permSubject}`
         );
 
         return NextResponse.json(
@@ -157,7 +167,7 @@ export function withPermission(
       }
 
       console.log(
-        `[AUTH] Allowed: ${context.userId} (${context.userType}) performed ${action}:${subject}`
+        `[AUTH] Allowed: ${context.userId} (${context.userType}) performed ${permAction}:${permSubject}`
       );
 
       // Pass request to handler with context
@@ -214,11 +224,21 @@ export function withPermissions(
 
       // Check all permissions
       for (const [action, subject] of permissions) {
-        const allowed = await checkPermission(ctx, action, subject);
+        // Parse permission string if it contains a dot (e.g., "departments.create" -> action="departments", subject="create")
+        let permAction = action;
+        let permSubject = subject;
+        
+        if (action.includes('.') && !subject) {
+          const [act, subj] = action.split('.');
+          permAction = act;
+          permSubject = subj;
+        }
+
+        const allowed = await checkPermission(ctx, permAction, permSubject);
 
         if (!allowed) {
           console.warn(
-            `[AUTH] Forbidden: ${userId} lacks ${action}:${subject}`
+            `[AUTH] Forbidden: ${userId} lacks ${permAction}:${permSubject}`
           );
 
           return NextResponse.json(

@@ -2,6 +2,7 @@
 import { useRouter, useParams } from 'next/navigation'
 import { Utensils, Coffee, Activity, Gamepad, BookOpen } from 'lucide-react'
 import { useMemo, useState, useEffect } from 'react'
+import { useAuth } from '@/components/auth-context'
 import Price from '@/components/ui/Price'
 import useDepartmentData from '../../../../components/departments/useDepartmentData'
 import SectionsList from '../../../../components/departments/SectionsList'
@@ -82,6 +83,52 @@ export default function DepartmentDetail() {
     refreshDepartment,
     setPendingModalItems,
   } = useDepartmentData(decodedCode)
+
+  const { hasPermission } = useAuth()
+
+  // Create section modal state
+  const [showCreateSection, setShowCreateSection] = useState(false)
+  const [newSectionName, setNewSectionName] = useState('')
+  const [newSectionSlug, setNewSectionSlug] = useState('')
+  const [creatingSection, setCreatingSection] = useState(false)
+  const [createSectionError, setCreateSectionError] = useState<string | null>(null)
+
+  const handleCreateSection = async (e?: React.FormEvent) => {
+    if (e) e.preventDefault()
+    if (!newSectionName) {
+      setCreateSectionError('Please enter a name')
+      return
+    }
+    if (!department?.id) {
+      setCreateSectionError('Department not loaded')
+      return
+    }
+
+    setCreatingSection(true)
+    setCreateSectionError(null)
+    try {
+      const res = await fetch('/api/admin/department-sections', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ name: newSectionName, slug: newSectionSlug || undefined, departmentId: department.id }),
+      })
+      const j = await res.json()
+      if (!res.ok || !j?.success) {
+        throw new Error(j?.error || 'Failed to create section')
+      }
+
+      setNewSectionName('')
+      setNewSectionSlug('')
+      setShowCreateSection(false)
+      // refresh department data (children/sections)
+      try { await (refreshDepartment as any)?.(decodedCode) } catch (e) { /* ignore */ }
+    } catch (err: any) {
+      console.error('create section error', err)
+      setCreateSectionError(err?.message || 'Create failed')
+    } finally {
+      setCreatingSection(false)
+    }
+  }
 
   const [pendingTransfers, setPendingTransfers] = useState<any[] | null>(null)
   const [loadingTransfers, setLoadingTransfers] = useState(false)
@@ -178,6 +225,11 @@ export default function DepartmentDetail() {
           {decodedCode.includes(':') && (
             <button onClick={() => setIncomingModalOpen(true)} className="px-3 py-1 border rounded text-sm">Incoming{pendingTransfers && pendingTransfers.length > 0 ? ` (${pendingTransfers.length})` : ''}</button>
           )}
+          {hasPermission('department_sections.create') && (
+            <button onClick={() => setShowCreateSection(true)} className="px-3 py-1 bg-green-600 text-white rounded text-sm inline-flex items-center gap-2 hover:bg-green-700">
+              Create Section
+            </button>
+          )}
           <button onClick={() => router.back()} className="px-3 py-1 border rounded text-sm">Back</button>
           <UpdateStatsButton code={decodedCode} refresh={() => { fetchSectionProducts(decodedCode); fetchPendingOrderLines(decodedCode); /* also refresh department metadata */ (refreshDepartment as any)?.(decodedCode) }} />
         </div>
@@ -237,6 +289,21 @@ export default function DepartmentDetail() {
       )}
 
       <SectionsList sections={children} loading={childrenLoading} />
+
+      {showCreateSection && (
+        <div className="fixed inset-0 bg-black bg-opacity-30 flex items-center justify-center z-50">
+          <form onSubmit={handleCreateSection} className="bg-white p-6 rounded shadow w-80">
+            <h3 className="text-lg font-semibold mb-2">Create Section</h3>
+            {createSectionError && <div className="text-sm text-red-600 mb-2">{createSectionError}</div>}
+            <input className="w-full mb-2 p-2 border rounded" placeholder="Name" value={newSectionName} onChange={e => setNewSectionName(e.target.value)} required />
+            <input className="w-full mb-2 p-2 border rounded" placeholder="Slug (optional)" value={newSectionSlug} onChange={e => setNewSectionSlug(e.target.value)} />
+            <div className="flex gap-2 mt-2">
+              <button type="submit" className="px-3 py-1 bg-blue-600 text-white rounded" disabled={creatingSection}>{creatingSection ? 'Creating...' : 'Create'}</button>
+              <button type="button" className="px-3 py-1 bg-gray-300 rounded" onClick={() => { setShowCreateSection(false); setCreateSectionError(null); }}>Cancel</button>
+            </div>
+          </form>
+        </div>
+      )}
 
 
       {/* Transfer audit moved to Inventory page */}

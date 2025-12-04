@@ -38,54 +38,60 @@ export async function createDepartment(data: {
     throw err;
   }
 
-  return await prisma.$transaction(async (tx) => {
-    const dept = await tx.department.create({
-      data: {
-        code,
-        name,
-        description,
-        type,
-        icon,
-        image,
-        metadata: metadata || {},
-        isActive: true,
-      },
-    });
+  return await prisma.$transaction(
+    async (tx) => {
+      const dept = await tx.department.create({
+        data: {
+          code,
+          name,
+          description,
+          type,
+          icon,
+          image,
+          metadata: metadata || {},
+          isActive: true,
+        },
+      });
 
-    // Audit log
-    await tx.adminAuditLog.create({
-      data: {
-        actorId: actor?.userId || null,
-        actorType: actor?.userType || 'unknown',
-        action: 'create',
-        subject: 'departments',
-        subjectId: dept.id,
-        details: { code, name },
-      },
-    });
+      // Audit log
+      await tx.adminAuditLog.create({
+        data: {
+          actorId: actor?.userId || null,
+          actorType: actor?.userType || 'unknown',
+          action: 'create',
+          subject: 'departments',
+          subjectId: dept.id,
+          details: { code, name },
+        },
+      });
 
-    return dept;
-  });
+      return dept;
+    },
+    { timeout: 10000 } // Increase timeout to 10 seconds
+  );
 }
 
 export async function deleteDepartment(id: string, actor?: Actor) {
   if (!id) throw new Error('Missing department id');
 
-  return await prisma.$transaction(async (tx) => {
-    // Soft deactivate
-    const dept = await tx.department.update({ where: { id }, data: { isActive: false } });
+  return await prisma.$transaction(
+    async (tx) => {
+      // Soft deactivate
+      const dept = await tx.department.update({ where: { id }, data: { isActive: false } });
 
-    await tx.adminAuditLog.create({
-      data: {
-        actorId: actor?.userId || null,
-        actorType: actor?.userType || 'unknown',
-        action: 'delete',
-        subject: 'departments',
-        subjectId: id,
-        details: { message: 'soft-deactivated' },
-      },
-    });
+      await tx.adminAuditLog.create({
+        data: {
+          actorId: actor?.userId || null,
+          actorType: actor?.userType || 'unknown',
+          action: 'delete',
+          subject: 'departments',
+          subjectId: id,
+          details: { message: 'soft-deactivated' },
+        },
+      });
 
-    return dept;
-  });
+      return dept;
+    },
+    { timeout: 10000 } // Increase timeout to 10 seconds
+  );
 }

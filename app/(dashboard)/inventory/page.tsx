@@ -31,6 +31,15 @@ export default function InventoryPage() {
   const [formData, setFormData] = useState({ name: '', sku: '', category: '', quantity: '0', unitPrice: '0' })
   const [formLoading, setFormLoading] = useState(false)
   const [formError, setFormError] = useState<string | null>(null)
+  const [categories, setCategories] = useState<string[]>([])
+  const [autoGenSku, setAutoGenSku] = useState(true)
+
+  const generateSku = (cat: string) => {
+    if (!cat) return ''
+    const timestamp = Date.now().toString().slice(-6)
+    const prefix = cat.slice(0, 3).toUpperCase()
+    return `${prefix}-${timestamp}`
+  }
   
 
   const fetchItems = async (dept?: string | null) => {
@@ -63,8 +72,19 @@ export default function InventoryPage() {
   }
 
   const handleCreateInventoryItem = async () => {
-    if (!formData.name || !formData.sku || !formData.category) {
-      setFormError('Please fill in all required fields')
+    if (!formData.name || !formData.category) {
+      setFormError('Please fill in all required fields (name and category)')
+      return
+    }
+    // Use auto-generated SKU or manual, but at least one must exist
+    const finalSku = autoGenSku && !formData.sku ? generateSku(formData.category) : formData.sku
+    if (!finalSku) {
+      setFormError('SKU is required. Enable auto-generation or enter a manual SKU.')
+      return
+    }
+    // enforce strict category selection when categories are available
+    if (categories.length > 0 && !categories.includes(formData.category)) {
+      setFormError('Invalid category selected. Choose one of the available categories.')
       return
     }
     
@@ -76,14 +96,17 @@ export default function InventoryPage() {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           name: formData.name,
-          sku: formData.sku,
+          sku: finalSku,
           category: formData.category,
           quantity: Number(formData.quantity),
           unitPrice: Number(formData.unitPrice),
         }),
       })
       const json = await res.json()
-      if (!res.ok) throw new Error(json.error || `Failed to create item (${res.status})`)
+      if (!res.ok) {
+        const errMsg = json?.error || json?.message || `Failed to create item (${res.status})`
+        throw new Error(errMsg)
+      }
       setFormData({ name: '', sku: '', category: '', quantity: '0', unitPrice: '0' })
       setShowForm(false)
       await fetchItems(selectedDept)
@@ -117,7 +140,22 @@ export default function InventoryPage() {
       if (!res.ok) throw new Error('Failed to fetch departments')
       const json = await res.json()
       const data = json.data || json
-      setDepartments(data || [])
+      const depts = data || []
+      setDepartments(depts)
+      // derive categories strictly from department codes
+      const cats = Array.from(
+        new Set(
+          depts
+            .map((d: any) => mapDeptCodeToCategory(d.code))
+            .filter(Boolean)
+        )
+      )
+      setCategories(cats)
+      // if a department is currently selected, prefill the category to its mapped value
+      if (selectedDept) {
+        const mapped = mapDeptCodeToCategory(selectedDept)
+        if (mapped) setFormData((f) => ({ ...f, category: mapped }))
+      }
     } catch (err) {
       console.warn('Could not load departments for inventory filter', err)
     }
@@ -140,6 +178,19 @@ export default function InventoryPage() {
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
+
+  // when selected department changes, prefill category in form to keep categorization strict
+  useEffect(() => {
+    if (!selectedDept) return
+    const mapped = mapDeptCodeToCategory(selectedDept)
+    if (mapped) {
+      setFormData((f) => ({ ...f, category: mapped }))
+      // auto-generate SKU when category is set via department selection
+      if (autoGenSku) {
+        setFormData((f) => ({ ...f, sku: generateSku(mapped) }))
+      }
+    }
+  }, [selectedDept])
 
   return (
     <div className="space-y-6">
@@ -172,20 +223,41 @@ export default function InventoryPage() {
               onChange={(e) => setFormData({ ...formData, name: e.target.value })}
               className="border rounded px-3 py-2"
             />
-            <input
-              type="text"
-              placeholder="SKU *"
-              value={formData.sku}
-              onChange={(e) => setFormData({ ...formData, sku: e.target.value })}
-              className="border rounded px-3 py-2"
-            />
-            <input
-              type="text"
-              placeholder="Category *"
+            <select
               value={formData.category}
               onChange={(e) => setFormData({ ...formData, category: e.target.value })}
               className="border rounded px-3 py-2"
-            />
+            >
+              <option value="">Select Category *</option>
+              {categories.map((c) => (
+                <option key={c} value={c}>{c}</option>
+              ))}
+            </select>
+            <div className="col-span-2 flex items-center gap-3 p-3 border rounded bg-blue-50">
+              <label className="flex items-center gap-2 cursor-pointer">
+                <input
+                  type="checkbox"
+                  checked={autoGenSku}
+                  onChange={(e) => setAutoGenSku(e.target.checked)}
+                  className="w-4 h-4"
+                />
+                <span className="text-sm font-medium">Auto-generate SKU</span>
+              </label>
+              <span className="text-xs text-gray-600">
+                {autoGenSku && formData.category
+                  ? `Preview: ${generateSku(formData.category)}`
+                  : 'Uncheck to enter manual SKU'}
+              </span>
+            </div>
+            {!autoGenSku && (
+              <input
+                type="text"
+                placeholder="Manual SKU *"
+                value={formData.sku}
+                onChange={(e) => setFormData({ ...formData, sku: e.target.value })}
+                className="border rounded px-3 py-2"
+              />
+            )}
             <input
               type="number"
               placeholder="Quantity"

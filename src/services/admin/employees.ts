@@ -29,68 +29,74 @@ export async function createEmployee(
   const existing = await prisma.pluginUsersPermissionsUser.findUnique({ where: { email } });
   if (existing) throw new Error('Employee with this email already exists');
 
-  return await prisma.$transaction(async (tx) => {
-    const employee = await tx.pluginUsersPermissionsUser.create({
-      data: {
-        email,
-        firstname: name,
-        username: email.split('@')[0],
-        password: 'temp-password', // Should be hashed in production; consider email-based invitation instead
-        blocked: false,
-      },
-    });
+  return await prisma.$transaction(
+    async (tx) => {
+      const employee = await tx.pluginUsersPermissionsUser.create({
+        data: {
+          email,
+          firstname: name,
+          username: email.split('@')[0],
+          password: 'temp-password', // Should be hashed in production; consider email-based invitation instead
+          blocked: false,
+        },
+      });
 
-    // Optionally assign default role if provided
-    if (role) {
-      const roleObj = await tx.role.findUnique({ where: { code: role } });
-      if (roleObj) {
-        await tx.userRole.create({
-          data: {
-            userId: employee.id,
-            userType: 'employee',
-            roleId: roleObj.id,
-            grantedAt: new Date(),
-            grantedBy: actor?.userId || 'system',
-          },
-        });
+      // Optionally assign default role if provided
+      if (role) {
+        const roleObj = await tx.role.findUnique({ where: { code: role } });
+        if (roleObj) {
+          await tx.userRole.create({
+            data: {
+              userId: employee.id,
+              userType: 'employee',
+              roleId: roleObj.id,
+              grantedAt: new Date(),
+              grantedBy: actor?.userId || 'system',
+            },
+          });
+        }
       }
-    }
 
-    await tx.adminAuditLog.create({
-      data: {
-        actorId: actor?.userId || null,
-        actorType: actor?.userType || 'unknown',
-        action: 'create',
-        subject: 'employees',
-        subjectId: employee.id,
-        details: { name, email },
-      },
-    });
+      await tx.adminAuditLog.create({
+        data: {
+          actorId: actor?.userId || null,
+          actorType: actor?.userType || 'unknown',
+          action: 'create',
+          subject: 'employees',
+          subjectId: employee.id,
+          details: { name, email },
+        },
+      });
 
-    return employee;
-  });
+      return employee;
+    },
+    { timeout: 10000 } // Increase timeout to 10 seconds
+  );
 }
 
 export async function deleteEmployee(id: string, actor?: Actor) {
   if (!id) throw new Error('Missing employee id');
 
-  return await prisma.$transaction(async (tx) => {
-    const employee = await tx.pluginUsersPermissionsUser.update({
-      where: { id },
-      data: { blocked: true },
-    });
+  return await prisma.$transaction(
+    async (tx) => {
+      const employee = await tx.pluginUsersPermissionsUser.update({
+        where: { id },
+        data: { blocked: true },
+      });
 
-    await tx.adminAuditLog.create({
-      data: {
-        actorId: actor?.userId || null,
-        actorType: actor?.userType || 'unknown',
-        action: 'delete',
-        subject: 'employees',
-        subjectId: id,
-        details: { message: 'blocked' },
-      },
-    });
+      await tx.adminAuditLog.create({
+        data: {
+          actorId: actor?.userId || null,
+          actorType: actor?.userType || 'unknown',
+          action: 'delete',
+          subject: 'employees',
+          subjectId: id,
+          details: { message: 'blocked' },
+        },
+      });
 
-    return employee;
-  });
+      return employee;
+    },
+    { timeout: 10000 } // Increase timeout to 10 seconds
+  );
 }

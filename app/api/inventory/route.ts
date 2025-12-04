@@ -17,6 +17,8 @@
 import { NextRequest } from 'next/server';
 import { inventoryItemService } from '@/services/inventory.service';
 import { sendSuccess, sendError } from '@/lib/api-handler';
+import { prisma } from '@/lib/prisma';
+import { mapDeptCodeToCategory } from '@/lib/utils';
 import { ErrorCodes } from '@/lib/api-response';
 
 export async function GET(req: NextRequest) {
@@ -32,7 +34,7 @@ export async function GET(req: NextRequest) {
     const lowStock = searchParams.get('lowStock') === 'true';
     const expired = searchParams.get('expired') === 'true';
 
-    let items;
+    let items: any[] = [];
 
     if (search) {
       items = await inventoryItemService.search(search);
@@ -41,11 +43,17 @@ export async function GET(req: NextRequest) {
     } else if (expired) {
       items = await inventoryItemService.getExpiredItems();
     } else {
-      items = await inventoryItemService.getAllItems({
-        inventoryTypeId,
-        category,
-        itemType,
-        location,
+      // Query directly from Prisma to ensure isActive filter
+      const where: any = { isActive: true };
+      if (inventoryTypeId) where.inventoryTypeId = inventoryTypeId;
+      if (category) where.category = category;
+      if (itemType) where.itemType = itemType;
+      if (location) where.location = location;
+
+      items = await prisma.inventoryItem.findMany({
+        where,
+        include: { inventoryType: true },
+        orderBy: { name: 'asc' },
       });
     }
 
@@ -83,52 +91,114 @@ export async function POST(req: NextRequest) {
     const body = await req.json();
 
     // Validate required fields
-    if (!body.name || !body.sku || !body.category || !body.inventoryTypeId || body.unitPrice === undefined) {
+    if (!body.name || !body.category || body.unitPrice === undefined) {
       return sendError(
         ErrorCodes.VALIDATION_ERROR,
-        'Missing required fields: name, sku, category, inventoryTypeId, unitPrice'
+        'Missing required fields: name, category, unitPrice'
       );
     }
 
-    const item = await inventoryItemService.create(body);
+    // Auto-generate SKU if not provided (category + timestamp)
+    let sku = body.sku;
+    if (!sku && body.category) {
+      const timestamp = Date.now().toString().slice(-6);
+      const prefix = body.category.slice(0, 3).toUpperCase();
+      sku = `${prefix}-${timestamp}`;
+    }
+
+    if (!sku) {
+      return sendError(ErrorCodes.VALIDATION_ERROR, 'SKU could not be generated or provided');
+    }
+
+    // Strict category validation: build allowed categories from departments mapping
+    try {
+      const depts = await prisma.department.findMany({ select: { code: true } });
+      const allowed = Array.from(new Set(depts.map((d) => mapDeptCodeToCategory(d.code)).filter(Boolean)));
+      if (allowed.length > 0 && !allowed.includes(body.category)) {
+        return sendError(ErrorCodes.VALIDATION_ERROR, 'Invalid category. Must be one of: ' + allowed.join(', '));
+      }
+    } catch (err) {
+      console.warn('[Inventory] Could not validate category against departments', err);
+    }
+
+    // Check if SKU already exists
+    const existing = await prisma.inventoryItem.findUnique({ where: { sku } });
+    if (existing) {
+      return sendError(ErrorCodes.VALIDATION_ERROR, `Inventory item with SKU "${sku}" already exists`);
+    }
+
+    // Get or create default inventory type
+    let inventoryTypeId = (await prisma.inventoryType.findFirst({ where: { typeName: 'General' } }))?.id;
+    if (!inventoryTypeId) {
+      const defaultType = await prisma.inventoryType.create({ data: { typeName: 'General' } });
+      inventoryTypeId = defaultType.id;
+    }
+
+    // Create inventory item directly via Prisma
+    const item = await prisma.inventoryItem.create({
+      data: {
+        name: body.name,
+        sku,
+        category: body.category,
+        unitPrice: Number(body.unitPrice),
+        quantity: body.quantity ? Number(body.quantity) : 0,
+        description: body.description || null,
+        itemType: body.itemType || null,
+        inventoryTypeId,
+        isActive: true,
+      },
+    });
 
     if (!item) {
-      return sendError(
-        ErrorCodes.INTERNAL_ERROR,
-        'Failed to create inventory item'
-      );
+      return sendError(ErrorCodes.INTERNAL_ERROR, 'Failed to create inventory item');
     }
 
     return sendSuccess(item, 'Inventory item created successfully', 201);
   } catch (error) {
+    console.error('[Inventory POST] Error:', error);
     const message = error instanceof Error ? error.message : 'Failed to create inventory item';
     return sendError(ErrorCodes.INTERNAL_ERROR, message);
   }
 }
 
 /**
- * DELETE /api/inventory/:id
+ * DELETE /api/inventory/:id or ?id=
  * Delete/deactivate an inventory item (admin only)
  */
 export async function DELETE(req: NextRequest) {
   try {
-    // Extract ID from URL path
     const url = new URL(req.url);
-    const id = url.pathname.split('/').pop();
+    
+    // Check query string first, then pathname
+    let id: string | null = url.searchParams.get('id');
+    if (!id) {
+      const pathId = url.pathname.split('/').pop();
+      id = pathId && pathId !== 'route.ts' && pathId !== 'inventory' ? pathId : null;
+    }
 
-    if (!id || id === 'route.ts') {
+    if (!id) {
       return sendError(ErrorCodes.VALIDATION_ERROR, 'Inventory item ID is required');
     }
 
-    // Call service to delete
-    const item = await inventoryItemService.delete(id);
+    // Soft delete: set isActive to false
+    const item = await prisma.inventoryItem.update({
+      where: { id },
+      data: { isActive: false },
+    });
 
     if (!item) {
       return sendError(ErrorCodes.NOT_FOUND, 'Inventory item not found');
     }
 
     return sendSuccess(item, 'Inventory item deleted successfully');
-  } catch (error) {
+  } catch (error: any) {
+    console.error('[Inventory DELETE] Error:', error);
+    
+    // Handle Prisma not found error
+    if (error?.code === 'P2025') {
+      return sendError(ErrorCodes.NOT_FOUND, 'Inventory item not found');
+    }
+    
     const message = error instanceof Error ? error.message : 'Failed to delete inventory item';
     return sendError(ErrorCodes.INTERNAL_ERROR, message);
   }

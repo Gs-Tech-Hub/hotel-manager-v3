@@ -25,53 +25,59 @@ export async function createDiscount(
   const { name, percent, description, code } = data;
   if (!name || percent === undefined) throw new Error('Missing required fields: name, percent');
 
-  return await prisma.$transaction(async (tx) => {
-    const discount = await tx.discountRule.create({
-      data: {
-        name,
-        code: code || `DISC-${Date.now()}`,
-        value: percent,
-        type: 'percentage',
-        description,
-        isActive: true,
-      },
-    });
+  return await prisma.$transaction(
+    async (tx) => {
+      const discount = await tx.discountRule.create({
+        data: {
+          name,
+          code: code || `DISC-${Date.now()}`,
+          value: percent,
+          type: 'percentage',
+          description,
+          isActive: true,
+        },
+      });
 
-    await tx.adminAuditLog.create({
-      data: {
-        actorId: actor?.userId || null,
-        actorType: actor?.userType || 'unknown',
-        action: 'create',
-        subject: 'discounts',
-        subjectId: discount.id,
-        details: { name, percent },
-      },
-    });
+      await tx.adminAuditLog.create({
+        data: {
+          actorId: actor?.userId || null,
+          actorType: actor?.userType || 'unknown',
+          action: 'create',
+          subject: 'discounts',
+          subjectId: discount.id,
+          details: { name, percent },
+        },
+      });
 
-    return discount;
-  });
+      return discount;
+    },
+    { timeout: 10000 } // Increase timeout to 10 seconds
+  );
 }
 
 export async function deleteDiscount(id: string, actor?: Actor) {
   if (!id) throw new Error('Missing discount id');
 
-  return await prisma.$transaction(async (tx) => {
-    const discount = await tx.discountRule.update({
-      where: { id },
-      data: { isActive: false },
-    });
+  return await prisma.$transaction(
+    async (tx) => {
+      const discount = await tx.discountRule.update({
+        where: { id },
+        data: { isActive: false },
+      });
 
-    await tx.adminAuditLog.create({
-      data: {
-        actorId: actor?.userId || null,
-        actorType: actor?.userType || 'unknown',
-        action: 'delete',
-        subject: 'discounts',
-        subjectId: id,
-        details: { message: 'soft-deactivated' },
-      },
-    });
+      await tx.adminAuditLog.create({
+        data: {
+          actorId: actor?.userId || null,
+          actorType: actor?.userType || 'unknown',
+          action: 'delete',
+          subject: 'discounts',
+          subjectId: id,
+          details: { message: 'soft-deactivated' },
+        },
+      });
 
-    return discount;
-  });
+      return discount;
+    },
+    { timeout: 10000 } // Increase timeout to 10 seconds
+  );
 }

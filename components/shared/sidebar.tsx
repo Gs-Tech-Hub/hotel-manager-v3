@@ -72,19 +72,24 @@ const sidebarGroups = [
 				icon: Users,
 				badge: null,
 			},
-							{
-								title: "Departments",
-								href: "/departments",
-								icon: BookOpen,
-								badge: null,
-							},
-								{
-									title: "Inventory",
-									href: "/inventory",
-									icon: Database,
-									badge: null,
-								},
-
+			{
+				title: "Employees",
+				href: "/employees",
+				icon: Users,
+				badge: null,
+			},
+			{
+				title: "Departments",
+				href: "/departments",
+				icon: BookOpen,
+				badge: null,
+			},
+			{
+				title: "Inventory",
+				href: "/inventory",
+				icon: Database,
+				badge: null,
+			},
 		],
 	},
 				{
