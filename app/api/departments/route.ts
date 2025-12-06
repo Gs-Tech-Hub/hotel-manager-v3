@@ -19,6 +19,9 @@ import { withPermission } from '@/lib/auth/middleware';
  */
 export async function GET(request: NextRequest) {
   try {
+    console.time('GET /api/departments')
+    const url = new URL(request.url)
+    const parentCode = url.searchParams.get('parentCode') || null
     // Extract user context if present. Departments listing is public, so
     // we don't require authentication here — but we still load full roles
     // when headers are provided to allow role-aware responses elsewhere.
@@ -28,25 +31,61 @@ export async function GET(request: NextRequest) {
       userWithRoles = await loadUserWithRoles(ctx.userId);
     }
 
-    // Query all active departments (avoid including large relations directly)
-    const departments = await (prisma as any).department.findMany({
-      where: { isActive: true },
-      orderBy: { code: 'asc' },
-      select: {
-        id: true,
-        code: true,
-        name: true,
-        description: true,
-        isActive: true,
-        slug: true,
-        type: true,
-        icon: true,
-        image: true,
-        referenceType: true,
-        referenceId: true,
-        metadata: true,
-      },
-    });
+    // If a parentCode is provided, return only child departments to avoid
+    // loading the entire departments table into the client.
+    let departments: any[] = []
+    if (parentCode) {
+      const parent = await (prisma as any).department.findUnique({ where: { code: parentCode } })
+      if (!parent) {
+        return NextResponse.json(successResponse([]))
+      }
+      // Match by code prefix (sections), or by referenceType/referenceId linkage.
+      departments = await (prisma as any).department.findMany({
+        where: {
+          isActive: true,
+          OR: [
+            { code: { startsWith: `${parent.code}:` } },
+            { referenceType: parent.code },
+            { referenceId: parent.id },
+          ],
+        },
+        orderBy: { code: 'asc' },
+        select: {
+          id: true,
+          code: true,
+          name: true,
+          description: true,
+          isActive: true,
+          slug: true,
+          type: true,
+          icon: true,
+          image: true,
+          referenceType: true,
+          referenceId: true,
+          metadata: true,
+        },
+      })
+    } else {
+      // Query all active departments (avoid including large relations directly)
+      departments = await (prisma as any).department.findMany({
+        where: { isActive: true },
+        orderBy: { code: 'asc' },
+        select: {
+          id: true,
+          code: true,
+          name: true,
+          description: true,
+          isActive: true,
+          slug: true,
+          type: true,
+          icon: true,
+          image: true,
+          referenceType: true,
+          referenceId: true,
+          metadata: true,
+        },
+      });
+    }
 
     // Aggregate order counts per department/status to avoid heavy joins
     const orderCounts = await (prisma as any).orderDepartment.groupBy({
@@ -118,7 +157,9 @@ export async function GET(request: NextRequest) {
       });
     }
 
-    return NextResponse.json(successResponse(departmentsWithStats));
+    const resp = NextResponse.json(successResponse(departmentsWithStats));
+    console.timeEnd('GET /api/departments')
+    return resp
   } catch (error) {
     console.error('GET /api/departments error:', error);
     return NextResponse.json(
@@ -134,6 +175,7 @@ export async function GET(request: NextRequest) {
  */
 export async function POST(request: NextRequest) {
   try {
+    console.time('POST /api/departments')
     const ctx = await extractUserContext(request);
     
     // Check admin permission
@@ -177,10 +219,12 @@ export async function POST(request: NextRequest) {
       },
     });
 
-    return NextResponse.json(
+    const resp = NextResponse.json(
       successResponse(department),
       { status: 201 }
     );
+    console.timeEnd('POST /api/departments')
+    return resp
   } catch (error) {
     console.error('POST /api/departments error:', error);
     return NextResponse.json(
@@ -196,6 +240,7 @@ export async function POST(request: NextRequest) {
  */
 export async function DELETE(request: NextRequest) {
   try {
+    console.time('DELETE /api/departments')
     const ctx = await extractUserContext(request);
     
     // Check admin permission
@@ -234,7 +279,9 @@ export async function DELETE(request: NextRequest) {
       data: { isActive: false },
     });
 
-    return NextResponse.json(successResponse(updated));
+    const resp = NextResponse.json(successResponse(updated));
+    console.timeEnd('DELETE /api/departments')
+    return resp
   } catch (error) {
     console.error('DELETE /api/departments error:', error);
     return NextResponse.json(

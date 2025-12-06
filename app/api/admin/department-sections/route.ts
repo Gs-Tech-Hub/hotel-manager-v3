@@ -5,14 +5,19 @@ import { listSections, createSection, deleteSection } from '@/src/services/admin
 export const GET = withPermission(
   async (req, ctx) => {
     try {
+      console.time('GET /api/admin/department-sections')
       const url = new URL(req.url);
-      const page = parseInt(url.searchParams.get('page') || '1');
-      const limit = parseInt(url.searchParams.get('limit') || '50');
+      const page = Math.max(1, parseInt(url.searchParams.get('page') || '1'));
+      const requestedLimit = parseInt(url.searchParams.get('limit') || '50');
+      const MAX_LIMIT = 200;
+      const limit = Math.min(MAX_LIMIT, requestedLimit);
 
       const departmentId = url.searchParams.get('departmentId') || undefined;
       const { rows, total } = await listSections({ page, limit, departmentId });
 
-      return NextResponse.json({ success: true, data: rows, pagination: { page, limit, total, pages: Math.ceil(total / limit) } }, { status: 200 });
+      const resp = NextResponse.json({ success: true, data: rows, pagination: { page, limit, total, pages: Math.ceil(total / limit) } }, { status: 200 });
+      console.timeEnd('GET /api/admin/department-sections')
+      return resp
     } catch (error) {
       console.error('[ADMIN] List department sections error:', error);
       return NextResponse.json({ error: 'Failed to list department sections' }, { status: 500 });
@@ -24,6 +29,7 @@ export const GET = withPermission(
 export const POST = withPermission(
   async (req, ctx) => {
     try {
+      console.time('POST /api/admin/department-sections')
       const body = await req.json();
       const section = await createSection(body, { userId: ctx.userId, userType: ctx.userType });
 
@@ -42,17 +48,21 @@ export const POST = withPermission(
 export const DELETE = withPermission(
   async (req, ctx) => {
     try {
+      console.time('DELETE /api/admin/department-sections')
       const url = new URL(req.url);
       // Try to get ID from query string first (for dashboard delete), then from pathname (for direct DELETE calls)
       let id = url.searchParams.get('id');
       if (!id) {
-        id = url.pathname.split('/').pop();
+        const last = url.pathname.split('/').pop();
+        id = last ?? null;
       }
       if (!id) return NextResponse.json({ error: 'Missing section id' }, { status: 400 });
 
       const section = await deleteSection(id!, { userId: ctx.userId, userType: ctx.userType });
 
-      return NextResponse.json({ success: true, data: section }, { status: 200 });
+      const resp = NextResponse.json({ success: true, data: section }, { status: 200 });
+      console.timeEnd('DELETE /api/admin/department-sections')
+      return resp
     } catch (error) {
       console.error('[ADMIN] Delete department section error:', error);
       return NextResponse.json({ error: 'Failed to delete department section' }, { status: 500 });

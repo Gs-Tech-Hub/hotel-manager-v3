@@ -1,0 +1,268 @@
+import { prisma } from '@/lib/prisma'
+import { prismaDecimalToCents } from '@/lib/price'
+
+type ProductParams = {
+  departmentCode: string
+  type?: string
+  page?: number
+  pageSize?: number
+  search?: string
+  sectionFilter?: string | null
+  includeDetails?: boolean
+}
+
+export class SectionService {
+  // Safe defaults and maximums to avoid large payloads
+  private readonly DEFAULT_PAGE = 1
+  private readonly DEFAULT_PAGE_SIZE = 20
+  private readonly MAX_PAGE_SIZE = 100
+
+  async getProducts(params: ProductParams) {
+    const page = Math.max(1, params.page || this.DEFAULT_PAGE)
+    const pageSize = Math.min(this.MAX_PAGE_SIZE, Math.max(5, params.pageSize || this.DEFAULT_PAGE_SIZE))
+    const skip = (page - 1) * pageSize
+    const type = (params.type || '').toString()
+    const search = params.search || ''
+    const includeDetails = Boolean(params.includeDetails)
+    const sectionFilter = params.sectionFilter || null
+
+    // Resolve department row
+    const dept = await prisma.department.findUnique({ where: { code: params.departmentCode } })
+    if (!dept) throw new Error('Department not found')
+
+    // Drink/food specializations
+    if ((type === 'drink' || dept.referenceType === 'BarAndClub') && dept.referenceId) {
+      const where: any = { barAndClubId: dept.referenceId }
+      if (search) where.name = { contains: search, mode: 'insensitive' }
+      const [items, total] = await Promise.all([
+        prisma.drink.findMany({ where, skip, take: pageSize, orderBy: { name: 'asc' } }),
+        prisma.drink.count({ where }),
+      ])
+
+      let mapped = items.map((d: any) => ({ id: d.id, name: d.name, type: 'drink', available: d.barStock ?? d.quantity ?? 0, unitPrice: prismaDecimalToCents(d.price) }))
+
+      if (includeDetails && mapped.length > 0) {
+        const ids = mapped.map((m: any) => m.id)
+        const allPossibleIds = [...ids, ...ids.map((id) => `menu-${id}`)]
+
+        const soldGroups = await prisma.orderLine.groupBy({
+          by: ['productId'],
+          where: {
+            productId: { in: allPossibleIds },
+            OR: [ { orderHeader: { status: { in: ['completed', 'fulfilled'] } } }, { status: 'fulfilled' } ],
+            ...(sectionFilter ? { departmentCode: sectionFilter } : {}),
+          },
+          _sum: { quantity: true, lineTotal: true },
+        })
+
+        const pendingGroups = await prisma.orderLine.groupBy({
+          by: ['productId'],
+          where: {
+            productId: { in: allPossibleIds },
+            status: { in: ['pending', 'processing'] },
+            orderHeader: { status: { not: 'cancelled' } },
+            ...(sectionFilter ? { departmentCode: sectionFilter } : {}),
+          },
+          _sum: { quantity: true },
+        })
+
+        const soldMap = new Map(soldGroups.map((g: any) => [g.productId, g._sum]))
+        const pendingMap = new Map(pendingGroups.map((g: any) => [g.productId, g._sum]))
+
+        mapped = mapped.map((m: any) => ({
+          ...m,
+          unitsSold: (soldMap.get(m.id) as any)?.quantity || (soldMap.get(`menu-${m.id}`) as any)?.quantity || 0,
+          amountSold: (soldMap.get(m.id) as any)?.lineTotal || (soldMap.get(`menu-${m.id}`) as any)?.lineTotal || 0,
+          pendingQuantity: (pendingMap.get(m.id) as any)?.quantity || (pendingMap.get(`menu-${m.id}`) as any)?.quantity || 0,
+        }))
+      }
+
+      return { items: mapped, total, page, pageSize }
+    }
+
+    // Food specialization
+    if ((type === 'food' || dept.referenceType === 'Restaurant') && dept.referenceId) {
+      const where: any = { restaurantId: dept.referenceId }
+      if (search) where.name = { contains: search, mode: 'insensitive' }
+      const [items, total] = await Promise.all([
+        prisma.foodItem.findMany({ where, skip, take: pageSize, orderBy: { name: 'asc' } }),
+        prisma.foodItem.count({ where }),
+      ])
+
+      let mapped = items.map((f: any) => ({ id: f.id, name: f.name, type: 'food', available: f.availability ? 1 : 0, unitPrice: prismaDecimalToCents(f.price) }))
+
+      if (includeDetails && mapped.length > 0) {
+        const ids = mapped.map((m: any) => m.id)
+        const allPossibleIds = [...ids, ...ids.map((id) => `menu-${id}`)]
+
+        const soldGroups = await prisma.orderLine.groupBy({
+          by: ['productId'],
+          where: {
+            productId: { in: allPossibleIds },
+            OR: [ { orderHeader: { status: { in: ['completed', 'fulfilled'] } } }, { status: 'fulfilled' } ],
+            ...(sectionFilter ? { departmentCode: sectionFilter } : {}),
+          },
+          _sum: { quantity: true, lineTotal: true },
+        })
+
+        const pendingGroups = await prisma.orderLine.groupBy({
+          by: ['productId'],
+          where: {
+            productId: { in: allPossibleIds },
+            status: { in: ['pending', 'processing'] },
+            orderHeader: { status: { not: 'cancelled' } },
+            ...(sectionFilter ? { departmentCode: sectionFilter } : {}),
+          },
+          _sum: { quantity: true },
+        })
+
+        const soldMap = new Map(soldGroups.map((g: any) => [g.productId, g._sum]))
+        const pendingMap = new Map(pendingGroups.map((g: any) => [g.productId, g._sum]))
+
+        mapped = mapped.map((m: any) => ({
+          ...m,
+          unitsSold: (soldMap.get(m.id) as any)?.quantity || (soldMap.get(`menu-${m.id}`) as any)?.quantity || 0,
+          amountSold: (soldMap.get(m.id) as any)?.lineTotal || (soldMap.get(`menu-${m.id}`) as any)?.lineTotal || 0,
+          pendingQuantity: (pendingMap.get(m.id) as any)?.quantity || (pendingMap.get(`menu-${m.id}`) as any)?.quantity || 0,
+        }))
+      }
+
+      return { items: mapped, total, page, pageSize }
+    }
+
+    // Generic inventory fallback
+    {
+      const where: any = {}
+      if (search) where.name = { contains: search, mode: 'insensitive' }
+
+      const deptToCategoryMap: Record<string, string> = {
+        restaurants: 'food',
+        restaurant: 'food',
+        bars: 'drinks',
+        'bar-and-clubs': 'drinks',
+        gyms: 'supplies',
+        housekeeping: 'supplies',
+        laundry: 'supplies',
+        games: 'supplies',
+        security: 'supplies',
+      }
+
+      let mappedCategory: string | undefined = undefined
+      if (dept?.type) {
+        const raw = String(dept.type).toLowerCase()
+        if (deptToCategoryMap[raw]) mappedCategory = deptToCategoryMap[raw]
+        else if (['food', 'drinks', 'supplies', 'toiletries', 'misc'].includes(raw)) mappedCategory = raw
+      }
+
+      if (mappedCategory) where.category = mappedCategory
+
+      const [items, total] = await Promise.all([
+        prisma.inventoryItem.findMany({ where, skip, take: pageSize, orderBy: { name: 'asc' } }),
+        prisma.inventoryItem.count({ where }),
+      ])
+
+      const itemIds = items.map((i: any) => i.id)
+      let balances: any[] = []
+      try {
+        let deptIdForBalances = dept.id
+        if (sectionFilter) {
+          try {
+            const sectionDept = await prisma.department.findUnique({ where: { code: sectionFilter } })
+            if (sectionDept && sectionDept.id) deptIdForBalances = sectionDept.id
+          } catch (e) {}
+        }
+        balances = await (prisma as any).departmentInventory.findMany({ where: { departmentId: deptIdForBalances, inventoryItemId: { in: itemIds } } })
+      } catch (e: any) {
+        balances = []
+      }
+
+      const balancesMap = new Map(balances.map((b: any) => [b.inventoryItemId, b.quantity]))
+
+      let mapped = items.map((it: any) => ({ id: it.id, name: it.name, type: 'inventoryItem', available: balancesMap.get(it.id) ?? it.quantity ?? 0, unitPrice: prismaDecimalToCents(it.unitPrice) }))
+
+      if (includeDetails && mapped.length > 0) {
+        const ids = mapped.map((m: any) => m.id)
+        const allPossibleIds = [...ids, ...ids.map((id) => `menu-${id}`)]
+
+        const soldGroups = await prisma.orderLine.groupBy({
+          by: ['productId'],
+          where: {
+            productId: { in: allPossibleIds },
+            OR: [ { orderHeader: { status: { in: ['completed', 'fulfilled'] } } }, { status: 'fulfilled' } ],
+            ...(sectionFilter ? { departmentCode: sectionFilter } : {}),
+          },
+          _sum: { quantity: true, lineTotal: true },
+        })
+
+        const pendingGroups = await prisma.orderLine.groupBy({
+          by: ['productId'],
+          where: {
+            productId: { in: allPossibleIds },
+            status: { in: ['pending', 'processing'] },
+            orderHeader: { status: { not: 'cancelled' } },
+            ...(sectionFilter ? { departmentCode: sectionFilter } : {}),
+          },
+          _sum: { quantity: true },
+        })
+
+        let reservations: any[] = []
+        try {
+          reservations = await (prisma as any).inventoryReservation.groupBy({
+            by: ['inventoryItemId'],
+            where: { inventoryItemId: { in: ids }, status: { in: ['reserved', 'confirmed'] } },
+            _sum: { quantity: true },
+          })
+        } catch (e: any) {
+          reservations = []
+        }
+
+        const soldMap = new Map(soldGroups.map((g: any) => [g.productId, g._sum]))
+        const pendingMap = new Map(pendingGroups.map((g: any) => [g.productId, g._sum]))
+        const resMap = new Map(reservations.map((r: any) => [r.inventoryItemId, r._sum]))
+
+        mapped = mapped.map((m: any) => ({
+          ...m,
+          unitsSold: (soldMap.get(m.id) as any)?.quantity || (soldMap.get(`menu-${m.id}`) as any)?.quantity || 0,
+          amountSold: (soldMap.get(m.id) as any)?.lineTotal || (soldMap.get(`menu-${m.id}`) as any)?.lineTotal || 0,
+          pendingQuantity: (pendingMap.get(m.id) as any)?.quantity || (pendingMap.get(`menu-${m.id}`) as any)?.quantity || 0,
+          reservedQuantity: (resMap.get(m.id) as any)?.quantity || 0,
+        }))
+      }
+
+      return { items: mapped, total, page, pageSize }
+    }
+  }
+
+  /**
+   * Validate availability of drinks for a department before creating a transfer.
+   * Returns { success: boolean, message?: string }
+   */
+  async validateDrinksAvailability(departmentCode: string, items: Array<{ productId: string; quantity: number }>) {
+    if (!departmentCode) return { success: false, message: 'Missing department code' }
+    if (!Array.isArray(items) || items.length === 0) return { success: true }
+
+    const dept = await prisma.department.findUnique({ where: { code: departmentCode } })
+    if (!dept) return { success: false, message: 'Department not found' }
+
+    const drinkIds = Array.from(new Set(items.map((i) => i.productId)))
+    if (drinkIds.length === 0) return { success: true }
+
+    const drinks = await prisma.drink.findMany({ where: { id: { in: drinkIds } } })
+    const drinkMap = new Map(drinks.map((d: any) => [d.id, d]))
+
+    for (const it of items) {
+      const drink = drinkMap.get(it.productId)
+      if (!drink) return { success: false, message: `Drink not found: ${it.productId}` }
+
+      let sourceField = 'quantity'
+      if (dept.referenceType === 'BarAndClub' && dept.referenceId && (drink as any).barAndClubId === dept.referenceId) sourceField = 'barStock'
+
+      const available = (drink as any)[sourceField] ?? (drink.quantity ?? 0)
+      if (available < it.quantity) return { success: false, message: `Insufficient stock for ${drink.name}` }
+    }
+
+    return { success: true }
+  }
+}
+
+export const sectionService = new SectionService()

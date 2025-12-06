@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { prisma } from '@/lib/prisma'
 import { transferService } from '@/services/inventory/transfer.service'
+import { sectionService } from '@/src/services/section.service'
 import { successResponse, errorResponse, ErrorCodes, getStatusCode } from '@/lib/api-response'
 
 /**
@@ -11,15 +12,24 @@ import { successResponse, errorResponse, ErrorCodes, getStatusCode } from '@/lib
  */
 export async function POST(request: NextRequest, { params }: { params: Promise<{ code: string }> }) {
   try {
+    console.time('POST /api/departments/[code]/transfer')
     const { code: fromCode } = await params
     const body = await request.json().catch(() => null)
     if (!body) {
       return NextResponse.json(errorResponse(ErrorCodes.INVALID_INPUT, 'Invalid JSON body'), { status: getStatusCode(ErrorCodes.INVALID_INPUT) })
     }
+    // Input limits to prevent excessively large requests
+    const MAX_ITEMS = 50
+    const MAX_PRODUCT_ID_LENGTH = 128
+    const MAX_QUANTITY = 100000
 
     const { toDepartmentCode, items } = body as { toDepartmentCode?: string; items?: Array<any> }
     if (!toDepartmentCode || !Array.isArray(items) || items.length === 0) {
       return NextResponse.json(errorResponse(ErrorCodes.INVALID_INPUT, 'toDepartmentCode and items[] are required'), { status: getStatusCode(ErrorCodes.INVALID_INPUT) })
+    }
+
+    if (items.length > MAX_ITEMS) {
+      return NextResponse.json(errorResponse(ErrorCodes.VALIDATION_ERROR, `Too many items in transfer (max ${MAX_ITEMS})`), { status: getStatusCode(ErrorCodes.VALIDATION_ERROR) })
     }
 
     const fromDept = await prisma.department.findUnique({ where: { code: fromCode } })
@@ -34,7 +44,22 @@ export async function POST(request: NextRequest, { params }: { params: Promise<{
       return NextResponse.json(errorResponse(ErrorCodes.VALIDATION_ERROR, 'Only transfers of type "drink" or "inventoryItem" are supported by this endpoint'), { status: getStatusCode(ErrorCodes.VALIDATION_ERROR) })
     }
 
-    const mappedItems = items.map((it: any) => ({ productType: it.type, productId: it.id, quantity: Number(it.quantity || 0) }))
+    // Normalize and validate items
+    const mappedItems = items.map((it: any) => {
+      const productId = String(it.id ?? '')
+      const productType = String(it.type ?? '')
+      const quantity = Number(it.quantity ?? 0)
+      return { productType, productId, quantity }
+    })
+
+    for (const mi of mappedItems) {
+      if (!mi.productId || mi.productId.length > MAX_PRODUCT_ID_LENGTH) {
+        return NextResponse.json(errorResponse(ErrorCodes.VALIDATION_ERROR, `Invalid product id`), { status: getStatusCode(ErrorCodes.VALIDATION_ERROR) })
+      }
+      if (!Number.isFinite(mi.quantity) || mi.quantity <= 0 || mi.quantity > MAX_QUANTITY) {
+        return NextResponse.json(errorResponse(ErrorCodes.VALIDATION_ERROR, `Invalid quantity for product ${mi.productId}`), { status: getStatusCode(ErrorCodes.VALIDATION_ERROR) })
+      }
+    }
     // Validate inventoryItem transfers up-front: prefer per-department inventory but allow using global inventory if available
     for (const mi of mappedItems) {
       if (mi.productType === 'inventoryItem') {
@@ -56,10 +81,21 @@ export async function POST(request: NextRequest, { params }: { params: Promise<{
       }
     }
 
+    // Validate drink availability via SectionService (preflight)
+    const drinkItems = mappedItems.filter((m) => m.productType === 'drink')
+    if (drinkItems.length) {
+      const validation = await sectionService.validateDrinksAvailability(fromDept.code, drinkItems.map((d) => ({ productId: d.productId, quantity: d.quantity })))
+      if (!validation.success) {
+        return NextResponse.json(errorResponse(ErrorCodes.VALIDATION_ERROR, validation.message || 'Drink validation failed'), { status: getStatusCode(ErrorCodes.VALIDATION_ERROR) })
+      }
+    }
+
     // create transfer record (pending)
     const created = await transferService.createTransfer(fromDept.id, toDept.id, mappedItems)
 
-    return NextResponse.json(successResponse({ message: 'Transfer request created', transfer: created }))
+    const resp = NextResponse.json(successResponse({ message: 'Transfer request created', transfer: created }))
+    console.timeEnd('POST /api/departments/[code]/transfer')
+    return resp
   } catch (error: any) {
     console.error('POST /api/departments/[code]/transfer error:', error)
     const msg = typeof error === 'string' ? error : error?.message ?? 'Transfer failed'

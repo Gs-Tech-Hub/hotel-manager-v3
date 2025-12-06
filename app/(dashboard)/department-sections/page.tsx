@@ -17,6 +17,10 @@ type DepartmentSection = {
 export default function DepartmentSectionsPage() {
   const { hasPermission } = useAuth()
   const [sections, setSections] = useState<DepartmentSection[]>([])
+  const [page, setPage] = useState<number>(1)
+  const [pageSize, setPageSize] = useState<number>(20)
+  const [totalPages, setTotalPages] = useState<number>(1)
+  const [totalCount, setTotalCount] = useState<number>(0)
   const [departments, setDepartments] = useState<Department[]>([])
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
@@ -27,15 +31,28 @@ export default function DepartmentSectionsPage() {
   const searchParams = useSearchParams()
   const urlDepartmentId = searchParams?.get('departmentId') || ''
 
-  const fetchSections = async () => {
+  const fetchSections = async (opts?: { resetPage?: boolean }) => {
     setLoading(true)
     setError(null)
     try {
-      const res = await fetch('/api/admin/department-sections')
+      // Request a paged result set to avoid very large admin payloads
+      if (opts?.resetPage) setPage(1)
+      const filterDept = formData.departmentId || urlDepartmentId || ''
+      const q = new URLSearchParams()
+      q.set('page', String(page))
+      q.set('limit', String(pageSize))
+      if (filterDept) q.set('departmentId', filterDept)
+      const res = await fetch(`/api/admin/department-sections?${q.toString()}`)
       if (!res.ok) throw new Error(`Failed to fetch sections (${res.status})`)
       const json = await res.json()
-      if (!json?.success) throw new Error(json?.error || 'Invalid response')
-      setSections(json.data || [])
+      // admin API returns { success: true, data: rows, pagination }
+      const rows = json?.data || []
+      const pagination = json?.pagination || null
+      setSections(Array.isArray(rows) ? rows : [])
+      if (pagination) {
+        setTotalPages(pagination.pages || 1)
+        setTotalCount(pagination.total || 0)
+      }
     } catch (err: any) {
       console.error('Failed to load sections', err)
       setError(err?.message || 'Failed to load sections')
@@ -49,9 +66,10 @@ export default function DepartmentSectionsPage() {
       const res = await fetch('/api/departments')
       if (!res.ok) throw new Error('Failed to fetch departments')
       const json = await res.json()
-      const data = json.data || json
+      const data = json.data || json || []
       // Filter to top-level departments only
-      setDepartments((data || []).filter((d: any) => !String(d.code).includes(':')))
+      const tops = (data || []).filter((d: any) => !String(d.code).includes(':'))
+      setDepartments(Array.isArray(tops) ? tops : [])
     } catch (err) {
       console.warn('Could not load departments', err)
     }
@@ -61,6 +79,11 @@ export default function DepartmentSectionsPage() {
     fetchDepartments()
     fetchSections()
   }, [])
+
+  // Re-fetch when pagination or filters change
+  useEffect(() => {
+    fetchSections()
+  }, [page, pageSize])
 
   // If a departmentId is present in the URL, auto-select it and open the form.
   useEffect(() => {
@@ -91,7 +114,8 @@ export default function DepartmentSectionsPage() {
       if (!res.ok) throw new Error(json.error || `Failed to create section (${res.status})`)
       setFormData({ name: '', departmentId: '' })
       setShowForm(false)
-      await fetchSections()
+      // After creating, reload current page (reset to first page)
+      await fetchSections({ resetPage: true })
     } catch (err: any) {
       console.error('Failed to create section:', err)
       setFormError(err?.message || 'Failed to create section')
@@ -218,11 +242,29 @@ export default function DepartmentSectionsPage() {
         </table>
       </div>
 
-      {sections.length === 0 && !loading && (
-        <div className="text-center py-8 text-muted-foreground">
-          No department sections found. {hasPermission('department_sections.create') && 'Create one to get started.'}
+        <div className="flex items-center justify-between mt-4">
+          <div>
+            <span className="text-sm text-muted-foreground">{totalCount} sections</span>
+          </div>
+          <div className="flex items-center gap-2">
+            <label className="text-sm">Per page:</label>
+            <select value={pageSize} onChange={(e) => { setPageSize(Number(e.target.value)); setPage(1); }} className="border rounded px-2 py-1">
+              <option value={10}>10</option>
+              <option value={20}>20</option>
+              <option value={50}>50</option>
+              <option value={100}>100</option>
+            </select>
+            <button onClick={() => setPage(Math.max(1, page - 1))} disabled={page <= 1} className="px-2 py-1 border rounded">Prev</button>
+            <div className="px-2">Page {page} / {totalPages}</div>
+            <button onClick={() => setPage(Math.min(totalPages, page + 1))} disabled={page >= totalPages} className="px-2 py-1 border rounded">Next</button>
+          </div>
         </div>
-      )}
+
+        {sections.length === 0 && !loading && (
+          <div className="text-center py-8 text-muted-foreground">
+            No department sections found. {hasPermission('department_sections.create') && 'Create one to get started.'}
+          </div>
+        )}
     </div>
   )
 }

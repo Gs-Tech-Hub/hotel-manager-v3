@@ -126,49 +126,54 @@ export default function useDepartmentData(decodedCode: string | undefined) {
   const loadChildrenForDepartment = useCallback(async (dept: any) => {
     setChildrenLoading(true)
     try {
-      const res = await fetch('/api/departments')
-      if (!res.ok) throw new Error('Failed to fetch departments')
+      // Fetch child departments and admin sections in a single request to
+      // reduce round-trips (previously the client called /departments?parentCode
+      // and /api/admin/department-sections separately).
+      const res = await fetch(`/api/departments/${encodeURIComponent(dept.code)}/children`)
+      if (!res.ok) throw new Error('Failed to fetch children')
       const json = await res.json()
-      const all = json.data || json || []
-      const deptCode = (dept.code || '').toString().toLowerCase()
-      const deptFirst = deptCode.split(/[^a-z0-9]+/)[0] || deptCode
+      const deps = json?.data?.departments || []
+      const secs = json?.data?.sections || []
 
-      const found = (all as any[])
-        .filter((d) => {
-          if (!d || typeof d.code !== 'string') return false
-          const c = d.code.toString().toLowerCase()
-          return (
-            c.startsWith(`${deptCode}:`) ||
-            c.startsWith(`${deptFirst}:`) ||
-            (d.referenceType && String(d.referenceType).toLowerCase() === deptCode) ||
-            (d.referenceId && String(d.referenceId) === String((dept as any).id))
-          )
+      const deptMapped = (deps as any[]).map((d) => {
+        const stats = (d && d.metadata && d.metadata.sectionStats) ? d.metadata.sectionStats : null
+        return ({
+          code: d.code,
+          name: d.name,
+          description: d.description,
+          type: d.type,
+          icon: d.icon,
+          sectionStats: stats,
+          totalOrders: stats?.totalOrders ?? d.totalOrders ?? 0,
+          pendingOrders: stats?.pendingOrders ?? d.pendingOrders ?? 0,
+          processingOrders: stats?.processingOrders ?? d.processingOrders ?? 0,
+          fulfilledOrders: stats?.fulfilledOrders ?? d.fulfilledOrders ?? 0,
         })
-        .map((d) => {
-          const stats = (d && d.metadata && d.metadata.sectionStats) ? d.metadata.sectionStats : null
-          return ({
-            code: d.code,
-            name: d.name,
-            description: d.description,
-            type: d.type,
-            icon: d.icon,
-            sectionStats: stats,
-            totalOrders: stats?.totalOrders ?? d.totalOrders ?? 0,
-            pendingOrders: stats?.pendingOrders ?? d.pendingOrders ?? 0,
-            processingOrders: stats?.processingOrders ?? d.processingOrders ?? 0,
-            fulfilledOrders: stats?.fulfilledOrders ?? d.fulfilledOrders ?? 0,
-          })
-        })
+      })
 
-      setChildren(found)
-      return found
+      const secsMapped = (secs as any[]).map((s) => ({
+        code: `${dept.code}:${s.slug || s.id}`,
+        name: s.name,
+        description: s.metadata?.description || s.metadata?.note || null,
+        type: dept.type,
+        icon: dept.icon,
+        sectionStats: s.metadata?.sectionStats || null,
+        totalOrders: s.metadata?.sectionStats?.totalOrders ?? 0,
+        pendingOrders: s.metadata?.sectionStats?.pendingOrders ?? 0,
+        processingOrders: s.metadata?.sectionStats?.processingOrders ?? 0,
+        fulfilledOrders: s.metadata?.sectionStats?.fulfilledOrders ?? 0,
+      }))
+
+      const merged = [...deptMapped, ...secsMapped]
+      setChildren(merged)
+      return merged
     } catch (e) {
       console.error('Failed to load children', e)
       return []
     } finally {
       setChildrenLoading(false)
     }
-  }, [])
+  }, [setChildrenLoading])
 
   // Fetch department_sections (separate table) for a given department and map
   // them into the same shape used by `children` so UI can render them alongside
@@ -176,7 +181,8 @@ export default function useDepartmentData(decodedCode: string | undefined) {
   const fetchSectionsForDepartment = useCallback(async (dept: any) => {
     try {
       if (!dept || !dept.id) return []
-      const res = await fetch(`/api/admin/department-sections?departmentId=${encodeURIComponent(dept.id)}`)
+      // Request a limited number of sections and avoid fetching heavy metadata
+      const res = await fetch(`/api/admin/department-sections?departmentId=${encodeURIComponent(dept.id)}&limit=50`)
       if (!res.ok) return []
       const j = await res.json()
       const rows = j.data || []
