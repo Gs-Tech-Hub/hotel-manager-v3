@@ -21,7 +21,7 @@ export default function ExchangeRateManager() {
   const [saving, setSaving] = useState(false)
 
   useEffect(() => {
-    fetch(`/api/admin/settings/exchange-rates?base=${base}`, { credentials: "include" })
+    fetch(`/api/settings/exchange-rates?base=${base}`, { credentials: "include" })
       .then((r) => r.json())
       .then((json: RatesResponse) => setRates(json.rates || {}))
       .catch((e) => console.error(e))
@@ -30,7 +30,7 @@ export default function ExchangeRateManager() {
   async function setRate() {
     setSaving(true)
     try {
-      const res = await fetch("/api/admin/settings/exchange-rates", {
+      const res = await fetch("/api/settings/exchange-rates", {
         method: "PUT",
         credentials: "include",
         headers: { "Content-Type": "application/json" },
@@ -40,7 +40,7 @@ export default function ExchangeRateManager() {
       if (!res.ok) throw new Error(json?.error || "Failed")
       toast.success("Exchange rate saved")
       // refresh
-      const resp = await fetch(`/api/admin/settings/exchange-rates?base=${base}`, { credentials: "include" })
+      const resp = await fetch(`/api/settings/exchange-rates?base=${base}`, { credentials: "include" })
       const j = await resp.json()
       setRates(j.rates || {})
     } catch (e) {

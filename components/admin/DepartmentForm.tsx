@@ -23,7 +23,7 @@ export default function DepartmentForm({ initial = {}, onCreated, onClose }: Pro
     }
     setLoading(true);
     try {
-      const res = await fetch('/api/admin/departments', {
+      const res = await fetch('/api/departments', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ code, name, description }),

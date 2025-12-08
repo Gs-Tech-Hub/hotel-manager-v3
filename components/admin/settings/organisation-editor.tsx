@@ -26,7 +26,7 @@ export default function OrganisationEditor() {
   const [saving, setSaving] = useState(false)
 
   useEffect(() => {
-    fetch("/api/admin/settings/organisation", { credentials: "include" })
+    fetch("/api/settings/organisation", { credentials: "include" })
       .then((r) => r.json())
       .then((data) => setOrg(data))
       .catch((e) => console.error("Failed to load org info", e))
@@ -36,7 +36,7 @@ export default function OrganisationEditor() {
   async function save() {
     setSaving(true)
     try {
-      const res = await fetch("/api/admin/settings/organisation", {
+      const res = await fetch("/api/settings/organisation", {
         method: "PUT",
         credentials: "include",
         headers: { "Content-Type": "application/json" },

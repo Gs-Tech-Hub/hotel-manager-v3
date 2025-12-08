@@ -43,7 +43,7 @@ export function RoleAssignmentModal({
     setError('');
 
     try {
-      const response = await fetch('/api/admin/roles?limit=100', {
+      const response = await fetch('/api/roles?limit=100', {
         credentials: 'include',
       });
 

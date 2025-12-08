@@ -128,7 +128,7 @@ export default function useDepartmentData(decodedCode: string | undefined) {
     try {
       // Fetch child departments and admin sections in a single request to
       // reduce round-trips (previously the client called /departments?parentCode
-      // and /api/admin/department-sections separately).
+      // and /api/departments/sections separately).
       const res = await fetch(`/api/departments/${encodeURIComponent(dept.code)}/children`)
       if (!res.ok) throw new Error('Failed to fetch children')
       const json = await res.json()
@@ -182,7 +182,7 @@ export default function useDepartmentData(decodedCode: string | undefined) {
     try {
       if (!dept || !dept.id) return []
       // Request a limited number of sections and avoid fetching heavy metadata
-      const res = await fetch(`/api/admin/department-sections?departmentId=${encodeURIComponent(dept.id)}&limit=50`)
+      const res = await fetch(`/api/departments/sections?departmentId=${encodeURIComponent(dept.id)}&limit=50`)
       if (!res.ok) return []
       const j = await res.json()
       const rows = j.data || []

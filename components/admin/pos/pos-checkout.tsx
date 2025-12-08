@@ -154,7 +154,7 @@ export default function POSCheckoutShell({ terminalId }: { terminalId?: string }
     let mounted = true
     setLoadingDepartments(true)
     setDepartmentsError(null)
-    fetch('/api/admin/pos/terminals', { credentials: 'include' })
+    fetch('/api/pos/terminals', { credentials: 'include' })
       .then((r) => r.json())
       .then((json) => {
         if (!mounted) return
@@ -243,7 +243,7 @@ export default function POSCheckoutShell({ terminalId }: { terminalId?: string }
       setSummaryError(null)
       try {
         // primary endpoint
-        const res = await fetch(`/api/admin/pos/sales-summary?terminalId=${encodeURIComponent(sectionId)}`, { credentials: 'include' })
+        const res = await fetch(`/api/pos/sales-summary?terminalId=${encodeURIComponent(sectionId)}`, { credentials: 'include' })
         if (res.ok) {
           const json = await res.json()
           if (mounted && json && json.success && json.data) {

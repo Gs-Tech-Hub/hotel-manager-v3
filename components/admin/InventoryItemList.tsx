@@ -13,7 +13,7 @@ function InventoryForm({ onCreated, onClose }: { onCreated: (item: any) => void,
     e.preventDefault();
     setLoading(true);
     try {
-      const res = await fetch('/api/admin/inventory-items', {
+      const res = await fetch('/api/inventory', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ name, sku, price }),
@@ -54,7 +54,7 @@ export default function InventoryItemList() {
   async function fetchList() {
     setLoading(true);
     try {
-      const res = await fetch('/api/admin/inventory-items');
+      const res = await fetch('/api/inventory');
       const data = await res.json();
       if (res.ok) setItems(data.data || []);
     } catch (err) { console.error(err); } finally { setLoading(false); }
@@ -66,7 +66,7 @@ export default function InventoryItemList() {
 
   async function confirmDelete(id: string) {
     try {
-      const res = await fetch(`/api/admin/inventory-items/${id}`, { method: 'DELETE' });
+      const res = await fetch(`/api/inventory/${id}`, { method: 'DELETE' });
       if (!res.ok) throw new Error('Delete failed');
       setItems((s) => s.filter(i => i.id !== id));
     } catch (err) { console.error(err); } finally { setDeletingId(null); }

@@ -107,7 +107,7 @@ export default function DepartmentDetail() {
     setCreatingSection(true)
     setCreateSectionError(null)
     try {
-      const res = await fetch('/api/admin/department-sections', {
+      const res = await fetch('/api/departments/sections', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ name: newSectionName, slug: newSectionSlug || undefined, departmentId: department.id }),

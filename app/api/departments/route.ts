@@ -173,18 +173,9 @@ export async function GET(request: NextRequest) {
  * POST /api/departments
  * Create a new department (admin only)
  */
-export async function POST(request: NextRequest) {
+async function postHandler(request: NextRequest) {
   try {
     console.time('POST /api/departments')
-    const ctx = await extractUserContext(request);
-    
-    // Check admin permission
-    if (ctx?.userType !== 'admin') {
-      return NextResponse.json(
-        errorResponse(ErrorCodes.FORBIDDEN, 'Only admins can create departments'),
-        { status: 403 }
-      );
-    }
 
     const body = await request.json();
     const { code, name, description, type, icon, image } = body;
@@ -228,7 +219,7 @@ export async function POST(request: NextRequest) {
   } catch (error) {
     console.error('POST /api/departments error:', error);
     return NextResponse.json(
-      errorResponse(ErrorCodes.INTERNAL_ERROR, 'Failed to create department'),
+      errorResponse(ErrorCodes.INTERNAL_ERROR, 'Failed to delete department'),
       { status: 500 }
     );
   }
@@ -238,18 +229,9 @@ export async function POST(request: NextRequest) {
  * DELETE /api/departments/:id
  * Delete/deactivate a department (admin only)
  */
-export async function DELETE(request: NextRequest) {
+async function deleteHandler(request: NextRequest) {
   try {
     console.time('DELETE /api/departments')
-    const ctx = await extractUserContext(request);
-    
-    // Check admin permission
-    if (ctx?.userType !== 'admin') {
-      return NextResponse.json(
-        errorResponse(ErrorCodes.FORBIDDEN, 'Only admins can delete departments'),
-        { status: 403 }
-      );
-    }
 
     const url = new URL(request.url);
     const id = url.pathname.split('/').pop();
@@ -289,3 +271,9 @@ export async function DELETE(request: NextRequest) {
       { status: 500 }
     );
   }
+}
+
+export const DELETE = withPermission(
+  deleteHandler,
+  'departments.delete'
+);

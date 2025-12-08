@@ -45,8 +45,8 @@ function RolesManagementContent() {
 
     try {
       const [rolesRes, permsRes] = await Promise.all([
-        fetch(`/api/admin/roles?page=${page}&limit=10`, { credentials: 'include' }),
-        fetch('/api/admin/permissions', { credentials: 'include' }),
+        fetch(`/api/roles?page=${page}&limit=10`, { credentials: 'include' }),
+        fetch('/api/auth/permissions', { credentials: 'include' }),
       ]);
 
       if (rolesRes.status === 401 || permsRes.status === 401) {
@@ -76,7 +76,7 @@ function RolesManagementContent() {
     e.preventDefault();
 
     try {
-      const url = editingRole ? `/api/admin/roles/${editingRole.id}` : '/api/admin/roles';
+      const url = editingRole ? `/api/roles/${editingRole.id}` : '/api/roles';
       const method = editingRole ? 'PUT' : 'POST';
 
       const response = await fetch(url, {
@@ -110,7 +110,7 @@ function RolesManagementContent() {
     if (!confirm('Are you sure you want to deactivate this role?')) return;
 
     try {
-      const response = await fetch(`/api/admin/roles/${roleId}`, {
+      const response = await fetch(`/api/roles/${roleId}`, {
         method: 'DELETE',
         credentials: 'include',
       });

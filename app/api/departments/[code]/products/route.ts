@@ -7,6 +7,7 @@ import { successResponse, errorResponse, ErrorCodes, getStatusCode } from '@/lib
  * Query params: ?type=drink|inventoryItem&page=1&pageSize=20&search=...
  * Returns paginated list of products relevant to the department with available quantity.
  */
+export async function GET(request: NextRequest, { params }: { params: Promise<{ code: string }> }) {
   try {
     const { code } = await params
     const url = new URL(request.url)

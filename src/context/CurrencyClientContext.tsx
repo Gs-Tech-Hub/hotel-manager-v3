@@ -16,7 +16,7 @@ export function CurrencyProvider({ children }: { children: React.ReactNode }) {
 
   useEffect(() => {
     let mounted = true
-    fetch('/api/admin/settings/organisation', { credentials: 'include' })
+    fetch('/api/settings/organisation', { credentials: 'include' })
       .then((r) => r.json())
       .then((json) => {
         if (!mounted) return

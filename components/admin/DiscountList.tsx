@@ -12,7 +12,7 @@ function DiscountForm({ onCreated, onClose }: { onCreated: (d: any) => void, onC
     e.preventDefault();
     setLoading(true);
     try {
-      const res = await fetch('/api/admin/discounts', {
+      const res = await fetch('/api/discounts', {
         method: 'POST', headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ name, percent: Number(percent) }),
       });
@@ -47,7 +47,7 @@ export default function DiscountList() {
   async function fetchList() {
     setLoading(true);
     try {
-      const res = await fetch('/api/admin/discounts');
+      const res = await fetch('/api/discounts');
       const data = await res.json();
       if (res.ok) setDiscounts(data.data || []);
     } catch (err) { console.error(err); } finally { setLoading(false); }
@@ -59,7 +59,7 @@ export default function DiscountList() {
 
   async function confirmDelete(id: string) {
     try {
-      const res = await fetch(`/api/admin/discounts/${id}`, { method: 'DELETE' });
+      const res = await fetch(`/api/discounts/${id}`, { method: 'DELETE' });
       if (!res.ok) throw new Error('Delete failed');
       setDiscounts((s) => s.filter(x => x.id !== id));
     } catch (err) { console.error(err); } finally { setDeletingId(null); }

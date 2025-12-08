@@ -10,7 +10,7 @@ function SectionForm({ departmentId, onCreated, onClose }: { departmentId: strin
     e.preventDefault();
     setLoading(true);
     try {
-      const res = await fetch('/api/admin/department-sections', {
+      const res = await fetch('/api/departments/sections', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ name, slug, departmentId }),
@@ -48,7 +48,7 @@ export default function DepartmentSectionList({ departmentId }: { departmentId: 
   async function fetchList() {
     setLoading(true);
     try {
-      const res = await fetch(`/api/admin/department-sections?departmentId=${departmentId}`);
+      const res = await fetch(`/api/departments/sections?departmentId=${departmentId}`);
       const data = await res.json();
       if (res.ok) setSections(data.data || []);
     } catch (err) {
@@ -64,7 +64,7 @@ export default function DepartmentSectionList({ departmentId }: { departmentId: 
 
   async function confirmDelete(id: string) {
     try {
-      const res = await fetch(`/api/admin/department-sections/${id}`, { method: 'DELETE' });
+      const res = await fetch(`/api/departments/sections/${id}`, { method: 'DELETE' });
       if (!res.ok) throw new Error('Delete failed');
       setSections((s) => s.filter((d) => d.id !== id));
     } catch (err) {

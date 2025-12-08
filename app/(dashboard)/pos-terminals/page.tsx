@@ -22,7 +22,7 @@ export default function POSTerminalsIndex() {
     setLoading(true)
     setError(null)
     try {
-      const res = await fetch('/api/admin/pos/terminals')
+      const res = await fetch('/api/pos/terminals')
       if (!res.ok) throw new Error(`Failed to fetch terminals (${res.status})`)
       const json = await res.json()
       if (!json || !json.success) throw new Error(json?.error || 'Invalid response')

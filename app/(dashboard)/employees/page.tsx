@@ -33,7 +33,7 @@ export default function EmployeesPage() {
     setLoading(true)
     setError(null)
     try {
-      const res = await fetch('/api/admin/employees')
+      const res = await fetch('/api/employees')
       if (!res.ok) throw new Error(`Failed to fetch employees (${res.status})`)
       const json = await res.json()
       if (!json?.success) throw new Error(json?.error || 'Invalid response')
@@ -65,7 +65,7 @@ export default function EmployeesPage() {
     setFormLoading(true)
     setFormError(null)
     try {
-      const res = await fetch('/api/admin/employees', {
+      const res = await fetch('/api/employees', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
@@ -99,7 +99,7 @@ export default function EmployeesPage() {
     if (!window.confirm('Are you sure you want to delete this employee?')) return
 
     try {
-      const res = await fetch(`/api/admin/employees/${encodeURIComponent(id)}`, {
+      const res = await fetch(`/api/employees/${encodeURIComponent(id)}`, {
         method: 'DELETE',
       })
       const json = await res.json()

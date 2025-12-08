@@ -149,7 +149,7 @@ export default function InventoryPage() {
             .map((d: any) => mapDeptCodeToCategory(d.code))
             .filter(Boolean)
         )
-      )
+      ) as string[]
       setCategories(cats)
       // if a department is currently selected, prefill the category to its mapped value
       if (selectedDept) {

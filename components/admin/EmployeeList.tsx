@@ -13,7 +13,7 @@ function EmployeeForm({ onCreated, onClose }: { onCreated: (e: any) => void, onC
     e.preventDefault();
     setLoading(true);
     try {
-      const res = await fetch('/api/admin/employees', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ name, email, role }) });
+      const res = await fetch('/api/employees', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ name, email, role }) });
       const data = await res.json();
       if (res.ok) { onCreated(data.data); onClose(); } else console.error(data);
     } catch (err) { console.error(err); } finally { setLoading(false); }
@@ -49,7 +49,7 @@ export default function EmployeeList() {
   async function fetchList() {
     setLoading(true);
     try {
-      const res = await fetch('/api/admin/employees');
+      const res = await fetch('/api/employees');
       const data = await res.json();
       if (res.ok) setEmployees(data.data || []);
     } catch (err) { console.error(err); } finally { setLoading(false); }
@@ -61,7 +61,7 @@ export default function EmployeeList() {
 
   async function confirmDelete(id: string) {
     try {
-      const res = await fetch(`/api/admin/employees/${id}`, { method: 'DELETE' });
+      const res = await fetch(`/api/employees/${id}`, { method: 'DELETE' });
       if (!res.ok) throw new Error('Delete failed');
       setEmployees((s) => s.filter(x => x.id !== id));
     } catch (err) { console.error(err); } finally { setDeletingId(null); }

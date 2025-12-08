@@ -15,7 +15,7 @@ export default function CurrencySelector() {
 
   useEffect(() => {
     // Fetch current organisation currency
-    fetch("/api/admin/settings/currency", { credentials: "include" })
+    fetch("/api/settings/currency", { credentials: "include" })
       .then((r) => r.json())
       .then((json) => {
         if (json?.currency) setCurrent(json.currency)
@@ -28,7 +28,7 @@ export default function CurrencySelector() {
   async function onChange(code: CurrencyCode) {
     setSaving(true)
     try {
-      const res = await fetch("/api/admin/settings/currency", {
+      const res = await fetch("/api/settings/currency", {
         method: "PUT",
         credentials: "include",
         headers: { "Content-Type": "application/json" },

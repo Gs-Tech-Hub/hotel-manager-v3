@@ -31,7 +31,7 @@ export default function TransferPanel({ sourceCode, onClose, initialTarget }: { 
     try {
       const [deptRes, sectionsRes] = await Promise.all([
         fetch('/api/departments'),
-        fetch(`/api/admin/department-sections?departmentCode=${encodeURIComponent(sourceCode)}`)
+        fetch(`/api/departments/sections?departmentCode=${encodeURIComponent(sourceCode)}`)
       ])
       const deptData = await deptRes.json()
       const sectionsData = await sectionsRes.json()

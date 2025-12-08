@@ -37,7 +37,7 @@ function UsersManagementContent() {
     setError('');
 
     try {
-      const response = await fetch(`/api/admin/users?page=${page}&limit=10`, {
+      const response = await fetch(`/api/users?page=${page}&limit=10`, {
         credentials: 'include',
       });
 
@@ -66,7 +66,7 @@ function UsersManagementContent() {
     e.preventDefault();
 
     try {
-      const url = editingUser ? `/api/admin/users/${editingUser.id}` : '/api/admin/users';
+      const url = editingUser ? `/api/users/${editingUser.id}` : '/api/users';
       const method = editingUser ? 'PUT' : 'POST';
 
       const response = await fetch(url, {
@@ -101,7 +101,7 @@ function UsersManagementContent() {
     if (!confirm('Are you sure you want to deactivate this user?')) return;
 
     try {
-      const response = await fetch(`/api/admin/users/${userId}`, {
+      const response = await fetch(`/api/users/${userId}`, {
         method: 'DELETE',
         credentials: 'include',
       });

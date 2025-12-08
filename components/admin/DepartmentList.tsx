@@ -14,7 +14,7 @@ export default function DepartmentList() {
   async function fetchList() {
     setLoading(true);
     try {
-      const res = await fetch('/api/admin/departments');
+      const res = await fetch('/api/departments');
       const data = await res.json();
       if (res.ok) setDepartments(data.data || []);
     } catch (err) {
@@ -30,7 +30,7 @@ export default function DepartmentList() {
 
   async function confirmDelete(id: string) {
     try {
-      const res = await fetch(`/api/admin/departments/${id}`, { method: 'DELETE' });
+      const res = await fetch(`/api/departments/${id}`, { method: 'DELETE' });
       if (!res.ok) throw new Error('Delete failed');
       // optimistic: remove
       setDepartments((s) => s.filter((d) => d.id !== id));
