@@ -258,36 +258,58 @@ export default function useDepartmentData(decodedCode: string | undefined) {
       setDeptLoading(true)
       try {
         if (!decodedCode) return
-        const res = await fetch(`/api/departments/${encodeURIComponent(decodedCode)}`)
-        if (!res.ok) throw new Error('Failed to fetch')
-        const json = await res.json()
-        const d = json.data || json
-        setDepartment(d || null)
-
-        if (d) {
-          if (decodedCode.includes(':')) {
-            try {
-              const sRes = await fetch(`/api/departments/${encodeURIComponent(decodedCode)}/stock`)
-              if (sRes.ok) {
-                const sj = await sRes.json()
-                setSectionStock(sj?.data || sj || null)
-              }
-              await fetchSectionProducts(decodedCode)
-              await fetchPendingOrderLines(decodedCode)
-            } catch (e) {
-              setSectionStock(null)
+        
+        // For sections (code includes ':'), use consolidated /section endpoint
+        if (decodedCode.includes(':')) {
+          const sectionRes = await fetch(`/api/departments/${encodeURIComponent(decodedCode)}/section`)
+          if (!sectionRes.ok) throw new Error('Failed to fetch section')
+          const sectionJson = await sectionRes.json()
+          const sectionData = sectionJson.data || {}
+          
+          // Map stats to metadata for UI compatibility
+          const deptWithStats = {
+            ...(sectionData.department || {}),
+            metadata: {
+              ...(sectionData.department?.metadata || {}),
+              sectionStats: sectionData.stats || {},
             }
-          } else {
-              const found = await loadChildrenForDepartment(d)
-              // Also include any department_sections linked to this department
-              const secs = await fetchSectionsForDepartment(d)
-              const merged = [...found, ...secs]
-              if (!merged || merged.length === 0) {
-                await fetchMenu(decodedCode)
-              } else {
-                setMenu([])
-              }
-              setChildren(merged)
+          }
+          
+          setDepartment(deptWithStats)
+          setSectionStock(sectionData.stock || null)
+          
+          const products = sectionData.products?.items || []
+          setSectionProducts(products.map((it: any) => ({
+            id: it.id,
+            name: it.name,
+            type: it.type,
+            available: it.available,
+            unitPrice: it.unitPrice,
+            unitsSold: it.unitsSold || 0,
+            amountSold: it.amountSold || 0,
+            pendingQuantity: it.pendingQuantity || 0,
+            reservedQuantity: it.reservedQuantity || 0,
+          })))
+          
+          await fetchPendingOrderLines(decodedCode)
+        } else {
+          // For parent departments, get basic info then load children
+          const res = await fetch(`/api/departments/${encodeURIComponent(decodedCode)}`)
+          if (!res.ok) throw new Error('Failed to fetch')
+          const json = await res.json()
+          const d = json.data || json
+          setDepartment(d || null)
+
+          if (d) {
+            const found = await loadChildrenForDepartment(d)
+            const secs = await fetchSectionsForDepartment(d)
+            const merged = [...found, ...secs]
+            if (!merged || merged.length === 0) {
+              await fetchMenu(decodedCode)
+            } else {
+              setMenu([])
+            }
+            setChildren(merged)
           }
         }
       } catch (e) {
@@ -298,7 +320,7 @@ export default function useDepartmentData(decodedCode: string | undefined) {
     }
 
     fetchDepartment()
-  }, [decodedCode, fetchMenu, fetchPendingOrderLines, fetchSectionProducts, loadChildrenForDepartment])
+  }, [decodedCode, fetchMenu, fetchPendingOrderLines, loadChildrenForDepartment])
 
   // Expose a refresh function so callers can re-fetch department + section data on demand
   const refreshDepartment = async (code?: string) => {
@@ -306,26 +328,47 @@ export default function useDepartmentData(decodedCode: string | undefined) {
     if (!useCode) return
     setDeptLoading(true)
     try {
-      const res = await fetch(`/api/departments/${encodeURIComponent(useCode)}`)
-      if (!res.ok) throw new Error('Failed to fetch')
-      const json = await res.json()
-      const d = json.data || json
-      setDepartment(d || null)
-
-      if (d) {
-        if (useCode.includes(':')) {
-          try {
-            const sRes = await fetch(`/api/departments/${encodeURIComponent(useCode)}/stock`)
-            if (sRes.ok) {
-              const sj = await sRes.json()
-              setSectionStock(sj?.data || sj || null)
-            }
-            await fetchSectionProducts(useCode)
-            await fetchPendingOrderLines(useCode)
-          } catch (e) {
-            setSectionStock(null)
+      // For sections (code includes ':'), use consolidated /section endpoint
+      if (useCode.includes(':')) {
+        const sectionRes = await fetch(`/api/departments/${encodeURIComponent(useCode)}/section`)
+        if (!sectionRes.ok) throw new Error('Failed to fetch section')
+        const sectionJson = await sectionRes.json()
+        const sectionData = sectionJson.data || {}
+        
+        // Map stats to metadata for UI compatibility
+        const deptWithStats = {
+          ...(sectionData.department || {}),
+          metadata: {
+            ...(sectionData.department?.metadata || {}),
+            sectionStats: sectionData.stats || {},
           }
-        } else {
+        }
+        
+        setDepartment(deptWithStats)
+        setSectionStock(sectionData.stock || null)
+        
+        const products = sectionData.products?.items || []
+        setSectionProducts(products.map((it: any) => ({
+          id: it.id,
+          name: it.name,
+          type: it.type,
+          available: it.available,
+          unitPrice: it.unitPrice,
+          unitsSold: it.unitsSold || 0,
+          amountSold: it.amountSold || 0,
+          pendingQuantity: it.pendingQuantity || 0,
+          reservedQuantity: it.reservedQuantity || 0,
+        })))
+        
+        await fetchPendingOrderLines(useCode)
+      } else {
+        const res = await fetch(`/api/departments/${encodeURIComponent(useCode)}`)
+        if (!res.ok) throw new Error('Failed to fetch')
+        const json = await res.json()
+        const d = json.data || json
+        setDepartment(d || null)
+
+        if (d) {
           const found = await loadChildrenForDepartment(d)
           const secs = await fetchSectionsForDepartment(d)
           const merged = [...found, ...secs]
