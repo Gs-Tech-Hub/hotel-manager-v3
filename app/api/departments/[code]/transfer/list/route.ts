@@ -11,14 +11,71 @@ export async function GET(request: NextRequest, { params }: { params: Promise<{ 
     const pageSize = Math.min(100, Math.max(5, Number(url.searchParams.get('pageSize') || '20')))
     const direction = url.searchParams.get('direction') || 'all'
 
-    const dept = await prisma.department.findUnique({ where: { code } })
-    if (!dept) return NextResponse.json(errorResponse(ErrorCodes.NOT_FOUND, 'Department not found'), { status: getStatusCode(ErrorCodes.NOT_FOUND) })
+    // Check if code is a section (contains ':')
+    let dept: any = null
+    let isSection = false
+    let parentDept: any = null
+    let sectionId: string | null = null
+
+    if (code.includes(':')) {
+      // Section code format: PARENT:slug
+      isSection = true
+      const parts = code.split(':')
+      const parentCode = parts[0]
+      const sectionSlugOrId = parts.slice(1).join(':')
+
+      parentDept = await prisma.department.findUnique({ where: { code: parentCode } })
+      if (!parentDept) return NextResponse.json(errorResponse(ErrorCodes.NOT_FOUND, 'Parent department not found'), { status: getStatusCode(ErrorCodes.NOT_FOUND) })
+
+      const section = await prisma.departmentSection.findFirst({
+        where: {
+          departmentId: parentDept.id,
+          isActive: true,
+          OR: [
+            { slug: sectionSlugOrId },
+            { id: sectionSlugOrId }
+          ]
+        }
+      })
+      
+      if (!section) return NextResponse.json(errorResponse(ErrorCodes.NOT_FOUND, 'Section not found'), { status: getStatusCode(ErrorCodes.NOT_FOUND) })
+      
+      dept = parentDept
+      sectionId = section.id
+    } else {
+      dept = await prisma.department.findUnique({ where: { code } })
+      if (!dept) return NextResponse.json(errorResponse(ErrorCodes.NOT_FOUND, 'Department not found'), { status: getStatusCode(ErrorCodes.NOT_FOUND) })
+    }
 
     const skip = (page - 1) * pageSize
     let where: any = {}
-    if (direction === 'sent') where.fromDepartmentId = dept.id
-    else if (direction === 'received') where.toDepartmentId = dept.id
-    else where = { OR: [{ fromDepartmentId: dept.id }, { toDepartmentId: dept.id }] }
+    
+    if (isSection) {
+      // For sections: filter by parent dept AND check if notes contains section code
+      if (direction === 'sent') {
+        where.fromDepartmentId = dept.id
+        // Also check notes for section code indicator
+        where.OR = [
+          { notes: { contains: code } },
+          { notes: null }
+        ]
+      } else if (direction === 'received') {
+        where.toDepartmentId = dept.id
+        where.notes = { contains: code }
+      } else {
+        where = {
+          OR: [
+            { AND: [{ fromDepartmentId: dept.id }] },
+            { AND: [{ toDepartmentId: dept.id }, { notes: { contains: code } }] }
+          ]
+        }
+      }
+    } else {
+      // For regular departments
+      if (direction === 'sent') where.fromDepartmentId = dept.id
+      else if (direction === 'received') where.toDepartmentId = dept.id
+      else where = { OR: [{ fromDepartmentId: dept.id }, { toDepartmentId: dept.id }] }
+    }
 
     const [items, total] = await Promise.all([
       prisma.departmentTransfer.findMany({ where, include: { items: true }, orderBy: { createdAt: 'desc' }, skip, take: pageSize }),
@@ -52,9 +109,40 @@ export async function GET(request: NextRequest, { params }: { params: Promise<{ 
     const foodMap = new Map(foods.map((f: any) => [f.id, f]))
     const invMap = new Map(inventories.map((i: any) => [i.id, i]))
 
+    // For sections, also get section data for display
+    let sectionMap: any = null
+    if (isSection) {
+      const sections = await prisma.departmentSection.findMany({
+        where: { departmentId: dept.id }
+      })
+      sectionMap = new Map(sections.map((s: any) => [s.id, s]))
+    }
+
     const enriched = items.map((t: any) => {
       const fromDept = deptMap.get(t.fromDepartmentId)
       const toDept = deptMap.get(t.toDepartmentId)
+      
+      // Extract destination info from notes if it's a section transfer
+      let toDepartmentName = toDept?.name || null
+      let destinationCode = code
+      
+      if (isSection && t.notes) {
+        try {
+          const notesObj = typeof t.notes === 'string' ? JSON.parse(t.notes) : t.notes
+          if (notesObj.toDepartmentCode && notesObj.toDepartmentCode.includes(':')) {
+            destinationCode = notesObj.toDepartmentCode
+            // Extract section name if we have it
+            const sectionParts = notesObj.toDepartmentCode.split(':')
+            if (sectionMap && sectionParts[1]) {
+              // Could extract section name here if stored in notes
+              toDepartmentName = `${toDept?.name || 'Section'} (${sectionParts[1]})`
+            }
+          }
+        } catch (e) {
+          // Notes might not be JSON, just use as-is
+        }
+      }
+      
       const itemsWithNames = t.items.map((it: any) => {
         let productName = it.productName || null
         if (!productName) {
@@ -64,7 +152,7 @@ export async function GET(request: NextRequest, { params }: { params: Promise<{ 
         }
         return { ...it, productName }
       })
-      return { ...t, fromDepartmentName: fromDept?.name || null, toDepartmentName: toDept?.name || null, items: itemsWithNames }
+      return { ...t, fromDepartmentName: fromDept?.name || null, toDepartmentName, items: itemsWithNames }
     })
 
     return NextResponse.json(successResponse({ items: enriched, total, page, pageSize }))

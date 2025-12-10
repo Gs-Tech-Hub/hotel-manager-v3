@@ -26,8 +26,19 @@ export class SectionService {
     const includeDetails = Boolean(params.includeDetails)
     const sectionFilter = params.sectionFilter || null
 
-    // Resolve department row
-    const dept = await prisma.department.findUnique({ where: { code: params.departmentCode } })
+    // Resolve department row - handle section codes
+    let dept = await prisma.department.findUnique({ where: { code: params.departmentCode } })
+    
+    // If not found and code contains ':', it might be a section code
+    if (!dept && params.departmentCode.includes(':')) {
+      const parts = params.departmentCode.split(':')
+      const parentCode = parts[0]
+      const parentDept = await prisma.department.findUnique({ where: { code: parentCode } })
+      if (parentDept) {
+        dept = parentDept
+      }
+    }
+    
     if (!dept) throw new Error('Department not found')
 
     // Drink/food specializations

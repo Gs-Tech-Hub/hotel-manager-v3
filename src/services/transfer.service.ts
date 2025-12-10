@@ -141,7 +141,8 @@ export class TransferService {
               break
             }
           } else if (it.productType === 'inventoryItem') {
-            const keyFrom = `${transfer.fromDepartmentId}::${it.productId}`
+            const fromSectionId = (fromDept as any).isSection ? (fromDept as any).id : undefined
+            const keyFrom = `${transfer.fromDepartmentId}::${fromSectionId ? fromSectionId + '::' : ''}${it.productId}`
             const fromRecord = deptInvMap.get(keyFrom)
             if (!fromRecord) {
               validationError = `Missing DepartmentInventory for department ${transfer.fromDepartmentId} and item ${it.productId}`
@@ -162,7 +163,7 @@ export class TransferService {
         }
 
         // Build minimal write payloads to run in the interactive transaction.
-        const sourceDecrements: Array<{ departmentId?: string; inventoryItemId?: string; drinkId?: string; amount: number; sourceField?: string; destField?: string }> = []
+        const sourceDecrements: Array<{ departmentId?: string; sectionId?: string; inventoryItemId?: string; drinkId?: string; amount: number; sourceField?: string; destField?: string }> = []
         const destCreates: Array<{ departmentId: string; sectionId?: string; inventoryItemId: string; quantity: number; unitPrice: any }> = []
         const destIncrements: Array<{ departmentId: string; sectionId?: string; inventoryItemId: string; amount: number }> = []
         const movementRows: Array<any> = []
@@ -180,15 +181,16 @@ export class TransferService {
           } else {
             const inv = invMap.get(it.productId)
             // we validated that department inventory exists and is sufficient
-            sourceDecrements.push({ departmentId: transfer.fromDepartmentId, inventoryItemId: it.productId, amount: it.quantity })
+            const fromSectionId = (fromDept as any).isSection ? (fromDept as any).id : undefined
+            sourceDecrements.push({ departmentId: transfer.fromDepartmentId, sectionId: fromSectionId, inventoryItemId: it.productId, amount: it.quantity })
 
-            const sectionId = (toDept as any).isSection ? (toDept as any).id : undefined
-            const keyTo = `${transfer.toDepartmentId}::${sectionId ? sectionId + '::' : ''}${it.productId}`
+            const toSectionId = (toDept as any).isSection ? (toDept as any).id : undefined
+            const keyTo = `${transfer.toDepartmentId}::${toSectionId ? toSectionId + '::' : ''}${it.productId}`
             const toRecord = deptInvMap.get(keyTo)
             if (toRecord) {
-              destIncrements.push({ departmentId: transfer.toDepartmentId, sectionId, inventoryItemId: it.productId, amount: it.quantity })
+              destIncrements.push({ departmentId: transfer.toDepartmentId, sectionId: toSectionId, inventoryItemId: it.productId, amount: it.quantity })
             } else {
-              destCreates.push({ departmentId: transfer.toDepartmentId, sectionId, inventoryItemId: it.productId, quantity: it.quantity, unitPrice: inv?.unitPrice ?? 0 })
+              destCreates.push({ departmentId: transfer.toDepartmentId, sectionId: toSectionId, inventoryItemId: it.productId, quantity: it.quantity, unitPrice: inv?.unitPrice ?? 0 })
             }
 
             movementRows.push({ movementType: 'out', quantity: it.quantity, reason: 'transfer-out', reference: transferId, inventoryItemId: it.productId })
@@ -210,9 +212,19 @@ export class TransferService {
             }
 
             // 2) decrement source department inventory for inventoryItems (parallelized)
-            const srcInvOps = sourceDecrements.filter((s) => s.inventoryItemId).map((s) =>
-              tx.departmentInventory.updateMany({ where: { departmentId: s.departmentId, inventoryItemId: s.inventoryItemId, quantity: { gte: s.amount } }, data: { quantity: { decrement: s.amount } } })
-            )
+            const srcInvOps = sourceDecrements.filter((s) => s.inventoryItemId).map((s) => {
+              const where: any = {
+                departmentId: s.departmentId,
+                inventoryItemId: s.inventoryItemId,
+                quantity: { gte: s.amount }
+              }
+              if (s.sectionId) {
+                where.sectionId = s.sectionId
+              } else {
+                where.sectionId = null
+              }
+              return tx.departmentInventory.updateMany({ where, data: { quantity: { decrement: s.amount } } })
+            })
             const srcInvResults = await Promise.all(srcInvOps)
             for (let i = 0; i < srcInvResults.length; i++) {
               const res = srcInvResults[i] as any
