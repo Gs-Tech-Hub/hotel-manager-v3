@@ -33,11 +33,11 @@ async function main() {
     if (delta > 0) {
       // add delta to first candidate (create row if missing)
       const target = candidates[0]
-      const existing = await prisma.departmentInventory.findUnique({ where: { departmentId_inventoryItemId: { departmentId: target.id, inventoryItemId: it.id } } })
+      const existing = await prisma.departmentInventory.findFirst({ where: { departmentId: target.id, sectionId: null, inventoryItemId: it.id } })
       if (!existing) {
         await prisma.departmentInventory.create({ data: { departmentId: target.id, inventoryItemId: it.id, quantity: delta, unitPrice: it.unitPrice as any } })
       } else {
-        await prisma.departmentInventory.update({ where: { departmentId_inventoryItemId: { departmentId: target.id, inventoryItemId: it.id } }, data: { quantity: existing.quantity + delta } })
+        await prisma.departmentInventory.update({ where: { id: existing.id }, data: { quantity: existing.quantity + delta } })
       }
       patched++
       continue
@@ -47,10 +47,10 @@ async function main() {
     let remaining = -delta
     for (const d of candidates) {
       if (remaining <= 0) break
-      const existing = await prisma.departmentInventory.findUnique({ where: { departmentId_inventoryItemId: { departmentId: d.id, inventoryItemId: it.id } } })
+      const existing = await prisma.departmentInventory.findFirst({ where: { departmentId: d.id, sectionId: null, inventoryItemId: it.id } })
       if (!existing || existing.quantity <= 0) continue
       const take = Math.min(existing.quantity, remaining)
-      await prisma.departmentInventory.update({ where: { departmentId_inventoryItemId: { departmentId: d.id, inventoryItemId: it.id } }, data: { quantity: existing.quantity - take } })
+      await prisma.departmentInventory.update({ where: { id: existing.id }, data: { quantity: existing.quantity - take } })
       remaining -= take
     }
 

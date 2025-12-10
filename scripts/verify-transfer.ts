@@ -28,21 +28,19 @@ async function main() {
     console.log(`\n  Item: ${invItem?.name} (qty=${item.quantity})`)
 
     // Check department stocks
-    const fromStock = await prisma.departmentInventory.findUnique({
+    const fromStock = await prisma.departmentInventory.findFirst({
       where: {
-        departmentId_inventoryItemId: {
-          departmentId: transfer.fromDepartmentId,
-          inventoryItemId: item.productId,
-        },
+        departmentId: transfer.fromDepartmentId,
+        sectionId: null,
+        inventoryItemId: item.productId,
       },
     })
 
-    const toStock = await prisma.departmentInventory.findUnique({
+    const toStock = await prisma.departmentInventory.findFirst({
       where: {
-        departmentId_inventoryItemId: {
-          departmentId: transfer.toDepartmentId,
-          inventoryItemId: item.productId,
-        },
+        departmentId: transfer.toDepartmentId,
+        sectionId: null,
+        inventoryItemId: item.productId,
       },
     })
 

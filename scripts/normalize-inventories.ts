@@ -56,7 +56,7 @@ async function main() {
       if (matching.length === 0) continue
       const per = Math.floor(Number(it.quantity ?? 0) / matching.length)
       for (const md of matching) {
-        const existing = await prisma.departmentInventory.findUnique({ where: { departmentId_inventoryItemId: { departmentId: md.id, inventoryItemId: it.id } } })
+        const existing = await prisma.departmentInventory.findFirst({ where: { departmentId: md.id, sectionId: null, inventoryItemId: it.id } })
         const oldQty = existing ? existing.quantity : 0
         if (oldQty !== per) changes.push({ itemId: it.id, deptId: md.id, oldQty, newQty: per })
       }
@@ -69,7 +69,12 @@ async function main() {
       console.log('Dry-run complete. Use --apply to persist changes.')
     } else {
       for (const c of changes) {
-        await prisma.departmentInventory.upsert({ where: { departmentId_inventoryItemId: { departmentId: c.deptId, inventoryItemId: c.itemId } }, create: { departmentId: c.deptId, inventoryItemId: c.itemId, quantity: c.newQty }, update: { quantity: c.newQty } })
+        const existing = await prisma.departmentInventory.findFirst({ where: { departmentId: c.deptId, sectionId: null, inventoryItemId: c.itemId } })
+        if (existing) {
+          await prisma.departmentInventory.update({ where: { id: existing.id }, data: { quantity: c.newQty } })
+        } else {
+          await prisma.departmentInventory.create({ data: { departmentId: c.deptId, inventoryItemId: c.itemId, quantity: c.newQty } })
+        }
       }
       console.log('Distribution applied')
     }

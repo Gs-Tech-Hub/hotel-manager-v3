@@ -163,15 +163,47 @@ export class SectionService {
 
       const itemIds = items.map((i: any) => i.id)
       let balances: any[] = []
+      let sectionId: string | undefined = undefined
+      
       try {
         let deptIdForBalances = dept.id
+        
+        // If filtering by section, resolve the section ID
         if (sectionFilter) {
           try {
-            const sectionDept = await prisma.department.findUnique({ where: { code: sectionFilter } })
-            if (sectionDept && sectionDept.id) deptIdForBalances = sectionDept.id
+            const parts = sectionFilter.split(':')
+            if (parts.length === 2) {
+              const parentCode = parts[0]
+              const sectionSlugOrId = parts.slice(1).join(':')
+              
+              const parentDept = await prisma.department.findUnique({ where: { code: parentCode } })
+              if (parentDept) {
+                const section = await prisma.departmentSection.findFirst({
+                  where: {
+                    departmentId: parentDept.id,
+                    OR: [
+                      { slug: sectionSlugOrId },
+                      { id: sectionSlugOrId }
+                    ]
+                  }
+                })
+                
+                if (section) {
+                  sectionId = section.id
+                  deptIdForBalances = parentDept.id
+                }
+              }
+            }
           } catch (e) {}
         }
-        balances = await (prisma as any).departmentInventory.findMany({ where: { departmentId: deptIdForBalances, inventoryItemId: { in: itemIds } } })
+        
+        // Query inventory with or without section filter
+        const where: any = { departmentId: deptIdForBalances, inventoryItemId: { in: itemIds } }
+        if (sectionFilter && sectionId) {
+          where.sectionId = sectionId
+        }
+        
+        balances = await (prisma as any).departmentInventory.findMany({ where })
       } catch (e: any) {
         balances = []
       }

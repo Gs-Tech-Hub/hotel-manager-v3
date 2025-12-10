@@ -37,7 +37,7 @@ async function main() {
 
     // create or update central record to balance totals
     if (!central) throw new Error('Central department missing; recreate with --apply')
-    const existing = await prisma.departmentInventory.findUnique({ where: { departmentId_inventoryItemId: { departmentId: central.id, inventoryItemId: it.id } } })
+    const existing = await prisma.departmentInventory.findFirst({ where: { departmentId: central.id, sectionId: null, inventoryItemId: it.id } })
     if (existing) {
       // update quantity by diff
       await prisma.departmentInventory.update({ where: { id: existing.id }, data: { quantity: { increment: diff } } })

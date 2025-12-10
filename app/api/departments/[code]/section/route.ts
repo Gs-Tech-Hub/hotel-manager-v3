@@ -122,7 +122,7 @@ export async function GET(
     }
 
     // Calculate stock stats from products
-    let stock = { low: 0, high: 0, empty: 0, totalProducts: 0 }
+    const stock = { low: 0, high: 0, empty: 0, totalProducts: 0 }
     if (products.items && Array.isArray(products.items) && products.items.length > 0) {
       stock.totalProducts = products.total || products.items.length
       

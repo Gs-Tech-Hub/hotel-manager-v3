@@ -32,12 +32,11 @@ async function main() {
   console.log(`  Item: ${item.name}`)
   console.log(`  Qty: 10`)
 
-  const sourceStock = await prisma.departmentInventory.findUnique({
+  const sourceStock = await prisma.departmentInventory.findFirst({
     where: {
-      departmentId_inventoryItemId: {
-        departmentId: fromDept.id,
-        inventoryItemId: item.id,
-      },
+      departmentId: fromDept.id,
+      sectionId: null,
+      inventoryItemId: item.id,
     },
   })
 

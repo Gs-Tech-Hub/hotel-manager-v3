@@ -9,14 +9,21 @@ export class TransferService {
 
   /**
    * Create a transfer request (status = pending)
+   * 
+   * @param fromDepartmentId - Source department ID
+   * @param toDepartmentId - Destination department or section ID
+   * @param items - Items to transfer
+   * @param createdBy - User ID who created the transfer
+   * @param toCodeOverride - Optional destination code (may be section code like "DEPT:section")
    */
-  async createTransfer(fromDepartmentId: string, toDepartmentId: string, items: Array<{ productType: string; productId: string; quantity: number }>, createdBy?: string) {
-  const transfer = await (prisma as any).departmentTransfer.create({
+  async createTransfer(fromDepartmentId: string, toDepartmentId: string, items: Array<{ productType: string; productId: string; quantity: number }>, createdBy?: string, toCodeOverride?: string) {
+    const transfer = await (prisma as any).departmentTransfer.create({
       data: {
         fromDepartmentId,
         toDepartmentId,
         status: 'pending',
         createdBy,
+        notes: toCodeOverride ? JSON.stringify({ toDepartmentCode: toCodeOverride }) : null,
         items: { create: items.map((it) => ({ productType: it.productType, productId: it.productId, quantity: it.quantity })) },
       },
       include: { items: true },
@@ -30,12 +37,64 @@ export class TransferService {
    * Currently supports productType = 'drink' (updates Drink.barStock / restaurantStock / quantity fields).
    */
   async approveTransfer(transferId: string, actor?: string) {
-  const transfer = await (prisma as any).departmentTransfer.findUnique({ where: { id: transferId }, include: { items: true } })
+    const transfer = await (prisma as any).departmentTransfer.findUnique({ where: { id: transferId }, include: { items: true } })
     if (!transfer) return { success: false, message: 'Transfer not found' }
     if (transfer.status !== 'pending' && transfer.status !== 'approved') return { success: false, message: `Transfer is already ${transfer.status}` }
 
     const fromDept = await prisma.department.findUnique({ where: { id: transfer.fromDepartmentId } })
-    const toDept = await prisma.department.findUnique({ where: { id: transfer.toDepartmentId } })
+    
+    // Handle destination: could be a department or a section
+    let toDept: any = null
+    let toCode: string | null = null
+    
+    // Try to parse the destination code from notes
+    try {
+      if (transfer.notes) {
+        const parsed = JSON.parse(transfer.notes)
+        toCode = parsed.toDepartmentCode
+      }
+    } catch (e) {
+      // notes might not be JSON, continue without toCode
+    }
+    
+    if (toCode && toCode.includes(':')) {
+      // Destination is a section - look it up in departmentSection table
+      const parts = toCode.split(':')
+      const parentCode = parts[0]
+      const sectionSlugOrId = parts.slice(1).join(':')
+      
+      const parentDept = await prisma.department.findUnique({ where: { code: parentCode } })
+      if (!parentDept) return { success: false, message: 'Parent department for section not found' }
+      
+      const section = await prisma.departmentSection.findFirst({
+        where: {
+          departmentId: parentDept.id,
+          isActive: true,
+          OR: [
+            { slug: sectionSlugOrId },
+            { id: sectionSlugOrId }
+          ]
+        }
+      })
+      
+      if (!section) return { success: false, message: 'Destination section not found' }
+      
+      // For sections: use both parent dept and section ID for inventory routing
+      // Section inventory is tracked independently in DepartmentInventory with sectionId
+      toDept = {
+        id: section.id,
+        code: toCode,
+        isSection: true,
+        parentId: parentDept.id,
+        parentDeptId: parentDept.id,
+        referenceType: parentDept.referenceType,
+        referenceId: parentDept.referenceId
+      }
+    } else {
+      // Destination is a department
+      toDept = await prisma.department.findUnique({ where: { id: transfer.toDepartmentId } })
+    }
+    
     if (!fromDept || !toDept) return { success: false, message: 'Departments missing' }
 
     try {
@@ -59,7 +118,8 @@ export class TransferService {
         const drinkMap = new Map(drinks.map((d: any) => [d.id, d]))
         const deptInvMap = new Map<string, any>()
         for (const di of (deptInventories as any[])) {
-          deptInvMap.set(`${di.departmentId}::${di.inventoryItemId}`, di)
+          const key = `${di.departmentId}::${di.sectionId ? di.sectionId + '::' : ''}${di.inventoryItemId}`
+          deptInvMap.set(key, di)
         }
 
         // Validate availability outside the transaction to fail fast for obvious errors.
@@ -103,8 +163,8 @@ export class TransferService {
 
         // Build minimal write payloads to run in the interactive transaction.
         const sourceDecrements: Array<{ departmentId?: string; inventoryItemId?: string; drinkId?: string; amount: number; sourceField?: string; destField?: string }> = []
-        const destCreates: Array<{ departmentId: string; inventoryItemId: string; quantity: number; unitPrice: any }> = []
-        const destIncrements: Array<{ departmentId: string; inventoryItemId: string; amount: number }> = []
+        const destCreates: Array<{ departmentId: string; sectionId?: string; inventoryItemId: string; quantity: number; unitPrice: any }> = []
+        const destIncrements: Array<{ departmentId: string; sectionId?: string; inventoryItemId: string; amount: number }> = []
         const movementRows: Array<any> = []
 
         // Prepare payloads for drinks and inventory items
@@ -122,12 +182,13 @@ export class TransferService {
             // we validated that department inventory exists and is sufficient
             sourceDecrements.push({ departmentId: transfer.fromDepartmentId, inventoryItemId: it.productId, amount: it.quantity })
 
-            const keyTo = `${transfer.toDepartmentId}::${it.productId}`
+            const sectionId = (toDept as any).isSection ? (toDept as any).id : undefined
+            const keyTo = `${transfer.toDepartmentId}::${sectionId ? sectionId + '::' : ''}${it.productId}`
             const toRecord = deptInvMap.get(keyTo)
             if (toRecord) {
-              destIncrements.push({ departmentId: transfer.toDepartmentId, inventoryItemId: it.productId, amount: it.quantity })
+              destIncrements.push({ departmentId: transfer.toDepartmentId, sectionId, inventoryItemId: it.productId, amount: it.quantity })
             } else {
-              destCreates.push({ departmentId: transfer.toDepartmentId, inventoryItemId: it.productId, quantity: it.quantity, unitPrice: inv?.unitPrice ?? 0 })
+              destCreates.push({ departmentId: transfer.toDepartmentId, sectionId, inventoryItemId: it.productId, quantity: it.quantity, unitPrice: inv?.unitPrice ?? 0 })
             }
 
             movementRows.push({ movementType: 'out', quantity: it.quantity, reason: 'transfer-out', reference: transferId, inventoryItemId: it.productId })
@@ -159,15 +220,27 @@ export class TransferService {
               if (res.count === 0) throw new Error(`Insufficient inventory for ${s.inventoryItemId} in department ${s.departmentId}`)
             }
 
-            // 3) create missing destination department inventories in one call if any
+            // 3) create missing destination inventories in one call if any
             if (destCreates.length) {
               await tx.departmentInventory.createMany({ data: destCreates, skipDuplicates: true })
             }
 
-            // 4) increment existing destination department inventories (parallelized)
-            const destIncOps = destIncrements.map((u) =>
-              tx.departmentInventory.updateMany({ where: { departmentId: u.departmentId, inventoryItemId: u.inventoryItemId }, data: { quantity: { increment: u.amount } } })
-            )
+            // 4) increment existing destination inventories (parallelized)
+            const destIncOps = destIncrements.map((u) => {
+              const where: any = { 
+                departmentId: u.departmentId, 
+                inventoryItemId: u.inventoryItemId 
+              }
+              if (u.sectionId) {
+                where.sectionId = u.sectionId
+              } else {
+                where.sectionId = null
+              }
+              return tx.departmentInventory.updateMany({ 
+                where, 
+                data: { quantity: { increment: u.amount } } 
+              })
+            })
             if (destIncOps.length) await Promise.all(destIncOps)
 
             // 5) create inventory movements in bulk

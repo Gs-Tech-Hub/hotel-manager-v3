@@ -29,7 +29,7 @@ async function main() {
         console.log(`  No departments mapped to category='${item.category}'`)
       } else {
         for (const md of matching) {
-          const rec = await prisma.departmentInventory.findUnique({ where: { departmentId_inventoryItemId: { departmentId: md.id, inventoryItemId: item.id } } })
+          const rec = await prisma.departmentInventory.findFirst({ where: { departmentId: md.id, sectionId: null, inventoryItemId: item.id } })
           if (!rec) console.log(`  Missing DepartmentInventory for dept ${md.code} (${md.id})`)
         }
       }

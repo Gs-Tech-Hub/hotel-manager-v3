@@ -165,30 +165,52 @@ async function main() {
   const restaurantMiscItems = await prisma.inventoryItem.findMany({ where: { sku: { in: misc.map((m) => m.sku) } } })
 
   for (const item of hkItems) {
-    await (prisma as any).departmentInventory.upsert({
-      where: { departmentId_inventoryItemId: { departmentId: hkDept.id, inventoryItemId: item.id } },
-      update: {},
-      create: {
-        departmentId: hkDept.id,
-        inventoryItemId: item.id,
-        quantity: item.quantity,
-        unitPrice: item.unitPrice as any,
-      },
+    const existing = await prisma.departmentInventory.findFirst({
+      where: { departmentId: hkDept.id, sectionId: null, inventoryItemId: item.id },
     })
-  }
-
-  if (restaurantDept) {
-    for (const item of restaurantMiscItems) {
-      await (prisma as any).departmentInventory.upsert({
-        where: { departmentId_inventoryItemId: { departmentId: restaurantDept.id, inventoryItemId: item.id } },
-        update: {},
-        create: {
-          departmentId: restaurantDept.id,
+    if (existing) {
+      await prisma.departmentInventory.update({
+        where: { id: existing.id },
+        data: {
+          quantity: item.quantity,
+          unitPrice: item.unitPrice as any,
+        },
+      })
+    } else {
+      await prisma.departmentInventory.create({
+        data: {
+          departmentId: hkDept.id,
           inventoryItemId: item.id,
           quantity: item.quantity,
           unitPrice: item.unitPrice as any,
         },
       })
+    }
+  }
+
+  if (restaurantDept) {
+    for (const item of restaurantMiscItems) {
+      const existing = await prisma.departmentInventory.findFirst({
+        where: { departmentId: restaurantDept.id, sectionId: null, inventoryItemId: item.id },
+      })
+      if (existing) {
+        await prisma.departmentInventory.update({
+          where: { id: existing.id },
+          data: {
+            quantity: item.quantity,
+            unitPrice: item.unitPrice as any,
+          },
+        })
+      } else {
+        await prisma.departmentInventory.create({
+          data: {
+            departmentId: restaurantDept.id,
+            inventoryItemId: item.id,
+            quantity: item.quantity,
+            unitPrice: item.unitPrice as any,
+          },
+        })
+      }
     }
   }
 

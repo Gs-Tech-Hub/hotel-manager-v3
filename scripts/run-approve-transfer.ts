@@ -132,11 +132,21 @@ async function run() {
             })
           }
 
-          opsFns.push((tx: any) => tx.departmentInventory.upsert({
-            where: { departmentId_inventoryItemId: { departmentId: transfer.toDepartmentId, inventoryItemId: it.productId } },
-            create: { departmentId: transfer.toDepartmentId, inventoryItemId: it.productId, quantity: it.quantity, unitPrice: inv?.unitPrice ?? 0 },
-            update: { quantity: { increment: it.quantity } },
-          }))
+          opsFns.push(async (tx: any) => {
+            const existing = await tx.departmentInventory.findFirst({
+              where: { departmentId: transfer.toDepartmentId, sectionId: null, inventoryItemId: it.productId },
+            })
+            if (existing) {
+              return tx.departmentInventory.update({
+                where: { id: existing.id },
+                data: { quantity: { increment: it.quantity } },
+              })
+            } else {
+              return tx.departmentInventory.create({
+                data: { departmentId: transfer.toDepartmentId, inventoryItemId: it.productId, quantity: it.quantity, unitPrice: inv?.unitPrice ?? 0 },
+              })
+            }
+          })
 
           opsFns.push((tx: any) => tx.inventoryMovement.create({ data: { movementType: 'out', quantity: it.quantity, reason: 'transfer-out', reference: transferId, inventoryItemId: it.productId } }))
           opsFns.push((tx: any) => tx.inventoryMovement.create({ data: { movementType: 'in', quantity: it.quantity, reason: 'transfer-in', reference: transferId, inventoryItemId: it.productId } }))

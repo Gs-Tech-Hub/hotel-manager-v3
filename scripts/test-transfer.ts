@@ -48,11 +48,11 @@ async function main() {
     console.log('Approve result:', result)
 
     // Verify balances
-    const fromRecord = await prisma.departmentInventory.findUnique({
-      where: { departmentId_inventoryItemId: { departmentId: deptA.id, inventoryItemId: item.id } },
+    const fromRecord = await prisma.departmentInventory.findFirst({
+      where: { departmentId: deptA.id, sectionId: null, inventoryItemId: item.id },
     })
-    const toRecord = await prisma.departmentInventory.findUnique({
-      where: { departmentId_inventoryItemId: { departmentId: deptB.id, inventoryItemId: item.id } },
+    const toRecord = await prisma.departmentInventory.findFirst({
+      where: { departmentId: deptB.id, sectionId: null, inventoryItemId: item.id },
     })
 
     console.log('From qty (should be 45):', fromRecord?.quantity)

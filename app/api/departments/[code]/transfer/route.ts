@@ -33,7 +33,48 @@ export async function POST(request: NextRequest, { params }: { params: Promise<{
     }
 
     const fromDept = await prisma.department.findUnique({ where: { code: fromCode } })
-    const toDept = await prisma.department.findUnique({ where: { code: toDepartmentCode } })
+    
+    // Handle destination: could be a department or a section (section code includes ':')
+    let toDept: any = null
+    let toDepartmentId = toDepartmentCode
+    let destinationCode = toDepartmentCode
+    
+    if (toDepartmentCode.includes(':')) {
+      // Destination is a section - look it up in departmentSection table
+      const parts = toDepartmentCode.split(':')
+      const parentCode = parts[0]
+      const sectionSlugOrId = parts.slice(1).join(':')
+      
+      const parentDept = await prisma.department.findUnique({ where: { code: parentCode } })
+      if (!parentDept) {
+        return NextResponse.json(errorResponse(ErrorCodes.NOT_FOUND, 'Parent department for destination section not found'), { status: getStatusCode(ErrorCodes.NOT_FOUND) })
+      }
+      
+      const section = await prisma.departmentSection.findFirst({
+        where: {
+          departmentId: parentDept.id,
+          isActive: true,
+          OR: [
+            { slug: sectionSlugOrId },
+            { id: sectionSlugOrId }
+          ]
+        }
+      })
+      
+      if (!section) {
+        return NextResponse.json(errorResponse(ErrorCodes.NOT_FOUND, 'Destination section not found'), { status: getStatusCode(ErrorCodes.NOT_FOUND) })
+      }
+      
+      // For transfer records, use the parent department ID (sections don't have IDs in departments table)
+      // The actual destination code (with section) is stored in notes
+      toDept = parentDept
+      toDepartmentId = parentDept.id
+      destinationCode = toDepartmentCode
+    } else {
+      // Destination is a department
+      toDept = await prisma.department.findUnique({ where: { code: toDepartmentCode } })
+    }
+    
     if (!fromDept || !toDept) {
       return NextResponse.json(errorResponse(ErrorCodes.NOT_FOUND, 'Source or destination department not found'), { status: getStatusCode(ErrorCodes.NOT_FOUND) })
     }
@@ -63,7 +104,7 @@ export async function POST(request: NextRequest, { params }: { params: Promise<{
     // Validate inventoryItem transfers up-front: prefer per-department inventory but allow using global inventory if available
     for (const mi of mappedItems) {
       if (mi.productType === 'inventoryItem') {
-        const rec = await prisma.departmentInventory.findUnique({ where: { departmentId_inventoryItemId: { departmentId: fromDept.id, inventoryItemId: mi.productId } } })
+        const rec = await prisma.departmentInventory.findFirst({ where: { departmentId: fromDept.id, sectionId: null, inventoryItemId: mi.productId } })
         if (rec) {
           if ((rec.quantity ?? 0) < (mi.quantity ?? 0)) {
             return NextResponse.json(errorResponse(ErrorCodes.VALIDATION_ERROR, `Insufficient inventory for department ${fromDept.id} and item ${mi.productId}`), { status: getStatusCode(ErrorCodes.VALIDATION_ERROR) })
@@ -91,7 +132,9 @@ export async function POST(request: NextRequest, { params }: { params: Promise<{
     }
 
     // create transfer record (pending)
-    const created = await transferService.createTransfer(fromDept.id, toDept.id, mappedItems)
+    // Pass the destination code (which may be a section code like "RESTAURANT:bar") 
+    // so it can be properly resolved during approval
+    const created = await transferService.createTransfer(fromDept.id, toDepartmentId, mappedItems, undefined, destinationCode)
 
     const resp = NextResponse.json(successResponse({ message: 'Transfer request created', transfer: created }))
     console.timeEnd('POST /api/departments/[code]/transfer')

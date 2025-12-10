@@ -30,27 +30,64 @@ export default function InventoryTransferPage() {
   const [products, setProducts] = useState<Item[]>([])
   const [loading, setLoading] = useState(false)
 
-  const [departments, setDepartments] = useState<Array<{ id: string; code: string; name: string }>>([])
   const [sections, setSections] = useState<Array<{ id: string; code: string; name: string }>>([])
   const [destination, setDestination] = useState<string | null>(null)
 
   const [cart, setCart] = useState<{ id: string; name: string; quantity: number }[]>([])
+  const [sourceDeptId, setSourceDeptId] = useState<string | null>(null)
 
   useEffect(() => {
     if (!source) return
-    fetchProducts(page)
-    fetchDepartments()
+    // Load source department info (to get its ID) and fetch sections for it
+    fetchSourceDepartment()
+    fetchProducts(1)
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [source])
+
+  async function fetchSourceDepartment() {
+    if (!source) return
+    try {
+      const res = await fetch(`/api/departments/${encodeURIComponent(source)}`)
+      const j = await res.json()
+      if (res.ok && j?.success) {
+        const deptId = j.data?.id || null
+        setSourceDeptId(deptId)
+        // Now fetch sections for this department
+        if (deptId) {
+          await fetchSectionsForDepartment(deptId)
+        }
+      }
+    } catch (e) {
+      console.error('failed to fetch source department', e)
+    }
+  }
+
+  async function fetchSectionsForDepartment(deptId: string) {
+    try {
+      const res = await fetch(`/api/departments/sections?departmentId=${encodeURIComponent(deptId)}&limit=100`)
+      const j = await res.json()
+      const secList = j.data || []
+      // Map sections to include code which is formatted as parent:slug
+      const mapped = (secList || []).map((s: any) => ({
+        id: s.id,
+        code: source ? `${source}:${s.slug || s.id}` : s.code,
+        name: s.name
+      }))
+      setSections(mapped)
+    } catch (e) {
+      console.error('failed to load sections', e)
+      setSections([])
+    }
+  }
 
   async function fetchProducts(p = 1) {
     if (!source) return
     setLoading(true)
     try {
       const q = new URLSearchParams({ page: String(p), pageSize: String(pageSize) })
-  // The API filters by category (department code mapped to category). Add category to inventory query.
-  const cat = mapDeptCodeToCategory(source)
-  if (cat) q.set('category', cat)
+      // The API filters by category (department code mapped to category). Add category to inventory query.
+      const cat = mapDeptCodeToCategory(source)
+      if (cat) q.set('category', cat)
       const res = await fetch(`/api/inventory?${q.toString()}`)
       const j = await res.json()
       setProducts(j.data?.items || [])
@@ -60,20 +97,6 @@ export default function InventoryTransferPage() {
       console.error('failed to load products', e)
     } finally {
       setLoading(false)
-    }
-  }
-
-  async function fetchDepartments() {
-    try {
-      const res = await fetch('/api/departments')
-      const j = await res.json()
-      const list = j.data || j || []
-      setDepartments(list.map((d: any) => ({ id: d.id, code: d.code, name: d.name })))
-      // sections are children whose code starts with `${source}:`
-      const secs = (list || []).filter((d: any) => typeof d.code === 'string' && source && d.code.startsWith(`${source}:`)).map((d: any) => ({ id: d.id, code: d.code, name: d.name }))
-      setSections(secs)
-    } catch (e) {
-      console.error('failed to load departments', e)
     }
   }
 

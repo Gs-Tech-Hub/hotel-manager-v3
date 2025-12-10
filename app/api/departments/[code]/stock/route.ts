@@ -4,16 +4,63 @@ import { successResponse, errorResponse, ErrorCodes, getStatusCode } from '@/lib
 
 /**
  * GET /api/departments/[code]/stock
- * Returns a stock summary for the department's referenced entity.
- *
- * NOTE: schema limitations - FoodItem does not store quantity in schema;
- * for Restaurants we use FoodItem.availability as a simple proxy.
- * For BarAndClub we use Drink.quantity/threshold when available.
+ * Returns a stock summary for the department or section.
+ * 
+ * If code is a section (contains ':'), returns section-specific inventory.
+ * Otherwise returns parent department inventory summary.
  */
 export async function GET(request: NextRequest, { params }: { params: Promise<{ code: string }> }) {
   try {
     const { code } = await params
 
+    // Check if this is a section code
+    if (code.includes(':')) {
+      const parts = code.split(':')
+      const parentCode = parts[0]
+      const sectionSlugOrId = parts.slice(1).join(':')
+
+      const parentDept = await prisma.department.findUnique({ where: { code: parentCode } })
+      if (!parentDept) {
+        return NextResponse.json(errorResponse(ErrorCodes.NOT_FOUND, 'Parent department not found'), { status: getStatusCode(ErrorCodes.NOT_FOUND) })
+      }
+
+      const section = await prisma.departmentSection.findFirst({
+        where: {
+          departmentId: parentDept.id,
+          OR: [
+            { slug: sectionSlugOrId },
+            { id: sectionSlugOrId }
+          ]
+        }
+      })
+
+      if (!section) {
+        return NextResponse.json(errorResponse(ErrorCodes.NOT_FOUND, 'Section not found'), { status: getStatusCode(ErrorCodes.NOT_FOUND) })
+      }
+
+      // Get section-specific inventory
+      const inventories = await prisma.departmentInventory.findMany({
+        where: { sectionId: section.id },
+        include: { inventoryItem: true }
+      })
+
+      let low = 0
+      let high = 0
+      let empty = 0
+
+      for (const inv of inventories) {
+        const qty = inv.quantity ?? 0
+        const threshold = inv.inventoryItem.reorderLevel ?? 10
+        if (qty <= 0) empty += 1
+        else if (qty <= threshold) low += 1
+        else high += 1
+      }
+
+      const summary = { low, high, empty, totalProducts: inventories.length }
+      return NextResponse.json(successResponse(summary))
+    }
+
+    // Otherwise process as parent department
     const dept = await prisma.department.findUnique({ where: { code } })
     if (!dept) {
       return NextResponse.json(errorResponse(ErrorCodes.NOT_FOUND, 'Department not found'), { status: getStatusCode(ErrorCodes.NOT_FOUND) })

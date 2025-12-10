@@ -42,11 +42,14 @@ async function main() {
       if (restaurantDept) {
         // upsert department inventory
         try {
-          await prisma.departmentInventory.upsert({
-            where: { departmentId_inventoryItemId: { departmentId: restaurantDept.id, inventoryItemId: inv.id } },
-            update: { quantity: 100 },
-            create: { departmentId: restaurantDept.id, inventoryItemId: inv.id, quantity: 100 },
+          const existing = await prisma.departmentInventory.findFirst({
+            where: { departmentId: restaurantDept.id, sectionId: null, inventoryItemId: inv.id },
           })
+          if (existing) {
+            await prisma.departmentInventory.update({ where: { id: existing.id }, data: { quantity: 100 } })
+          } else {
+            await prisma.departmentInventory.create({ data: { departmentId: restaurantDept.id, inventoryItemId: inv.id, quantity: 100 } })
+          }
         } catch (err) {
           console.warn('Failed upserting DepartmentInventory for food item', f.name, err)
         }
@@ -68,11 +71,14 @@ async function main() {
 
       if (barDept) {
         try {
-          await prisma.departmentInventory.upsert({
-            where: { departmentId_inventoryItemId: { departmentId: barDept.id, inventoryItemId: inv.id } },
-            update: { quantity: 200 },
-            create: { departmentId: barDept.id, inventoryItemId: inv.id, quantity: 200 },
+          const existing = await prisma.departmentInventory.findFirst({
+            where: { departmentId: barDept.id, sectionId: null, inventoryItemId: inv.id },
           })
+          if (existing) {
+            await prisma.departmentInventory.update({ where: { id: existing.id }, data: { quantity: 200 } })
+          } else {
+            await prisma.departmentInventory.create({ data: { departmentId: barDept.id, inventoryItemId: inv.id, quantity: 200 } })
+          }
         } catch (err) {
           console.warn('Failed upserting DepartmentInventory for drink item', d.name, err)
         }

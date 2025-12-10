@@ -36,23 +36,23 @@ async function main() {
     if (assign === 'single') {
       const target = matching[0]
       const dataQty = item.quantity
-      const existing = await prisma.departmentInventory.findUnique({ where: { departmentId_inventoryItemId: { departmentId: target.id, inventoryItemId: item.id } } })
+      const existing = await prisma.departmentInventory.findFirst({ where: { departmentId: target.id, sectionId: null, inventoryItemId: item.id } })
       if (!existing) {
         await prisma.departmentInventory.create({ data: { departmentId: target.id, inventoryItemId: item.id, quantity: dataQty, unitPrice: item.unitPrice as any } })
         created++
       } else if (force) {
-        await prisma.departmentInventory.update({ where: { departmentId_inventoryItemId: { departmentId: target.id, inventoryItemId: item.id } }, data: { quantity: dataQty, unitPrice: item.unitPrice as any } })
+        await prisma.departmentInventory.update({ where: { id: existing.id }, data: { quantity: dataQty, unitPrice: item.unitPrice as any } })
         updated++
       }
     } else if (assign === 'even') {
       const per = Math.floor(item.quantity / matching.length)
       for (const md of matching) {
-        const existing = await prisma.departmentInventory.findUnique({ where: { departmentId_inventoryItemId: { departmentId: md.id, inventoryItemId: item.id } } })
+        const existing = await prisma.departmentInventory.findFirst({ where: { departmentId: md.id, sectionId: null, inventoryItemId: item.id } })
         if (!existing) {
           await prisma.departmentInventory.create({ data: { departmentId: md.id, inventoryItemId: item.id, quantity: per, unitPrice: item.unitPrice as any } })
           created++
         } else if (force) {
-          await prisma.departmentInventory.update({ where: { departmentId_inventoryItemId: { departmentId: md.id, inventoryItemId: item.id } }, data: { quantity: per, unitPrice: item.unitPrice as any } })
+          await prisma.departmentInventory.update({ where: { id: existing.id }, data: { quantity: per, unitPrice: item.unitPrice as any } })
           updated++
         }
       }
@@ -61,24 +61,24 @@ async function main() {
       const total = Number(item.quantity ?? 0)
       const per = Math.floor(total / matching.length)
       for (const md of matching) {
-        const existing = await prisma.departmentInventory.findUnique({ where: { departmentId_inventoryItemId: { departmentId: md.id, inventoryItemId: item.id } } })
+        const existing = await prisma.departmentInventory.findFirst({ where: { departmentId: md.id, sectionId: null, inventoryItemId: item.id } })
         if (!existing) {
           await prisma.departmentInventory.create({ data: { departmentId: md.id, inventoryItemId: item.id, quantity: per, unitPrice: item.unitPrice as any } })
           created++
         } else if (force) {
-          await prisma.departmentInventory.update({ where: { departmentId_inventoryItemId: { departmentId: md.id, inventoryItemId: item.id } }, data: { quantity: per, unitPrice: item.unitPrice as any } })
+          await prisma.departmentInventory.update({ where: { id: existing.id }, data: { quantity: per, unitPrice: item.unitPrice as any } })
           updated++
         }
       }
     } else {
       // default: create zeroed records for missing departments so transfers can create/increment later
       for (const md of matching) {
-        const existing = await prisma.departmentInventory.findUnique({ where: { departmentId_inventoryItemId: { departmentId: md.id, inventoryItemId: item.id } } })
+        const existing = await prisma.departmentInventory.findFirst({ where: { departmentId: md.id, sectionId: null, inventoryItemId: item.id } })
         if (!existing) {
           await prisma.departmentInventory.create({ data: { departmentId: md.id, inventoryItemId: item.id, quantity: 0, unitPrice: item.unitPrice as any } })
           created++
         } else if (force) {
-          await prisma.departmentInventory.update({ where: { departmentId_inventoryItemId: { departmentId: md.id, inventoryItemId: item.id } }, data: { quantity: 0, unitPrice: item.unitPrice as any } })
+          await prisma.departmentInventory.update({ where: { id: existing.id }, data: { quantity: 0, unitPrice: item.unitPrice as any } })
           updated++
         }
       }
