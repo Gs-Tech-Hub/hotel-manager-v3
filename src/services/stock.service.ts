@@ -64,17 +64,25 @@ export class StockService {
               createData.unitPrice = new Decimal(Math.round(Number(drink.price) * 100) / 100)
             }
 
-            await (prisma as any).departmentInventory.upsert({
+            // For upsert with nullable sectionId, we need to query first
+            const existing = await prisma.departmentInventory.findFirst({
               where: {
-                departmentId_sectionId_inventoryItemId: {
-                  departmentId,
-                  sectionId: sectionId || null,
-                  inventoryItemId: productId,
-                },
+                departmentId,
+                sectionId: sectionId ?? undefined,
+                inventoryItemId: productId,
               },
-              update: { quantity: legacyBalance },
-              create: createData,
             })
+
+            if (existing) {
+              await prisma.departmentInventory.update({
+                where: { id: existing.id },
+                data: { quantity: legacyBalance },
+              })
+            } else {
+              await prisma.departmentInventory.create({
+                data: createData,
+              })
+            }
           } catch (e) {
             // Initialization failed, just return the legacy value
           }
@@ -100,17 +108,25 @@ export class StockService {
               createData.unitPrice = inv.unitPrice
             }
 
-            await (prisma as any).departmentInventory.upsert({
+            // For upsert with nullable sectionId, we need to query first
+            const existing = await prisma.departmentInventory.findFirst({
               where: {
-                departmentId_sectionId_inventoryItemId: {
-                  departmentId,
-                  sectionId: sectionId || null,
-                  inventoryItemId: productId,
-                },
+                departmentId,
+                sectionId: sectionId ?? undefined,
+                inventoryItemId: productId,
               },
-              update: { quantity: legacyBalance },
-              create: createData,
             })
+
+            if (existing) {
+              await prisma.departmentInventory.update({
+                where: { id: existing.id },
+                data: { quantity: legacyBalance },
+              })
+            } else {
+              await prisma.departmentInventory.create({
+                data: createData,
+              })
+            }
           } catch (e) {
             // Initialization failed, just return the legacy value
           }

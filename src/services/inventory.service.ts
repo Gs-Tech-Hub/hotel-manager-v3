@@ -247,6 +247,8 @@ export class InventoryItemService extends BaseService<IInventoryItem> {
 
   /**
    * Adjust item quantity (by delta)
+   * CRITICAL: Updates DepartmentInventory for the restaurant department, not the legacy InventoryItem table
+   * This ensures all quantity management uses the authoritative DepartmentInventory source
    */
   async adjustQuantity(
     itemId: string,
@@ -256,6 +258,7 @@ export class InventoryItemService extends BaseService<IInventoryItem> {
     try {
       const item = await prisma.inventoryItem.findUnique({
         where: { id: itemId },
+        include: { inventoryType: true },
       });
 
       if (!item) {
@@ -263,7 +266,15 @@ export class InventoryItemService extends BaseService<IInventoryItem> {
         return null;
       }
 
-      const newQuantity = Math.max(0, item.quantity + delta);
+      // Get the restaurant department (master inventory)
+      const restaurantDept = await prisma.department.findFirst({
+        where: { code: 'restaurant' },
+      });
+
+      if (!restaurantDept) {
+        console.error('Restaurant department not found');
+        return null;
+      }
 
       // Record the movement
       await prisma.inventoryMovement.create({
@@ -275,13 +286,49 @@ export class InventoryItemService extends BaseService<IInventoryItem> {
         },
       });
 
-      const row = await prisma.inventoryItem.update({
-        where: { id: itemId },
-        data: { quantity: newQuantity },
-        include: { inventoryType: true },
+      // Update DepartmentInventory (authoritative source)
+      // Check if record exists
+      const existing = await prisma.departmentInventory.findFirst({
+        where: {
+          departmentId: restaurantDept.id,
+          inventoryItemId: itemId,
+          sectionId: null, // Department-level, not section-level
+        },
       });
 
-      return mapInventoryItem(row as any);
+      if (existing) {
+        // Update existing record
+        const newQuantity = Math.max(0, (existing.quantity ?? 0) + delta);
+        await prisma.departmentInventory.update({
+          where: { id: existing.id },
+          data: { quantity: newQuantity },
+        });
+      } else {
+        // Create new DepartmentInventory record if it doesn't exist
+        const newQuantity = Math.max(0, 0 + delta);
+        await prisma.departmentInventory.create({
+          data: {
+            departmentId: restaurantDept.id,
+            inventoryItemId: itemId,
+            quantity: newQuantity,
+            unitPrice: item.unitPrice,
+          },
+        });
+      }
+
+      // Return the updated item with current quantity from DepartmentInventory
+      const updated = await prisma.departmentInventory.findFirst({
+        where: {
+          departmentId: restaurantDept.id,
+          inventoryItemId: itemId,
+          sectionId: null,
+        },
+      });
+
+      return {
+        ...mapInventoryItem(item),
+        quantity: updated?.quantity ?? 0,
+      };
     } catch (error) {
       console.error('Error adjusting quantity:', error);
       return null;

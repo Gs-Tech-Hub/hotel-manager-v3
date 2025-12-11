@@ -12,6 +12,7 @@
  * - search: string (search by name or SKU)
  * - lowStock: boolean (only show low stock items)
  * - expired: boolean (only show expired items)
+ * - departmentId: string (filter by department for quantity display)
  */
 
 import { NextRequest } from 'next/server';
@@ -20,6 +21,9 @@ import { sendSuccess, sendError } from '@/lib/api-handler';
 import { prisma } from '@/lib/prisma';
 import { mapDeptCodeToCategory } from '@/lib/utils';
 import { ErrorCodes } from '@/lib/api-response';
+import { StockService } from '@/services/stock.service';
+
+const stockService = new StockService();
 
 export async function GET(req: NextRequest) {
   try {
@@ -33,6 +37,16 @@ export async function GET(req: NextRequest) {
     const search = searchParams.get('search') || undefined;
     const lowStock = searchParams.get('lowStock') === 'true';
     const expired = searchParams.get('expired') === 'true';
+    const departmentId = searchParams.get('departmentId') || undefined;
+
+    // If no department specified, use restaurant department
+    let activeDeptId = departmentId;
+    if (!activeDeptId) {
+      const restaurantDept = await prisma.department.findFirst({ where: { code: 'restaurant' } });
+      if (restaurantDept) {
+        activeDeptId = restaurantDept.id;
+      }
+    }
 
     let items: any[] = [];
 
@@ -57,6 +71,21 @@ export async function GET(req: NextRequest) {
       });
     }
 
+    // Enrich items with quantities from DepartmentInventory (authoritative source)
+    if (activeDeptId && items.length > 0) {
+      const enrichedItems = await Promise.all(
+        items.map(async (item: any) => {
+          // Get quantity from DepartmentInventory via StockService
+          const balance = await stockService.getBalance('inventoryItem', item.id, activeDeptId!);
+          return {
+            ...item,
+            quantity: balance,
+          };
+        })
+      );
+      items = enrichedItems;
+    }
+
     // Apply pagination
     const total = items.length;
     const startIdx = (page - 1) * limit;
@@ -72,6 +101,7 @@ export async function GET(req: NextRequest) {
           page,
           limit,
           pages,
+          departmentId: activeDeptId,
         },
       },
       'Inventory items fetched successfully'
