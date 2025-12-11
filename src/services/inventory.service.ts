@@ -630,7 +630,8 @@ export class InventoryMovementService extends BaseService<IInventoryMovement> {
   }
 
   /**
-   * Record a movement
+   * Record a movement and update DepartmentInventory
+   * CRITICAL: Updates DepartmentInventory for the restaurant department
    */
   async recordMovement(
     itemId: string,
@@ -640,6 +641,17 @@ export class InventoryMovementService extends BaseService<IInventoryMovement> {
     reference?: string
   ): Promise<IInventoryMovement | null> {
     try {
+      // Get the restaurant department
+      const restaurantDept = await prisma.department.findFirst({
+        where: { code: 'restaurant' },
+      });
+
+      if (!restaurantDept) {
+        console.error('Restaurant department not found');
+        return null;
+      }
+
+      // Record the movement (for audit trail)
       const row = await prisma.inventoryMovement.create({
         data: {
           movementType,
@@ -649,6 +661,35 @@ export class InventoryMovementService extends BaseService<IInventoryMovement> {
           inventoryItemId: itemId,
         },
       });
+
+      // Update DepartmentInventory based on movement type
+      const delta = movementType === 'in' || movementType === 'adjustment' ? quantity : -quantity;
+      
+      const existing = await prisma.departmentInventory.findFirst({
+        where: {
+          departmentId: restaurantDept.id,
+          inventoryItemId: itemId,
+          sectionId: null,
+        },
+      });
+
+      if (existing) {
+        const newQuantity = Math.max(0, (existing.quantity ?? 0) + delta);
+        await prisma.departmentInventory.update({
+          where: { id: existing.id },
+          data: { quantity: newQuantity },
+        });
+      } else {
+        // Create if doesn't exist
+        const newQuantity = Math.max(0, 0 + delta);
+        await prisma.departmentInventory.create({
+          data: {
+            departmentId: restaurantDept.id,
+            inventoryItemId: itemId,
+            quantity: newQuantity,
+          },
+        });
+      }
 
       return mapInventoryMovement(row as any);
     } catch (error) {
