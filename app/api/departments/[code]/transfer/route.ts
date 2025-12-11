@@ -1,14 +1,15 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { prisma } from '@/lib/prisma'
 import { transferService } from '@/services/inventory/transfer.service'
-import { sectionService } from '@/src/services/section.service'
+import { stockService } from '@/src/services/stock.service'
 import { successResponse, errorResponse, ErrorCodes, getStatusCode } from '@/lib/api-response'
 
 /**
  * POST /api/departments/[code]/transfer
  * Body: { toDepartmentCode: string, items: [{ type: 'drink', id: string, quantity: number }] }
- * NOTE: current implementation supports transfers for `drink` items (Bar <-> Restaurant).
- * For other inventory item types we'd need schema changes (per-department quantities) or a transfer table.
+ * 
+ * Uses stockService for ALL inventory validation to ensure consistency between
+ * what displays (products endpoint) and what can be transferred (transfer endpoint).
  */
 export async function POST(request: NextRequest, { params }: { params: Promise<{ code: string }> }) {
   try {
@@ -101,40 +102,36 @@ export async function POST(request: NextRequest, { params }: { params: Promise<{
         return NextResponse.json(errorResponse(ErrorCodes.VALIDATION_ERROR, `Invalid quantity for product ${mi.productId}`), { status: getStatusCode(ErrorCodes.VALIDATION_ERROR) })
       }
     }
-    // Validate inventoryItem transfers up-front: prefer per-department inventory but allow using global inventory if available
-    for (const mi of mappedItems) {
-      if (mi.productType === 'inventoryItem') {
-        const rec = await prisma.departmentInventory.findFirst({ where: { departmentId: fromDept.id, sectionId: null, inventoryItemId: mi.productId } })
-        if (rec) {
-          if ((rec.quantity ?? 0) < (mi.quantity ?? 0)) {
-            return NextResponse.json(errorResponse(ErrorCodes.VALIDATION_ERROR, `Insufficient inventory for department ${fromDept.id} and item ${mi.productId}`), { status: getStatusCode(ErrorCodes.VALIDATION_ERROR) })
-          }
-        } else {
-          // No per-department record: check global inventory as a fallback
-          const inv = await prisma.inventoryItem.findUnique({ where: { id: mi.productId } })
-          if (!inv) {
-            return NextResponse.json(errorResponse(ErrorCodes.VALIDATION_ERROR, `No inventory record for department ${fromDept.id} and item ${mi.productId}`), { status: getStatusCode(ErrorCodes.VALIDATION_ERROR) })
-          }
-          if ((inv.quantity ?? 0) < (mi.quantity ?? 0)) {
-            return NextResponse.json(errorResponse(ErrorCodes.VALIDATION_ERROR, `Insufficient inventory for item ${mi.productId}`), { status: getStatusCode(ErrorCodes.VALIDATION_ERROR) })
-          }
+
+    // Use stockService for ALL availability validation - single source of truth
+    // This ensures consistency between what displays and what can be transferred
+    const availabilityChecks = await stockService.checkAvailabilityBatch(
+      'drink', // productType - handle drinks first
+      mappedItems.filter(m => m.productType === 'drink').map(m => ({ productId: m.productId, requiredQuantity: m.quantity })),
+      fromDept.id
+    )
+
+    for (const check of availabilityChecks) {
+      if (!check.hasStock) {
+        return NextResponse.json(errorResponse(ErrorCodes.VALIDATION_ERROR, check.message || `Insufficient stock for product ${check.productId}`), { status: getStatusCode(ErrorCodes.VALIDATION_ERROR) })
+      }
+    }
+
+    // Check inventory items separately
+    const invItems = mappedItems.filter(m => m.productType === 'inventoryItem')
+    if (invItems.length) {
+      const invChecks = await stockService.checkAvailabilityBatch('inventoryItem', invItems.map(m => ({ productId: m.productId, requiredQuantity: m.quantity })), fromDept.id)
+      for (const check of invChecks) {
+        if (!check.hasStock) {
+          return NextResponse.json(errorResponse(ErrorCodes.VALIDATION_ERROR, check.message || `Insufficient inventory for product ${check.productId}`), { status: getStatusCode(ErrorCodes.VALIDATION_ERROR) })
         }
       }
     }
 
-    // Validate drink availability via SectionService (preflight)
-    const drinkItems = mappedItems.filter((m) => m.productType === 'drink')
-    if (drinkItems.length) {
-      const validation = await sectionService.validateDrinksAvailability(fromDept.code, drinkItems.map((d) => ({ productId: d.productId, quantity: d.quantity })))
-      if (!validation.success) {
-        return NextResponse.json(errorResponse(ErrorCodes.VALIDATION_ERROR, validation.message || 'Drink validation failed'), { status: getStatusCode(ErrorCodes.VALIDATION_ERROR) })
-      }
-    }
-
     // create transfer record (pending)
-    // Pass the destination code (which may be a section code like "RESTAURANT:bar") 
-    // so it can be properly resolved during approval
-    const created = await transferService.createTransfer(fromDept.id, toDepartmentId, mappedItems, undefined, destinationCode)
+    // Pass both source and destination codes (which may be section codes like "RESTAURANT:bar") 
+    // so they can be properly resolved during approval
+    const created = await transferService.createTransfer(fromDept.id, toDepartmentId, mappedItems, undefined, { from: fromCode, to: destinationCode })
 
     const resp = NextResponse.json(successResponse({ message: 'Transfer request created', transfer: created }))
     console.timeEnd('POST /api/departments/[code]/transfer')

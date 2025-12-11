@@ -1,8 +1,12 @@
 import { prisma } from '@/lib/prisma'
+import { stockService } from './stock.service'
 
 /**
  * Transfer Service
  * Handles creation and approval/execution of department-to-department transfers.
+ * 
+ * KEY PRINCIPLE: Always use stockService for ALL stock validation and balance queries.
+ * Never query Drink.barStock, InventoryItem.quantity directly - use DepartmentInventory through stockService.
  */
 export class TransferService {
   constructor() {}
@@ -14,16 +18,26 @@ export class TransferService {
    * @param toDepartmentId - Destination department or section ID
    * @param items - Items to transfer
    * @param createdBy - User ID who created the transfer
-   * @param toCodeOverride - Optional destination code (may be section code like "DEPT:section")
+   * @param codes - Optional object with source and destination codes (may be section codes like "DEPT:section")
    */
-  async createTransfer(fromDepartmentId: string, toDepartmentId: string, items: Array<{ productType: string; productId: string; quantity: number }>, createdBy?: string, toCodeOverride?: string) {
+  async createTransfer(fromDepartmentId: string, toDepartmentId: string, items: Array<{ productType: string; productId: string; quantity: number }>, createdBy?: string, codes?: { from?: string; to?: string } | string) {
+    // Handle backward compatibility: if codes is a string, treat it as the destination code
+    let notesData: any = null
+    if (typeof codes === 'string') {
+      notesData = { toDepartmentCode: codes }
+    } else if (codes) {
+      notesData = {}
+      if (codes.from) notesData.fromDepartmentCode = codes.from
+      if (codes.to) notesData.toDepartmentCode = codes.to
+    }
+
     const transfer = await (prisma as any).departmentTransfer.create({
       data: {
         fromDepartmentId,
         toDepartmentId,
         status: 'pending',
         createdBy,
-        notes: toCodeOverride ? JSON.stringify({ toDepartmentCode: toCodeOverride }) : null,
+        notes: notesData ? JSON.stringify(notesData) : null,
         items: { create: items.map((it) => ({ productType: it.productType, productId: it.productId, quantity: it.quantity })) },
       },
       include: { items: true },
@@ -35,15 +49,18 @@ export class TransferService {
   /**
    * Approve and execute the transfer: perform transactional stock movement and mark transfer completed.
    * Currently supports productType = 'drink' (updates Drink.barStock / restaurantStock / quantity fields).
+   * SOURCE is always a DEPARTMENT (sectionId = null)
+   * DESTINATION can be either a DEPARTMENT or a SECTION (sectionId = section.id)
    */
   async approveTransfer(transferId: string, actor?: string) {
     const transfer = await (prisma as any).departmentTransfer.findUnique({ where: { id: transferId }, include: { items: true } })
     if (!transfer) return { success: false, message: 'Transfer not found' }
     if (transfer.status !== 'pending' && transfer.status !== 'approved') return { success: false, message: `Transfer is already ${transfer.status}` }
 
+    // SOURCE is always a department
     const fromDept = await prisma.department.findUnique({ where: { id: transfer.fromDepartmentId } })
     
-    // Handle destination: could be a department or a section
+    // Handle DESTINATION: could be a department or a section
     let toDept: any = null
     let toCode: string | null = null
     
@@ -80,7 +97,6 @@ export class TransferService {
       if (!section) return { success: false, message: 'Destination section not found' }
       
       // For sections: use both parent dept and section ID for inventory routing
-      // Section inventory is tracked independently in DepartmentInventory with sectionId
       toDept = {
         id: section.id,
         code: toCode,
@@ -123,37 +139,13 @@ export class TransferService {
         }
 
         // Validate availability outside the transaction to fail fast for obvious errors.
+        // Use stockService for all balance checks - this ensures consistency between display and validation
         let validationError: string | null = null
         for (const it of transfer.items) {
-          if (it.productType === 'drink') {
-            const drink = drinkMap.get(it.productId)
-            if (!drink) {
-              validationError = `Drink not found: ${it.productId}`
-              break
-            }
+          const check = await stockService.checkAvailability(it.productType, it.productId, transfer.fromDepartmentId, it.quantity)
 
-            let sourceField = 'quantity'
-            if (fromDept.referenceType === 'BarAndClub' && fromDept.referenceId && (drink as any).barAndClubId === fromDept.referenceId) sourceField = 'barStock'
-
-            const available = (drink as any)[sourceField] ?? (drink.quantity ?? 0)
-            if (available < it.quantity) {
-              validationError = `Insufficient stock for ${drink.name}`
-              break
-            }
-          } else if (it.productType === 'inventoryItem') {
-            const fromSectionId = (fromDept as any).isSection ? (fromDept as any).id : undefined
-            const keyFrom = `${transfer.fromDepartmentId}::${fromSectionId ? fromSectionId + '::' : ''}${it.productId}`
-            const fromRecord = deptInvMap.get(keyFrom)
-            if (!fromRecord) {
-              validationError = `Missing DepartmentInventory for department ${transfer.fromDepartmentId} and item ${it.productId}`
-              break
-            }
-            if (fromRecord.quantity < it.quantity) {
-              validationError = `Insufficient inventory for ${it.productId} in department ${transfer.fromDepartmentId}`
-              break
-            }
-          } else {
-            validationError = `Unsupported productType: ${it.productType}`
+          if (!check.hasStock) {
+            validationError = check.message || `Insufficient stock for product ${it.productId}`
             break
           }
         }
@@ -180,9 +172,8 @@ export class TransferService {
             sourceDecrements.push({ drinkId: it.productId, amount: it.quantity, sourceField, destField })
           } else {
             const inv = invMap.get(it.productId)
-            // we validated that department inventory exists and is sufficient
-            const fromSectionId = (fromDept as any).isSection ? (fromDept as any).id : undefined
-            sourceDecrements.push({ departmentId: transfer.fromDepartmentId, sectionId: fromSectionId, inventoryItemId: it.productId, amount: it.quantity })
+            // SOURCE is always a DEPARTMENT (sectionId = undefined, which will be treated as null in query)
+            sourceDecrements.push({ departmentId: transfer.fromDepartmentId, sectionId: undefined, inventoryItemId: it.productId, amount: it.quantity })
 
             const toSectionId = (toDept as any).isSection ? (toDept as any).id : undefined
             const keyTo = `${transfer.toDepartmentId}::${toSectionId ? toSectionId + '::' : ''}${it.productId}`

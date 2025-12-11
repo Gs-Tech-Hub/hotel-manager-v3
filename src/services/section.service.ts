@@ -1,5 +1,6 @@
 import { prisma } from '@/lib/prisma'
 import { prismaDecimalToCents } from '@/lib/price'
+import { stockService } from './stock.service'
 
 type ProductParams = {
   departmentCode: string
@@ -50,7 +51,11 @@ export class SectionService {
         prisma.drink.count({ where }),
       ])
 
-      let mapped = items.map((d: any) => ({ id: d.id, name: d.name, type: 'drink', available: d.barStock ?? d.quantity ?? 0, unitPrice: prismaDecimalToCents(d.price) }))
+      // Use stockService for all drink balances - single source of truth
+      const drinkIds = items.map((d: any) => d.id)
+      const drinkBalances = await stockService.getBalances('drink', drinkIds, dept.id)
+
+      let mapped = items.map((d: any) => ({ id: d.id, name: d.name, type: 'drink', available: drinkBalances.get(d.id) ?? 0, unitPrice: prismaDecimalToCents(d.price) }))
 
       if (includeDetails && mapped.length > 0) {
         const ids = mapped.map((m: any) => m.id)
@@ -100,7 +105,11 @@ export class SectionService {
         prisma.foodItem.count({ where }),
       ])
 
-      let mapped = items.map((f: any) => ({ id: f.id, name: f.name, type: 'food', available: f.availability ? 1 : 0, unitPrice: prismaDecimalToCents(f.price) }))
+      // Use stockService for all food balances - single source of truth
+      const foodIds = items.map((f: any) => f.id)
+      const foodBalances = await stockService.getBalances('food', foodIds, dept.id)
+
+      let mapped = items.map((f: any) => ({ id: f.id, name: f.name, type: 'food', available: foodBalances.get(f.id) ?? 0 > 0 ? 1 : 0, unitPrice: prismaDecimalToCents(f.price) }))
 
       if (includeDetails && mapped.length > 0) {
         const ids = mapped.map((m: any) => m.id)
@@ -173,55 +182,39 @@ export class SectionService {
       ])
 
       const itemIds = items.map((i: any) => i.id)
-      let balances: any[] = []
-      let sectionId: string | undefined = undefined
       
-      try {
-        let deptIdForBalances = dept.id
-        
-        // If filtering by section, resolve the section ID
-        if (sectionFilter) {
-          try {
-            const parts = sectionFilter.split(':')
-            if (parts.length === 2) {
-              const parentCode = parts[0]
-              const sectionSlugOrId = parts.slice(1).join(':')
-              
-              const parentDept = await prisma.department.findUnique({ where: { code: parentCode } })
-              if (parentDept) {
-                const section = await prisma.departmentSection.findFirst({
-                  where: {
-                    departmentId: parentDept.id,
-                    OR: [
-                      { slug: sectionSlugOrId },
-                      { id: sectionSlugOrId }
-                    ]
-                  }
-                })
-                
-                if (section) {
-                  sectionId = section.id
-                  deptIdForBalances = parentDept.id
+      // Resolve section ID if filtering by section
+      let resolvedSectionId: string | undefined = undefined
+      if (sectionFilter) {
+        try {
+          const parts = sectionFilter.split(':')
+          if (parts.length === 2) {
+            const parentCode = parts[0]
+            const sectionSlugOrId = parts.slice(1).join(':')
+            
+            const parentDept = await prisma.department.findUnique({ where: { code: parentCode } })
+            if (parentDept) {
+              const section = await prisma.departmentSection.findFirst({
+                where: {
+                  departmentId: parentDept.id,
+                  OR: [
+                    { slug: sectionSlugOrId },
+                    { id: sectionSlugOrId }
+                  ]
                 }
+              })
+              
+              if (section) {
+                resolvedSectionId = section.id
               }
             }
-          } catch (e) {}
-        }
-        
-        // Query inventory with or without section filter
-        const where: any = { departmentId: deptIdForBalances, inventoryItemId: { in: itemIds } }
-        if (sectionFilter && sectionId) {
-          where.sectionId = sectionId
-        }
-        
-        balances = await (prisma as any).departmentInventory.findMany({ where })
-      } catch (e: any) {
-        balances = []
+          }
+        } catch (e) {}
       }
 
-      const balancesMap = new Map(balances.map((b: any) => [b.inventoryItemId, b.quantity]))
+      const balances = await stockService.getBalances('inventoryItem', itemIds, dept.id, resolvedSectionId)
 
-      let mapped = items.map((it: any) => ({ id: it.id, name: it.name, type: 'inventoryItem', available: balancesMap.get(it.id) ?? it.quantity ?? 0, unitPrice: prismaDecimalToCents(it.unitPrice) }))
+      let mapped = items.map((it: any) => ({ id: it.id, name: it.name, type: 'inventoryItem', available: balances.get(it.id) ?? 0, unitPrice: prismaDecimalToCents(it.unitPrice) }))
 
       if (includeDetails && mapped.length > 0) {
         const ids = mapped.map((m: any) => m.id)
@@ -278,6 +271,7 @@ export class SectionService {
 
   /**
    * Validate availability of drinks for a department before creating a transfer.
+   * Uses stockService for consistency with other validation endpoints.
    * Returns { success: boolean, message?: string }
    */
   async validateDrinksAvailability(departmentCode: string, items: Array<{ productId: string; quantity: number }>) {
@@ -290,18 +284,13 @@ export class SectionService {
     const drinkIds = Array.from(new Set(items.map((i) => i.productId)))
     if (drinkIds.length === 0) return { success: true }
 
-    const drinks = await prisma.drink.findMany({ where: { id: { in: drinkIds } } })
-    const drinkMap = new Map(drinks.map((d: any) => [d.id, d]))
+    // Use stockService for all balance checks - single source of truth
+    const checks = await stockService.checkAvailabilityBatch('drink', items.map(i => ({ productId: i.productId, requiredQuantity: i.quantity })), dept.id)
 
-    for (const it of items) {
-      const drink = drinkMap.get(it.productId)
-      if (!drink) return { success: false, message: `Drink not found: ${it.productId}` }
-
-      let sourceField = 'quantity'
-      if (dept.referenceType === 'BarAndClub' && dept.referenceId && (drink as any).barAndClubId === dept.referenceId) sourceField = 'barStock'
-
-      const available = (drink as any)[sourceField] ?? (drink.quantity ?? 0)
-      if (available < it.quantity) return { success: false, message: `Insufficient stock for ${drink.name}` }
+    for (const check of checks) {
+      if (!check.hasStock) {
+        return { success: false, message: check.message || `Insufficient stock for product ${check.productId}` }
+      }
     }
 
     return { success: true }

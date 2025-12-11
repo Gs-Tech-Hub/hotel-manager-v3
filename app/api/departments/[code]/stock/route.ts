@@ -69,8 +69,27 @@ export async function GET(request: NextRequest, { params }: { params: Promise<{ 
     // Default summary
     let summary = { low: 0, high: 0, empty: 0, totalProducts: 0 }
 
-    if (dept.referenceType === 'BarAndClub' && dept.referenceId) {
-      // Use Drink.quantity and threshold
+    // Always query DepartmentInventory for accurate department-level stock (regardless of department type)
+    // This reflects transfers and other inventory movements
+    const inventories = await prisma.departmentInventory.findMany({
+      where: { departmentId: dept.id, sectionId: null },
+      include: { inventoryItem: true }
+    })
+
+    if (inventories.length > 0) {
+      let empty = 0
+      let low = 0
+      let high = 0
+      for (const inv of inventories) {
+        const qty = inv.quantity ?? 0
+        const threshold = inv.inventoryItem.reorderLevel ?? 10
+        if (qty <= 0) empty += 1
+        else if (qty <= threshold) low += 1
+        else high += 1
+      }
+      summary = { low, high, empty, totalProducts: inventories.length }
+    } else if (dept.referenceType === 'BarAndClub' && dept.referenceId) {
+      // Fallback: Use Drink.quantity if no DepartmentInventory records exist
       const drinks = await prisma.drink.findMany({ where: { barAndClubId: dept.referenceId } })
       const total = drinks.length
       let empty = 0
@@ -85,7 +104,7 @@ export async function GET(request: NextRequest, { params }: { params: Promise<{ 
       }
       summary = { low, high, empty, totalProducts: total }
     } else if (dept.referenceType === 'Restaurant' && dept.referenceId) {
-      // FoodItem has no quantity in schema; use availability as proxy
+      // Fallback: FoodItem has no quantity in schema; use availability as proxy
       const foods = await prisma.foodItem.findMany({ where: { restaurantId: dept.referenceId } })
       const total = foods.length
       const empty = foods.filter((f: any) => !f.availability).length
@@ -95,7 +114,7 @@ export async function GET(request: NextRequest, { params }: { params: Promise<{ 
       const high = available > Math.max(1, Math.floor(total * 0.2)) ? available : 0
       summary = { low, high, empty, totalProducts: total }
     } else {
-      // Generic inventory fallback: use inventory_items that match department type/category
+      // Fallback: Generic inventory fallback using InventoryItem quantity
       const items = await prisma.inventoryItem.findMany({ where: { category: dept.type || undefined } })
       const total = items.length
       let empty = 0
