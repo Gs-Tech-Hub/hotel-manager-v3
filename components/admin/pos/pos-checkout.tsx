@@ -1,16 +1,21 @@
 "use client"
 
 import { useEffect, useState } from "react"
+import { useSearchParams } from "next/navigation"
 import { POSCategorySelector } from "@/components/admin/pos/pos-category-selector"
 import { POSProductGrid, POSProduct } from "@/components/admin/pos/pos-product-grid"
 import { POSCart, CartLine } from "@/components/admin/pos/pos-cart"
 import { POSPayment } from "@/components/admin/pos/pos-payment"
 import { POSReceipt } from "@/components/admin/pos/pos-receipt"
+import { POSSectionSelector, Section } from "@/components/admin/pos/pos-section-selector"
 import { normalizeToCents, calculateTax, calculateTotal, centsToDollars } from "@/lib/price"
 import Price from '@/components/ui/Price'
 import { formatPriceDisplay, formatOrderTotal } from "@/lib/formatters"
 
 export default function POSCheckoutShell({ terminalId }: { terminalId?: string }) {
+  const searchParams = useSearchParams()
+  const sectionIdFromQuery = searchParams.get('section')
+  
   const [category, setCategory] = useState<string | null>(null)
   const [cart, setCart] = useState<CartLine[]>([])
   const [showPayment, setShowPayment] = useState(false)
@@ -23,9 +28,7 @@ export default function POSCheckoutShell({ terminalId }: { terminalId?: string }
   const [summaryError, setSummaryError] = useState<string | null>(null)
   const [summaryRefreshKey, setSummaryRefreshKey] = useState(0)
 
-  const [departmentSection, setDepartmentSection] = useState<any | null>(null)
-  const [loadingDepartments, setLoadingDepartments] = useState(false)
-  const [departmentsError, setDepartmentsError] = useState<string | null>(null)
+  const [departmentSection, setDepartmentSection] = useState<Section | null>(null)
   const [discountCode, setDiscountCode] = useState<string>('')
   const [appliedDiscountCodes, setAppliedDiscountCodes] = useState<string[]>([])
 
@@ -149,41 +152,11 @@ export default function POSCheckoutShell({ terminalId }: { terminalId?: string }
       .replace(/[^a-z0-9]+/g, '-')
       .replace(/(^-|-$)/g, '')
 
-  useEffect(() => {
-    // Fetch available department-sections from server and auto-select first one
-    let mounted = true
-    setLoadingDepartments(true)
-    setDepartmentsError(null)
-    fetch('/api/pos/terminals', { credentials: 'include' })
-      .then((r) => r.json())
-      .then((json) => {
-        if (!mounted) return
-        if (json && json.success && Array.isArray(json.data) && json.data.length > 0) {
-          // If a terminalId was provided via route params, prefer that terminal
-          let selected: any = null
-          if (terminalId) {
-            selected = json.data.find((d: any) => d.id === terminalId || d.departmentCode === terminalId || slugify(d.name) === terminalId)
-          }
-          // Fallback to the first available department-section
-          if (!selected) selected = json.data[0]
-          setDepartmentSection(selected)
-        } else {
-          setDepartmentsError('No sales points available')
-          setDepartmentSection(null)
-        }
-      })
-        .catch((err) => {
-          console.error('Failed to fetch sales points', err)
-          if (!mounted) return
-          setDepartmentsError('Failed to load sales points (network)')
-          setDepartmentSection(null)
-        })
-        .finally(() => { if (mounted) setLoadingDepartments(false) })
- 
-    return () => {
-      mounted = false
-    }
-  }, [terminalId])
+  // Handle section selection from query parameter or section selector
+  const handleSectionChange = (section: Section | null) => {
+    setDepartmentSection(section)
+    setCategory(null) // Reset category when section changes
+  }
 
   useEffect(() => {
     // If a department-section is selected, fetch its products/menu
@@ -277,15 +250,17 @@ export default function POSCheckoutShell({ terminalId }: { terminalId?: string }
     <div className="space-y-4">
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
         <div className="lg:col-span-2 space-y-4">
-          {loadingDepartments && <div className="text-sm text-muted-foreground">Loading sales platform...</div>}
-          {departmentsError && <div className="text-sm text-red-600">{departmentsError}</div>}
-
-          <div className="flex items-center gap-3">
-            <div className="text-sm font-medium">Department:</div>
-            <div className="px-3 py-2 bg-blue-50 border border-blue-200 rounded text-sm font-semibold">{departmentSection?.name || '—'}</div>
-            {loadingProducts && <div className="text-sm text-muted-foreground">Loading menu...</div>}
-            {terminalError && <div className="text-sm text-red-600">{terminalError}</div>}
+          {/* Section Selector */}
+          <div className="space-y-2">
+            <label className="text-sm font-semibold text-gray-700">Select Section</label>
+            <POSSectionSelector 
+              selectedSectionId={sectionIdFromQuery || terminalId}
+              onSectionChange={handleSectionChange}
+            />
           </div>
+
+          {terminalError && <div className="text-sm text-red-600 p-2 bg-red-50 border border-red-200 rounded">{terminalError}</div>}
+          {loadingProducts && <div className="text-sm text-muted-foreground">Loading menu...</div>}
 
           <POSCategorySelector categories={categories} selectedId={category ?? undefined} onSelect={(id) => setCategory(id)} />
 
