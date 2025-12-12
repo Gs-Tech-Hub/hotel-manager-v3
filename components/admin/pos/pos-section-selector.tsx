@@ -7,62 +7,50 @@ export interface Section {
   id: string
   name: string
   slug: string
-  departmentCode: string
-  departmentName: string
-  today: { count: number; total: number }
+  departmentCode?: string
 }
 
 interface POSSectionSelectorProps {
+  terminalId?: string
+  sections?: Section[]
   onSectionChange: (section: Section | null) => void
   selectedSectionId?: string
   disabled?: boolean
 }
 
 export function POSSectionSelector({
+  terminalId,
+  sections: providedSections = [],
   onSectionChange,
   selectedSectionId,
   disabled = false
 }: POSSectionSelectorProps) {
-  const [sections, setSections] = useState<Section[]>([])
+  const [sections, setSections] = useState<Section[]>(providedSections)
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [isOpen, setIsOpen] = useState(false)
   const [selectedSection, setSelectedSection] = useState<Section | null>(null)
 
+  // If sections are provided, use them directly
   useEffect(() => {
-    const fetchSections = async () => {
-      setLoading(true)
-      setError(null)
-      try {
-        const res = await fetch('/api/pos/sections')
-        if (!res.ok) throw new Error('Failed to fetch sections')
-        const json = await res.json()
-        if (json.success && json.data) {
-          setSections(json.data)
-          
-          // If a selectedSectionId was provided, select it
-          if (selectedSectionId) {
-            const found = json.data.find((s: Section) => s.id === selectedSectionId)
-            if (found) {
-              setSelectedSection(found)
-              onSectionChange(found)
-            }
-          } else if (json.data.length > 0) {
-            // Default to first section
-            setSelectedSection(json.data[0])
-            onSectionChange(json.data[0])
-          }
+    if (providedSections && providedSections.length > 0) {
+      setSections(providedSections)
+      
+      // If a selectedSectionId was provided, select it
+      if (selectedSectionId) {
+        const found = providedSections.find((s: Section) => s.id === selectedSectionId)
+        if (found) {
+          setSelectedSection(found)
+          onSectionChange(found)
         }
-      } catch (err) {
-        console.error('Failed to load sections:', err)
-        setError('Failed to load sections')
-      } finally {
-        setLoading(false)
+      } else if (providedSections.length > 0) {
+        // Default to first section
+        setSelectedSection(providedSections[0])
+        onSectionChange(providedSections[0])
       }
+      setLoading(false)
     }
-
-    fetchSections()
-  }, [selectedSectionId, onSectionChange])
+  }, [providedSections, selectedSectionId, onSectionChange])
 
   const handleSelectSection = (section: Section) => {
     setSelectedSection(section)
@@ -90,7 +78,6 @@ export function POSSectionSelector({
             ) : selectedSection ? (
               <div>
                 <div className="font-semibold text-gray-900">{selectedSection.name}</div>
-                <div className="text-xs text-gray-500">{selectedSection.departmentName}</div>
               </div>
             ) : (
               <span className="text-gray-500 text-sm">Select a section</span>
@@ -112,20 +99,7 @@ export function POSSectionSelector({
                     selectedSection?.id === section.id ? 'bg-blue-50 border-l-4 border-l-blue-600' : ''
                   }`}
                 >
-                  <div className="flex justify-between items-start">
-                    <div className="flex-1">
-                      <div className="font-medium text-gray-900">{section.name}</div>
-                      <div className="text-xs text-gray-500">{section.departmentName}</div>
-                    </div>
-                    {section.today && (
-                      <div className="text-right ml-2">
-                        <div className="text-xs font-semibold text-gray-700">{section.today.count} tx</div>
-                        <div className="text-xs text-gray-500">
-                          ${(section.today.total / 100).toFixed(2)}
-                        </div>
-                      </div>
-                    )}
-                  </div>
+                  <div className="font-medium text-gray-900">{section.name}</div>
                 </button>
               ))}
             </div>

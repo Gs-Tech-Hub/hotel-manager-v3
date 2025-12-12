@@ -3,7 +3,8 @@ import { prisma } from '@/lib/prisma'
 
 /**
  * GET /api/pos/terminals
- * List all POS terminals with their associated sections
+ * List all available POS terminals (which are department sections)
+ * Each DepartmentSection is treated as a POS terminal/point-of-sale
  */
 export async function GET(req: Request) {
   try {
@@ -12,20 +13,24 @@ export async function GET(req: Request) {
     const limit = parseInt(searchParams.get('limit') || '10')
     const departmentId = searchParams.get('departmentId')
 
-    const where: any = {}
+    const where: any = {
+      isActive: true
+    }
     if (departmentId) {
       where.departmentId = departmentId
     }
 
     const skip = (page - 1) * limit
 
-    // Fetch terminals with department and sales summary
-    const terminals = await prisma.terminal.findMany({
+    // Fetch department sections - these ARE the POS terminals
+    const sections = await prisma.departmentSection.findMany({
       where,
       include: {
         department: {
-          include: {
-            sections: true
+          select: {
+            id: true,
+            code: true,
+            name: true
           }
         }
       },
@@ -34,10 +39,10 @@ export async function GET(req: Request) {
       orderBy: { createdAt: 'desc' }
     })
 
-    const total = await prisma.terminal.count({ where })
+    const total = await prisma.departmentSection.count({ where })
 
-    // Enhance with today's sales summary for each terminal
-    const data = await Promise.all(terminals.map(async (t: any) => {
+    // Enhance each section with today's sales summary
+    const data = await Promise.all(sections.map(async (section: any) => {
       const today = new Date()
       today.setHours(0, 0, 0, 0)
       const tomorrow = new Date(today)
@@ -45,7 +50,7 @@ export async function GET(req: Request) {
 
       const orders = await prisma.orderHeader.findMany({
         where: {
-          departmentCode: t.department?.code,
+          departmentCode: section.department.code,
           createdAt: {
             gte: today,
             lt: tomorrow
@@ -57,13 +62,12 @@ export async function GET(req: Request) {
       const count = orders.length
 
       return {
-        id: t.id,
-        name: t.name,
-        slug: t.slug,
-        status: t.status,
-        departmentCode: t.department?.code,
-        departmentName: t.department?.name,
-        sections: t.department?.sections || [],
+        id: section.id,
+        name: section.name,
+        slug: section.slug,
+        departmentCode: section.department.code,
+        departmentName: section.department.name,
+        status: 'online', // Sections are always online if active
         today: { count, total: salesTotal }
       }
     }))

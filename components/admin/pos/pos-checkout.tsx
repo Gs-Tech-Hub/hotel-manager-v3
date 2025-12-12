@@ -7,14 +7,20 @@ import { POSProductGrid, POSProduct } from "@/components/admin/pos/pos-product-g
 import { POSCart, CartLine } from "@/components/admin/pos/pos-cart"
 import { POSPayment } from "@/components/admin/pos/pos-payment"
 import { POSReceipt } from "@/components/admin/pos/pos-receipt"
-import { POSSectionSelector, Section } from "@/components/admin/pos/pos-section-selector"
 import { normalizeToCents, calculateTax, calculateTotal, centsToDollars } from "@/lib/price"
 import Price from '@/components/ui/Price'
 import { formatPriceDisplay, formatOrderTotal } from "@/lib/formatters"
 
+interface SelectedSection {
+  id: string
+  name: string
+  departmentCode: string
+  departmentName: string
+}
+
 export default function POSCheckoutShell({ terminalId }: { terminalId?: string }) {
   const searchParams = useSearchParams()
-  const sectionIdFromQuery = searchParams.get('section')
+  const terminalIdFromQuery = searchParams.get('terminal')
   
   const [category, setCategory] = useState<string | null>(null)
   const [cart, setCart] = useState<CartLine[]>([])
@@ -27,8 +33,9 @@ export default function POSCheckoutShell({ terminalId }: { terminalId?: string }
   const [loadingSummary, setLoadingSummary] = useState(false)
   const [summaryError, setSummaryError] = useState<string | null>(null)
   const [summaryRefreshKey, setSummaryRefreshKey] = useState(0)
+  const [loadingTerminal, setLoadingTerminal] = useState(false)
 
-  const [departmentSection, setDepartmentSection] = useState<Section | null>(null)
+  const [departmentSection, setDepartmentSection] = useState<SelectedSection | null>(null)
   const [discountCode, setDiscountCode] = useState<string>('')
   const [appliedDiscountCodes, setAppliedDiscountCodes] = useState<string[]>([])
 
@@ -36,13 +43,6 @@ export default function POSCheckoutShell({ terminalId }: { terminalId?: string }
     { id: 'foods', name: 'Foods' },
     { id: 'drinks', name: 'Drinks' },
     { id: 'retail', name: 'Retail' },
-  ]
-
-  const sampleProducts: POSProduct[] = [
-    // kept as fallback only
-    { id: 'p1', name: 'Espresso', price: 4.5, available: true },
-    { id: 'p2', name: 'Croissant', price: 3.0, available: true },
-    { id: 'p3', name: 'Bottled Water', price: 2.25, available: true },
   ]
 
   const handleAdd = (p: POSProduct) => {
@@ -71,15 +71,15 @@ export default function POSCheckoutShell({ terminalId }: { terminalId?: string }
   const handlePaymentComplete = (payment: any) => {
     ;(async () => {
       try {
-        // Ensure a department/terminal is selected — server requires departmentCode
+        // Ensure a section is selected
         if (!departmentSection?.departmentCode) {
-          console.log('[POS] aborting payment - no departmentSection selected')
-          setTerminalError('No terminal or department selected. Cannot complete payment.')
+          console.log('[POS] aborting payment - no section selected')
+          setTerminalError('No section selected. Cannot complete payment.')
           return
         }
 
         console.log('[POS] handlePaymentComplete - start')
-        console.log('[POS] departmentSection:', departmentSection)
+        console.log('[POS] section:', departmentSection)
         console.log('[POS] cart:', cart)
         console.log('[POS] payment:', payment)
 
@@ -88,17 +88,16 @@ export default function POSCheckoutShell({ terminalId }: { terminalId?: string }
           productId: c.productId,
           productType: (c as any).type || 'inventory',
           productName: c.productName,
-          departmentCode: departmentSection.id, // Use section code (e.g., "restaurant:main") not parent code
+          departmentCode: departmentSection.departmentCode,
           quantity: c.quantity,
           unitPrice: c.unitPrice,
         }))
         console.log('[POS] built items:', items)
 
         const payload: any = {
-          // customerId is optional for walk-in / guest purchases; server will create guest customer if missing
           items,
           discounts: appliedDiscountCodes,
-          notes: `POS sale - terminal ${terminalId || departmentSection?.id || 'unknown'}`,
+          notes: `POS sale - ${departmentSection.name}`,
           payment,
         }
 
@@ -114,7 +113,6 @@ export default function POSCheckoutShell({ terminalId }: { terminalId?: string }
         const json = await res.json().catch((e) => { console.log('[POS] failed to parse JSON:', e); return null })
         console.log('[POS] parsed json:', json)
         if (res.status === 401 || res.status === 403 || (json && json.error && json.error.code === 'UNAUTHORIZED')) {
-          // Authentication/authorization failed — surface error and do NOT print a receipt
           const msg = (json && json.error && json.error.message) ? json.error.message : 'Not authorized'
           console.log('[POS] auth failure, msg:', msg)
           setTerminalError(`Order failed: ${msg}`)
@@ -122,12 +120,10 @@ export default function POSCheckoutShell({ terminalId }: { terminalId?: string }
         }
 
         if (res.ok && json && json.success && json.data) {
-          // The server returns the created order header (or success payload)
           console.log('[POS] order created successfully:', json.data)
           setReceipt(json.data)
           setCart([])
         } else {
-          // API failure — surface error and DO NOT print a receipt
           const msg = (json && json.error && json.error.message) ? json.error.message : `Order API error (${res.status})`
           console.log('[POS] api failure, msg:', msg, 'status:', res.status)
           setTerminalError(`Order failed: ${msg}`)
@@ -144,22 +140,53 @@ export default function POSCheckoutShell({ terminalId }: { terminalId?: string }
     })()
   }
 
-  // Helper: slugify terminal names for human-friendly routes
-  const slugify = (s: string) =>
-    s
-      .toString()
-      .toLowerCase()
-      .replace(/[^a-z0-9]+/g, '-')
-      .replace(/(^-|-$)/g, '')
-
-  // Handle section selection from query parameter or section selector
-  const handleSectionChange = (section: Section | null) => {
-    setDepartmentSection(section)
-    setCategory(null) // Reset category when section changes
-  }
-
+  // Load terminal data from query parameter
   useEffect(() => {
-    // If a department-section is selected, fetch its products/menu
+    if (!terminalIdFromQuery) {
+      setTerminalError('No terminal specified. Please select a terminal from the dashboard.')
+      return
+    }
+
+    let mounted = true
+    setLoadingTerminal(true)
+    setTerminalError(null)
+
+    // Fetch all terminals to find the one with this terminal ID
+    fetch('/api/pos/terminals', { credentials: 'include' })
+      .then((r) => r.json())
+      .then((json) => {
+        if (!mounted) return
+        if (json && json.success && Array.isArray(json.data)) {
+          // Find the terminal matching the terminalIdFromQuery
+          const foundTerminal = json.data.find((t: any) => t.id === terminalIdFromQuery)
+          if (foundTerminal) {
+            setDepartmentSection({
+              id: foundTerminal.id,
+              name: foundTerminal.name,
+              departmentCode: foundTerminal.departmentCode,
+              departmentName: foundTerminal.departmentName
+            })
+          } else {
+            setTerminalError('Terminal not found')
+          }
+        } else {
+          setTerminalError('Failed to load terminals')
+        }
+      })
+      .catch((err) => {
+        console.error('Failed to fetch terminals', err)
+        if (!mounted) return
+        setTerminalError('Failed to load terminals (network)')
+      })
+      .finally(() => { if (mounted) setLoadingTerminal(false) })
+
+    return () => {
+      mounted = false
+    }
+  }, [terminalIdFromQuery])
+
+  // Load products for selected section
+  useEffect(() => {
     const code = departmentSection?.departmentCode
     if (!code) {
       setProducts([])
@@ -170,7 +197,6 @@ export default function POSCheckoutShell({ terminalId }: { terminalId?: string }
     setLoadingProducts(true)
     setTerminalError(null)
 
-    // Use the real departments menu API (DB-backed)
     fetch(`/api/departments/${encodeURIComponent(code)}/menu`, { credentials: 'include' })
       .then((r) => r.json())
       .then((json) => {
@@ -179,7 +205,6 @@ export default function POSCheckoutShell({ terminalId }: { terminalId?: string }
           const mapped: POSProduct[] = json.data.map((m: any) => ({
             id: m.id,
             name: m.name,
-            // backend `m.price` is stored in cents (minor units). Convert to major units for the POS UI
             price: centsToDollars(Number(m.price || 0)),
             available: !!m.available,
             type: m.type,
@@ -203,8 +228,8 @@ export default function POSCheckoutShell({ terminalId }: { terminalId?: string }
     }
   }, [departmentSection?.departmentCode])
 
+  // Fetch sales summary
   useEffect(() => {
-    // fetch sales summary for today for the selected department section
     const sectionId = departmentSection?.id ?? ''
     let mounted = true
     const fetchSummary = async () => {
@@ -215,7 +240,6 @@ export default function POSCheckoutShell({ terminalId }: { terminalId?: string }
       setLoadingSummary(true)
       setSummaryError(null)
       try {
-        // primary endpoint
         const res = await fetch(`/api/pos/sales-summary?terminalId=${encodeURIComponent(sectionId)}`, { credentials: 'include' })
         if (res.ok) {
           const json = await res.json()
@@ -250,21 +274,22 @@ export default function POSCheckoutShell({ terminalId }: { terminalId?: string }
     <div className="space-y-4">
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
         <div className="lg:col-span-2 space-y-4">
-          {/* Section Selector */}
-          <div className="space-y-2">
-            <label className="text-sm font-semibold text-gray-700">Select Section</label>
-            <POSSectionSelector 
-              selectedSectionId={sectionIdFromQuery || terminalId}
-              onSectionChange={handleSectionChange}
-            />
-          </div>
-
+          {loadingTerminal && <div className="text-sm text-muted-foreground">Loading terminal...</div>}
           {terminalError && <div className="text-sm text-red-600 p-2 bg-red-50 border border-red-200 rounded">{terminalError}</div>}
           {loadingProducts && <div className="text-sm text-muted-foreground">Loading menu...</div>}
 
+          {departmentSection && (
+            <div className="flex items-center gap-3 p-3 bg-blue-50 border border-blue-200 rounded">
+              <div>
+                <div className="text-sm font-medium text-gray-700">Section</div>
+                <div className="text-lg font-semibold text-gray-900">{departmentSection.name}</div>
+                <div className="text-xs text-gray-500">{departmentSection.departmentName}</div>
+              </div>
+            </div>
+          )}
+
           <POSCategorySelector categories={categories} selectedId={category ?? undefined} onSelect={(id) => setCategory(id)} />
 
-          {/* determine displayed products: use fetched products only (no demo fallbacks) */}
           {(() => {
             const source = products
             let displayed = source || []
@@ -273,9 +298,7 @@ export default function POSCheckoutShell({ terminalId }: { terminalId?: string }
               const t = mapCategoryToType[category]
               if (t) {
                 displayed = source.filter((p: any) => {
-                    // fetched menu items include a `type` field; sample items do not — handle both
                     if (p.type) return p.type === t
-                    // if product missing type, conservatively don't include it
                     return false
                 })
               }
@@ -315,7 +338,6 @@ export default function POSCheckoutShell({ terminalId }: { terminalId?: string }
                     <div className="text-xs text-muted-foreground">transactions</div>
                   </div>
                   <div className="text-sm">
-                    {/* salesSummary.total is stored as cents in backend; convert to dollars for display */}
                     <div className="text-2xl font-bold"><Price amount={salesSummary.total} isMinor={true} /></div>
                     <div className="text-xs text-muted-foreground">gross</div>
                   </div>
