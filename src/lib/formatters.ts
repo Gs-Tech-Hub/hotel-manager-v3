@@ -56,6 +56,21 @@ export function formatLinePrice(unitPrice: any, quantity: number): string {
 }
 
 /**
+ * Format line item price with unit display (unitPrice × quantity)
+ * Includes unit in the calculation line for clarity
+ * Example: 5 bottles × $4.50/bottle = $22.50
+ */
+export function formatLinePriceWithUnit(unitPrice: any, quantity: number, unit: string): string {
+  const unitCents = normalizeToCents(unitPrice);
+  const lineCents = unitCents * quantity;
+  const lineFormatted = formatPriceDisplay(lineCents);
+  const unitPlural = quantity === 1 && unit.endsWith('s') ? unit.slice(0, -1) : unit;
+  const quantityText = `${quantity} ${unitPlural}`;
+  const pricePerUnit = formatPriceDisplay(unitCents);
+  return `${quantityText} × ${pricePerUnit} = ${lineFormatted}`;
+}
+
+/**
  * Format discount amount for display
  */
 export function formatDiscount(cents: number): string {
@@ -114,6 +129,17 @@ export function formatPercentage(value: number): string {
 export function formatQuantityPrice(quantity: number, unitPrice: any): string {
   const formatted = formatPriceDisplay(unitPrice);
   return `${quantity} × ${formatted}`;
+}
+
+/**
+ * Format quantity + unit + price for display
+ * Includes the display unit in the calculation line
+ * Examples: (5, "bottles", 450) → "5 bottles × $4.50", (1, "piece", 500) → "1 piece × $5.00"
+ */
+export function formatQuantityUnitPrice(quantity: number, unit: string, unitPrice: any): string {
+  const priceFormatted = formatPriceDisplay(unitPrice);
+  const quantityText = `${quantity} ${unit}${quantity === 1 || !unit.endsWith('s') ? '' : 's'}`;
+  return `${quantityText} × ${priceFormatted}`;
 }
 
 /**

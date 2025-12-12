@@ -6,8 +6,9 @@ import React, { useEffect, useState } from 'react'
 import { mapDeptCodeToCategory } from '@/lib/utils'
 import Link from 'next/link'
 import { useRouter } from 'next/navigation'
+import Price from '@/components/ui/Price'
 
-type Item = { id: string; name: string; quantity?: number; available?: number }
+type Item = { id: string; name: string; quantity?: number; available?: number; unitPrice?: number }
 
 export default function InventoryTransferPage() {
   const router = useRouter()
@@ -175,9 +176,15 @@ export default function InventoryTransferPage() {
             <input value={query} onChange={(e) => { setQuery(e.target.value); quickSearch(e.target.value) }} className="w-full p-2 border rounded" placeholder="Search products by name or SKU" />
             <div className="bg-white border rounded mt-1 max-h-40 overflow-auto">
               {results.map((r) => (
-                <div key={r.id} className="p-2 flex items-center justify-between">
-                  <div>{r.name}</div>
-                  <div><button className="px-2 py-1 border rounded" onClick={() => addToCart(r)}>Add</button></div>
+                <div key={r.id} className="p-2 flex items-center justify-between hover:bg-gray-50 border-b">
+                  <div className="flex-1">
+                    <div className="font-medium text-sm">{r.name}</div>
+                    <div className="text-xs text-muted-foreground">
+                      Stock: {r.available ?? 0}
+                      {r.unitPrice !== undefined && <span className="ml-2">| Price: <Price amount={r.unitPrice} isMinor={false} /></span>}
+                    </div>
+                  </div>
+                  <button className="px-2 py-1 border rounded text-sm whitespace-nowrap ml-2" onClick={() => addToCart(r)}>Add</button>
                 </div>
               ))}
             </div>
@@ -187,13 +194,16 @@ export default function InventoryTransferPage() {
             <div className="text-sm font-medium mb-2">All items</div>
             <div className="space-y-2 max-h-[60vh] overflow-auto border rounded p-2 bg-white">
               {loading ? <div className="text-sm">Loading...</div> : products.map((p) => (
-                <div key={p.id} className="p-2 flex items-center justify-between border-b">
-                  <div>
+                <div key={p.id} className="p-2 flex items-center justify-between border-b hover:bg-gray-50">
+                  <div className="flex-1">
                     <div className="font-medium">{p.name}</div>
-                    <div className="text-xs text-muted-foreground">Available: {String(p.available ?? p.quantity ?? 0)}</div>
+                    <div className="text-xs text-muted-foreground">
+                      Available: <span className="font-mono bg-blue-50 px-2 py-0.5 rounded">{String(p.available ?? p.quantity ?? 0)}</span>
+                      {p.unitPrice !== undefined && <span className="ml-3">Price: <Price amount={p.unitPrice} isMinor={false} /></span>}
+                    </div>
                   </div>
                   <div>
-                    <button className="px-2 py-1 border rounded" onClick={() => addToCart(p)}>Add</button>
+                    <button className="px-2 py-1 border rounded text-sm hover:bg-gray-100" onClick={() => addToCart(p)}>Add</button>
                   </div>
                 </div>
               ))}

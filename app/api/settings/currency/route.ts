@@ -1,20 +1,26 @@
 import { NextResponse } from 'next/server'
+import prisma from '@/lib/prisma'
+import { getAllCurrencyCodes } from '@/lib/currency'
 
 /**
  * GET /api/settings/currency
- * Get currency settings
+ * Get currency settings from OrganisationInfo
  */
 export async function GET(req: Request) {
   try {
+    const org = await prisma.organisationInfo.findFirst()
+    const baseCurrency = org?.currency || 'USD'
+    
     return NextResponse.json({ 
       success: true, 
       data: {
-        baseCurrency: 'USD',
-        displayCurrency: 'USD',
-        supportedCurrencies: ['USD', 'EUR', 'GBP', 'JPY']
+        baseCurrency,
+        displayCurrency: baseCurrency,
+        supportedCurrencies: getAllCurrencyCodes()
       }
     }, { status: 200 })
   } catch (error) {
+    console.error('Failed to fetch currency settings', error)
     return NextResponse.json({ error: 'Failed to fetch currency settings' }, { status: 500 })
   }
 }

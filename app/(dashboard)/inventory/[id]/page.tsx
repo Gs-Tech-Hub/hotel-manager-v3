@@ -3,6 +3,7 @@
 import { useEffect, useState } from 'react'
 import { useRouter } from 'next/navigation'
 import Price from '@/components/ui/Price'
+import { getDisplayUnit, formatQuantityWithUnit } from '@/src/lib/unit-mapper'
 
 type Movement = {
   id: string
@@ -17,6 +18,7 @@ type ItemDetail = {
   name: string
   sku: string
   category: string
+  itemType?: string
   quantity: number
   unitPrice: number
   movements?: Movement[]
@@ -101,8 +103,8 @@ export default function InventoryDetail(...args: any[]) {
         <div className="border rounded p-4 bg-white">
           <div><strong>SKU:</strong> {item.sku}</div>
           <div><strong>Category:</strong> {item.category}</div>
-          <div><strong>Quantity:</strong> {item.quantity}</div>
-          <div><strong>Unit price:</strong> <Price amount={Number(item.unitPrice)} isMinor={true} /></div>
+          <div><strong>Quantity:</strong> {formatQuantityWithUnit(item.quantity, getDisplayUnit(item.category, item.itemType))}</div>
+          <div><strong>Unit price:</strong> <Price amount={Number(item.unitPrice)} isMinor={false} /></div>
         </div>
 
         <div className="border rounded p-4 bg-white">

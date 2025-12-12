@@ -4,6 +4,7 @@ import Link from 'next/link'
 import { useEffect, useState } from 'react'
 import { useAuth } from '@/components/auth-context'
 import { mapDeptCodeToCategory } from '@/lib/utils'
+import { getDisplayUnit, formatQuantityWithUnit } from '@/src/lib/unit-mapper'
 // avoid next/navigation useSearchParams here to prevent prerender/suspense issues
 import TransferAuditPanel from '@/components/departments/TransferAuditPanel'
 import Price from '@/components/ui/Price'
@@ -16,6 +17,7 @@ type InventoryItem = {
   name: string
   sku: string
   category: string
+  itemType?: string
   quantity: number
   unitPrice: number
 }
@@ -28,7 +30,7 @@ export default function InventoryPage() {
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [showForm, setShowForm] = useState(false)
-  const [formData, setFormData] = useState({ name: '', sku: '', category: '', quantity: '0', unitPrice: '0' })
+  const [formData, setFormData] = useState({ name: '', sku: '', category: '', quantity: '0', unitPrice: '0', unit: 'pieces' })
   const [formLoading, setFormLoading] = useState(false)
   const [formError, setFormError] = useState<string | null>(null)
   const [categories, setCategories] = useState<string[]>([])
@@ -107,7 +109,7 @@ export default function InventoryPage() {
         const errMsg = json?.error || json?.message || `Failed to create item (${res.status})`
         throw new Error(errMsg)
       }
-      setFormData({ name: '', sku: '', category: '', quantity: '0', unitPrice: '0' })
+      setFormData({ name: '', sku: '', category: '', quantity: '0', unitPrice: '0', unit: 'pieces' })
       setShowForm(false)
       await fetchItems(selectedDept)
     } catch (err: any) {
@@ -265,13 +267,42 @@ export default function InventoryPage() {
               onChange={(e) => setFormData({ ...formData, quantity: e.target.value })}
               className="border rounded px-3 py-2"
             />
-            <input
-              type="number"
-              placeholder="Unit Price (minor units)"
-              value={formData.unitPrice}
-              onChange={(e) => setFormData({ ...formData, unitPrice: e.target.value })}
-              className="border rounded px-3 py-2"
-            />
+            <div className="flex items-center gap-2">
+              <div className="flex-1">
+                <input
+                  type="number"
+                  placeholder="0.00"
+                  value={formData.unitPrice}
+                  onChange={(e) => setFormData({ ...formData, unitPrice: e.target.value })}
+                  className="w-full border rounded px-3 py-2"
+                  step="0.01"
+                  min="0"
+                />
+                <div className="text-xs text-muted-foreground mt-1">Unit Price (USD) — e.g., 3000.00, 19.99, 0.50</div>
+              </div>
+              <div>
+                <select
+                  value={formData.unit}
+                  onChange={(e) => setFormData({ ...formData, unit: e.target.value })}
+                  className="border rounded px-3 py-2 bg-white"
+                >
+                  <option value="pieces">pieces</option>
+                  <option value="bottles">bottles</option>
+                  <option value="boxes">boxes</option>
+                  <option value="liters">liters</option>
+                  <option value="kg">kg</option>
+                  <option value="grams">grams</option>
+                  <option value="rolls">rolls</option>
+                  <option value="servings">servings</option>
+                  <option value="units">units</option>
+                </select>
+              </div>
+            </div>
+            {formData.unitPrice && (
+              <div className="text-sm text-green-700 bg-green-50 px-3 py-2 rounded border border-green-200">
+                Price: ${Number(formData.unitPrice).toFixed(2)} per {formData.unit}
+              </div>
+            )}
           </div>
           <div className="flex gap-2">
             <button
@@ -322,12 +353,20 @@ export default function InventoryPage() {
           </thead>
           <tbody>
             {items.map((it) => (
-              <tr key={it.id} className="border-t">
-                <td className="p-2">{it.name}</td>
+              <tr key={it.id} className="border-t hover:bg-gray-50">
+                <td className="p-2">
+                  <div className="font-medium">{it.name}</div>
+                </td>
                 <td className="p-2 text-xs text-muted-foreground">{it.sku}</td>
-                <td className="p-2">{it.category}</td>
-                <td className="p-2">{it.quantity}</td>
-                <td className="p-2"><Price amount={Number(it.unitPrice)} isMinor={true} /></td>
+                <td className="p-2 text-sm">{it.category}</td>
+                <td className="p-2 text-right">
+                  <span className="inline-block bg-blue-50 px-3 py-1 rounded font-mono text-sm">
+                    {formatQuantityWithUnit(it.quantity, getDisplayUnit(it.category, it.itemType))}
+                  </span>
+                </td>
+                <td className="p-2 font-medium">
+                  <Price amount={Number(it.unitPrice)} isMinor={false} />
+                </td>
                 <td className="p-2 space-x-2">
                   <Link href={`/inventory/${encodeURIComponent(it.id)}`} className="px-2 py-1 bg-sky-600 text-white rounded text-sm inline-block">Open</Link>
                   {hasPermission('inventory_items.delete') && (
