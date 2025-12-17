@@ -21,7 +21,26 @@ export function POSReceipt({ receipt, onClose }: { receipt: any; onClose?: () =>
         <div ref={ref} className="font-mono text-sm">
           <div className="text-center font-bold">Paradise Hotel</div>
           <div className="text-center">Receipt</div>
+          
+          {/* Deferred Order Badge */}
+          {receipt?.isDeferred && (
+            <div className="mt-2 p-2 bg-amber-100 border border-amber-400 rounded text-center font-bold text-amber-900">
+              ⏰ DEFERRED ORDER
+            </div>
+          )}
+          
           <div className="mt-2">Order#: {receipt?.orderNumber ?? 'N/A'}</div>
+          
+          {/* Status for deferred orders */}
+          {receipt?.isDeferred && (
+            <div className="mt-2 p-2 bg-blue-50 rounded text-xs">
+              <div className="font-semibold">Status: PENDING PAYMENT</div>
+              <div className="text-gray-700 mt-1">
+                This order will be settled later. Payment not yet received.
+              </div>
+            </div>
+          )}
+          
           <div className="mt-2">
             {(receipt?.items ?? []).map((it: any) => (
               <div key={it.lineId} className="flex justify-between">
@@ -30,7 +49,26 @@ export function POSReceipt({ receipt, onClose }: { receipt: any; onClose?: () =>
               </div>
             ))}
           </div>
-          <div className="border-t mt-2 pt-2 flex justify-between font-bold"> <span>Total</span> <span><Price amount={receipt?.total ?? 0} isMinor={true} /></span> </div>
+          <div className="border-t mt-2 pt-2 flex justify-between font-bold">
+            <span>Total</span>
+            <span><Price amount={receipt?.total ?? 0} isMinor={true} /></span>
+          </div>
+          
+          {/* Payment status section */}
+          {receipt?.isDeferred ? (
+            <div className="border-t mt-2 pt-2 text-center text-xs">
+              <div className="font-semibold text-amber-700">⚠️ PAYMENT PENDING</div>
+              <div className="mt-1 text-gray-600">
+                To settle this order, visit the Open Orders Dashboard
+              </div>
+              <div className="mt-2 font-semibold">Order Status: PENDING</div>
+            </div>
+          ) : (
+            <div className="border-t mt-2 pt-2 flex justify-between text-xs">
+              <span>Payment Status:</span>
+              <span className="font-semibold text-green-600">✓ PAID</span>
+            </div>
+          )}
         </div>
 
         <div className="flex gap-2 mt-4">

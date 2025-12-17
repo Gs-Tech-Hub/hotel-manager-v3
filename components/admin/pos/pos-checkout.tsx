@@ -47,18 +47,50 @@ export default function POSCheckoutShell({ terminalId }: { terminalId?: string }
 
   const handleAdd = (p: POSProduct) => {
     const existing = cart.find((c) => c.productId === p.id)
+    const totalQty = (existing?.quantity ?? 0) + 1
+    const availableQty = p.quantity ?? 0
+    
+    // Client-side stock validation
+    if (availableQty <= 0) {
+      setTerminalError(`"${p.name}" is out of stock`)
+      return
+    }
+    
+    if (totalQty > availableQty) {
+      setTerminalError(`Only ${availableQty} of "${p.name}" available. Cannot add more.`)
+      return
+    }
+    
     if (existing) {
       setCart((s) => s.map((l) => (l.productId === p.id ? { ...l, quantity: l.quantity + 1 } : l)))
       return
     }
     setCart((s) => [
       ...s,
-      { lineId: Math.random().toString(36).slice(2), productId: p.id, productName: p.name, quantity: 1, unitPrice: p.price },
+      { lineId: Math.random().toString(36).slice(2), productId: p.id, productName: p.name, quantity: 1, unitPrice: p.price, type: p.type },
     ])
   }
 
   const handleRemove = (lineId: string) => setCart((s) => s.filter((l) => l.lineId !== lineId))
-  const handleQty = (lineId: string, qty: number) => setCart((s) => s.map((l) => (l.lineId === lineId ? { ...l, quantity: Math.max(1, qty) } : l)))
+  
+  const handleQty = (lineId: string, qty: number) => {
+    const cartItem = cart.find((c) => c.lineId === lineId)
+    if (!cartItem) return
+    
+    const product = products.find((p) => p.id === cartItem.productId)
+    if (!product) return
+    
+    const newQty = Math.max(1, qty)
+    const availableQty = product.quantity ?? 0
+    
+    // Validate against available stock
+    if (newQty > availableQty) {
+      setTerminalError(`Only ${availableQty} of "${product.name}" available`)
+      return
+    }
+    
+    setCart((s) => s.map((l) => (l.lineId === lineId ? { ...l, quantity: newQty } : l)))
+  }
 
   // Calculate prices in cents for consistency
   const subtotal = cart.reduce((s, c) => {
@@ -94,14 +126,32 @@ export default function POSCheckoutShell({ terminalId }: { terminalId?: string }
         }))
         console.log('[POS] built items:', items)
 
+        // Determine if this is a deferred (pay later) order
+        const isDeferred = payment.isDeferred === true || payment.method === 'deferred'
+        
+        // Format payment for API
+        const apiPayment: any = {
+          method: payment.method,
+          isDeferred: isDeferred,
+        }
+        
+        // Add amount and method only for immediate payment
+        if (!isDeferred) {
+          apiPayment.amount = centsToDollars(Math.round(payment.amount * 100))
+          apiPayment.paymentMethod = payment.method
+        }
+
         const payload: any = {
           items,
           discounts: appliedDiscountCodes,
           notes: `POS sale - ${departmentSection.name}`,
-          payment,
+          payment: apiPayment,
         }
 
+        const orderTypeLabel = isDeferred ? 'deferred' : 'immediate'
+        console.log(`[POS] Creating ${orderTypeLabel} order`)
         console.log('[POS] sending payload to /api/orders:', payload)
+        
         const res = await fetch('/api/orders', {
           method: 'POST',
           credentials: 'include',
@@ -121,8 +171,23 @@ export default function POSCheckoutShell({ terminalId }: { terminalId?: string }
 
         if (res.ok && json && json.success && json.data) {
           console.log('[POS] order created successfully:', json.data)
-          setReceipt(json.data)
+          
+          // For deferred orders, show special receipt indicating payment pending
+          if (isDeferred) {
+            const receipt = {
+              ...json.data,
+              isDeferred: true,
+              orderStatus: 'pending',
+              paymentStatus: 'pending_settlement',
+              orderTypeDisplay: 'DEFERRED ORDER - PAYMENT PENDING',
+            }
+            setReceipt(receipt)
+          } else {
+            setReceipt(json.data)
+          }
+          
           setCart([])
+          setAppliedDiscountCodes([])
         } else {
           const msg = (json && json.error && json.error.message) ? json.error.message : `Order API error (${res.status})`
           console.log('[POS] api failure, msg:', msg, 'status:', res.status)
@@ -205,9 +270,10 @@ export default function POSCheckoutShell({ terminalId }: { terminalId?: string }
           const mapped: POSProduct[] = json.data.map((m: any) => ({
             id: m.id,
             name: m.name,
-            price: centsToDollars(Number(m.price || 0)),
+            price: Number(m.price || 0),  // price is already in dollars from getDepartmentMenu
             available: !!m.available,
             type: m.type,
+            quantity: Number(m.quantity || 0) || (m.available ? 1 : 0),  // Real-time stock quantity
           }))
           setProducts(mapped)
         } else {

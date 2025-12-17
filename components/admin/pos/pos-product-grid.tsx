@@ -8,6 +8,8 @@ export interface POSProduct {
   name: string
   price: number
   available?: boolean
+  quantity?: number  // Stock quantity for validation
+  type?: string      // Product type (food, drink, etc.)
 }
 
 export function POSProductGrid({ products, onAdd }: { products: POSProduct[]; onAdd: (p: POSProduct) => void }) {

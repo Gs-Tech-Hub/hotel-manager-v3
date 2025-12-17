@@ -137,19 +137,28 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    // If client provided a payment object in the payload, record payment now
+    // Handle payment processing
+    // If client provided a payment object in the payload, process it
     if (order && !(order as any).error && body.payment) {
       try {
         const payment = body.payment as any;
-        // payment should contain amount, paymentTypeId (or paymentMethod), transactionReference
-        const paymentPayload = {
-          amount: payment.amount,
-          paymentMethod: payment.paymentMethod || payment.paymentMethodId || 'unknown',
-          paymentTypeId: payment.paymentTypeId,
-          transactionReference: payment.transactionReference,
-        };
-        // record payment (orderService.recordPayment will validate and move order to processing)
-        await orderService.recordPayment((order as any).id, paymentPayload, userWithRoles);
+        
+        // Check if this is a deferred payment (pay later)
+        if (payment.isDeferred || payment.method === 'deferred') {
+          // Deferred order - leave status as 'pending', no payment recorded
+          console.log(`Order ${(order as any).id} created with deferred payment status`);
+        } else {
+          // Immediate payment - record payment and move to processing
+          // payment should contain amount, paymentTypeId (or paymentMethod), transactionReference
+          const paymentPayload = {
+            amount: payment.amount,
+            paymentMethod: payment.paymentMethod || payment.method || payment.paymentMethodId || 'unknown',
+            paymentTypeId: payment.paymentTypeId,
+            transactionReference: payment.transactionReference,
+          };
+          // record payment (orderService.recordPayment will validate and move order to processing)
+          await orderService.recordPayment((order as any).id, paymentPayload, userWithRoles);
+        }
       } catch (err) {
         console.error('Failed to record payment during order creation:', err);
         // continue — order was created, but payment recording failed; client can retry via payments endpoint

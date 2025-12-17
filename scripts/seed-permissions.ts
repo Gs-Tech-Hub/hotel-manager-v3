@@ -44,6 +44,11 @@ async function seedPermissions() {
         { action: "orders.delete", subject: "orders", description: "Delete orders" },
         { action: "orders.cancel", subject: "orders", description: "Cancel orders" },
         
+        // Payments
+        { action: "payments.read", subject: "payments", description: "View payments" },
+        { action: "payments.process", subject: "payments", description: "Process payments" },
+        { action: "payments.refund", subject: "payments", description: "Process refunds" },
+        
         // Inventory
         { action: "inventory.read", subject: "inventory", description: "View inventory" },
         { action: "inventory.create", subject: "inventory", description: "Create inventory items" },
@@ -76,6 +81,11 @@ async function seedPermissions() {
         { action: "orders.create", subject: "orders", description: "Create orders" },
         { action: "orders.update", subject: "orders", description: "Update orders" },
         
+        // Payments (process and refund)
+        { action: "payments.read", subject: "payments", description: "View payments" },
+        { action: "payments.process", subject: "payments", description: "Process payments" },
+        { action: "payments.refund", subject: "payments", description: "Process refunds" },
+        
         // Inventory (read + manage within department)
         { action: "inventory.read", subject: "inventory", description: "View inventory" },
         { action: "inventory.update", subject: "inventory", description: "Update inventory" },
@@ -103,6 +113,40 @@ async function seedPermissions() {
         
         // Bookings (read only)
         { action: "bookings.read", subject: "bookings", description: "View bookings" },
+        
+        // Departments (read only)
+        { action: "departments.read", subject: "departments", description: "View departments" },
+        
+        // Reports (read only)
+        { action: "reports.read", subject: "reports", description: "View reports" },
+      ],
+      
+      cashier: [
+        // Orders (full CRUD for checkout operations)
+        { action: "orders.read", subject: "orders", description: "View orders" },
+        { action: "orders.create", subject: "orders", description: "Create orders" },
+        { action: "orders.update", subject: "orders", description: "Update orders" },
+        
+        // Inventory (read only for menu display)
+        { action: "inventory.read", subject: "inventory", description: "View inventory" },
+        
+        // Payments (process payments and refunds)
+        { action: "payments.read", subject: "payments", description: "View payments" },
+        { action: "payments.process", subject: "payments", description: "Process payments" },
+        { action: "payments.refund", subject: "payments", description: "Process refunds" },
+        
+        // Departments (read only)
+        { action: "departments.read", subject: "departments", description: "View departments" },
+      ],
+      
+      staff: [
+        // Orders (read + create for restaurant/bar operations)
+        { action: "orders.read", subject: "orders", description: "View orders" },
+        { action: "orders.create", subject: "orders", description: "Create orders" },
+        { action: "orders.update", subject: "orders", description: "Update orders" },
+        
+        // Inventory (read only for menu display)
+        { action: "inventory.read", subject: "inventory", description: "View inventory" },
         
         // Departments (read only)
         { action: "departments.read", subject: "departments", description: "View departments" },
@@ -211,6 +255,8 @@ async function seedPermissions() {
     console.log(`  - Admin role: ${permissionSets.admin.length} permissions`);
     console.log(`  - Manager role: ${permissionSets.manager.length} permissions`);
     console.log(`  - Employee role: ${permissionSets.employee.length} permissions`);
+    console.log(`  - Cashier role: ${permissionSets.cashier.length} permissions`);
+    console.log(`  - Staff role: ${permissionSets.staff.length} permissions`);
   } catch (error) {
     console.error("❌ Error seeding permissions:", error);
     throw error;

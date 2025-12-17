@@ -25,6 +25,7 @@ import {
 } from '@/lib/price';
 import { UserContext, requireRoleOrOwner, requireRole } from '@/lib/authorization';
 import { departmentService } from './department.service';
+import { StockService } from './stock.service';
 import { errorResponse, ErrorCodes } from '@/lib/api-response';
 
 export class OrderService extends BaseService<IOrderHeader> {
@@ -61,9 +62,18 @@ export class OrderService extends BaseService<IOrderHeader> {
       // Generate unique order number
       const orderNumber = `ORD-${Date.now()}-${Math.random().toString(36).substr(2, 9).toUpperCase()}`;
 
+      // Pre-fetch all departments to resolve IDs
+      const departmentCodes = Array.from(new Set(data.items.map(i => i.departmentCode)));
+      const deptRecords = await prisma.department.findMany({ where: { code: { in: departmentCodes } } });
+      const deptMap: Record<string, string> = {};
+      for (const d of deptRecords) {
+        deptMap[d.code] = (d as any).id;
+      }
+
       // Calculate subtotal and validate inventory (all prices normalized to cents)
       let subtotal = 0;
       const departments = new Set<string>();
+      const stockService = new StockService();
 
       for (const item of data.items) {
         // Normalize unit price to cents (integer)
@@ -75,11 +85,24 @@ export class OrderService extends BaseService<IOrderHeader> {
         subtotal += item.quantity * normalizedUnit;
         departments.add(item.departmentCode);
 
-        // Check inventory availability (for inventory-based departments)
-        if (['RESTAURANT', 'BAR_CLUB'].includes(item.departmentCode)) {
-          const inventory = await prisma.inventoryItem.findUnique({ where: { id: item.productId } });
-          if (!inventory || inventory.quantity < item.quantity) {
-            return errorResponse(ErrorCodes.VALIDATION_ERROR, `Insufficient inventory for ${item.productName}`);
+        // Check inventory availability using StockService (unified source of truth)
+        const deptId = deptMap[item.departmentCode];
+        if (deptId && ['RESTAURANT', 'BAR_CLUB', 'food', 'drink'].some(t => 
+          item.departmentCode.toUpperCase().includes(t.toUpperCase()) || 
+          item.productType === t)) {
+          
+          const availability = await stockService.checkAvailability(
+            item.productType || 'inventoryItem',
+            item.productId,
+            deptId,
+            item.quantity
+          );
+          
+          if (!availability.hasStock) {
+            return errorResponse(
+              ErrorCodes.VALIDATION_ERROR, 
+              `Insufficient stock for ${item.productName}: have ${availability.available}, need ${item.quantity}`
+            );
           }
         }
       }
@@ -101,15 +124,8 @@ export class OrderService extends BaseService<IOrderHeader> {
         },
       });
 
-      // Pre-fetch department ids for routing
+      // Extract department codes for later routing
       const deptCodes = Array.from(departments);
-      const deptMap: Record<string, string> = {};
-      if (deptCodes.length) {
-        const deptRecords = await prisma.department.findMany({ where: { code: { in: deptCodes } } });
-        for (const d of deptRecords) {
-          deptMap[d.code] = (d as any).id;
-        }
-      }
 
       // Helper: chunk array into batches
       const chunk = (arr: any[], size = 50) => {
