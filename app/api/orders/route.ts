@@ -149,15 +149,18 @@ export async function POST(request: NextRequest) {
           console.log(`Order ${(order as any).id} created with deferred payment status`);
         } else {
           // Immediate payment - record payment and move to processing
-          // payment should contain amount, paymentTypeId (or paymentMethod), transactionReference
-          const paymentPayload = {
-            amount: payment.amount,
-            paymentMethod: payment.paymentMethod || payment.method || payment.paymentMethodId || 'unknown',
-            paymentTypeId: payment.paymentTypeId,
-            transactionReference: payment.transactionReference,
-          };
-          // record payment (orderService.recordPayment will validate and move order to processing)
-          await orderService.recordPayment((order as any).id, paymentPayload, userWithRoles);
+          // payment.amount should be in cents
+          if (payment.amount && payment.amount > 0) {
+            const paymentPayload = {
+              amount: payment.amount, // Already in cents from POS checkout
+              paymentMethod: payment.paymentMethod || payment.method || payment.paymentMethodId || 'unknown',
+              paymentTypeId: payment.paymentTypeId,
+              transactionReference: payment.transactionReference,
+            };
+            // record payment (orderService.recordPayment will validate and move order to processing)
+            console.log(`[Order API] Recording payment for order ${(order as any).id}:`, paymentPayload);
+            await orderService.recordPayment((order as any).id, paymentPayload, userWithRoles);
+          }
         }
       } catch (err) {
         console.error('Failed to record payment during order creation:', err);

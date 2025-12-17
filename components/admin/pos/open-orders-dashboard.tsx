@@ -52,6 +52,12 @@ export function OpenOrdersDashboard() {
   const [paymentRef, setPaymentRef] = useState('')
   const [paymentNote, setPaymentNote] = useState('')
   const [settlingOrderId, setSettlingOrderId] = useState<string | null>(null)
+  const [showAddItems, setShowAddItems] = useState(false)
+  const [addingItemsToOrderId, setAddingItemsToOrderId] = useState<string | null>(null)
+  const [newItemProductId, setNewItemProductId] = useState('')
+  const [newItemProductName, setNewItemProductName] = useState('')
+  const [newItemQuantity, setNewItemQuantity] = useState(1)
+  const [newItemUnitPrice, setNewItemUnitPrice] = useState(0)
 
   // Load open orders
   useEffect(() => {
@@ -151,6 +157,60 @@ export function OpenOrdersDashboard() {
       setError(err instanceof Error ? err.message : 'Failed to record payment')
     } finally {
       setSettlingOrderId(null)
+    }
+  }
+
+  const handleAddItem = async () => {
+    if (!selectedOrder || !newItemProductId || !newItemProductName || newItemQuantity <= 0 || newItemUnitPrice <= 0) {
+      setError('Please fill in all item fields')
+      return
+    }
+
+    try {
+      setAddingItemsToOrderId(selectedOrder.id)
+      const res = await fetch(`/api/orders/${selectedOrder.id}/items`, {
+        method: 'POST',
+        credentials: 'include',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          productId: newItemProductId,
+          productType: 'inventory',
+          productName: newItemProductName,
+          departmentCode: selectedOrder.departmentCodes[0], // Use first department
+          quantity: newItemQuantity,
+          unitPrice: newItemUnitPrice,
+        }),
+      })
+
+      if (!res.ok) {
+        const json = await res.json()
+        throw new Error(json.error?.message || 'Failed to add item')
+      }
+
+      // Refresh orders list
+      const freshRes = await fetch('/api/orders/open?limit=100', {
+        credentials: 'include',
+      })
+      const freshJson = await freshRes.json()
+      if (freshJson.success && freshJson.data?.orders) {
+        setOrders(freshJson.data.orders)
+        // Update selected order with fresh data
+        const updatedOrder = freshJson.data.orders.find((o: OpenOrder) => o.id === selectedOrder.id)
+        if (updatedOrder) setSelectedOrder(updatedOrder)
+      }
+
+      // Reset form
+      setShowAddItems(false)
+      setNewItemProductId('')
+      setNewItemProductName('')
+      setNewItemQuantity(1)
+      setNewItemUnitPrice(0)
+      setError(null)
+    } catch (err) {
+      console.error('Failed to add item:', err)
+      setError(err instanceof Error ? err.message : 'Failed to add item')
+    } finally {
+      setAddingItemsToOrderId(null)
     }
   }
 
@@ -272,21 +332,36 @@ export function OpenOrdersDashboard() {
                   </td>
                   <td className="px-4 py-3 text-sm text-gray-600">{order.createdAtFormatted}</td>
                   <td className="px-4 py-3 text-sm">
-                    <button
-                      onClick={() => {
-                        setSelectedOrder(order)
-                        setPaymentAmount(order.amountDue)
-                        setShowPaymentForm(true)
-                      }}
-                      disabled={order.amountDue <= 0}
-                      className={`px-3 py-1 rounded text-sm transition ${
-                        order.amountDue <= 0
-                          ? 'bg-gray-100 text-gray-400 cursor-not-allowed'
-                          : 'bg-blue-600 text-white hover:bg-blue-700'
-                      }`}
-                    >
-                      {order.amountDue <= 0 ? 'Paid' : 'Settle'}
-                    </button>
+                    <div className="flex gap-1">
+                      <button
+                        onClick={() => {
+                          setSelectedOrder(order)
+                          setShowAddItems(true)
+                        }}
+                        title="Add more items to this order"
+                        className="px-2 py-1 bg-sky-500 text-white rounded text-xs hover:bg-sky-600 transition"
+                      >
+                        +Item
+                      </button>
+                      <button
+                        onClick={() => {
+                          setSelectedOrder(order)
+                          setPaymentAmount(order.amountDue)
+                          setShowPaymentForm(true)
+                        }}
+                        disabled={order.amountDue <= 0}
+                        className={`px-3 py-1 rounded text-sm transition ${
+                          order.amountDue <= 0
+                            ? 'bg-gray-100 text-gray-400 cursor-not-allowed'
+                            : 'bg-blue-600 text-white hover:bg-blue-700'
+                        }`}
+                      >
+                        {order.amountDue <= 0 ? '✓ Paid' : 'Pay'}
+                      </button>
+                    </div>
+                    {order.amountDue <= 0 && (
+                      <div className="text-xs text-green-600 mt-1 font-semibold">Payment Complete</div>
+                    )}
                   </td>
                 </tr>
               ))}
@@ -397,6 +472,80 @@ export function OpenOrdersDashboard() {
           </div>
         </div>
       )}
+
+      {/* Add Items Modal */}
+      {showAddItems && selectedOrder && (
+        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
+          <div className="bg-white rounded-lg shadow-xl max-w-md w-full p-6">
+            <h2 className="text-xl font-bold mb-4">Add Item to Order</h2>
+
+            <div className="bg-blue-50 rounded p-4 mb-4">
+              <div className="text-sm text-gray-600">Order Number</div>
+              <div className="font-mono font-semibold">{selectedOrder.orderNumber}</div>
+            </div>
+
+            <div className="mb-4">
+              <label className="block text-sm font-semibold mb-2">Product Name *</label>
+              <input
+                type="text"
+                value={newItemProductName}
+                onChange={(e) => setNewItemProductName(e.target.value)}
+                placeholder="e.g., Coffee"
+                className="w-full border rounded px-3 py-2"
+              />
+            </div>
+
+            <div className="mb-4">
+              <label className="block text-sm font-semibold mb-2">Quantity *</label>
+              <input
+                type="number"
+                value={newItemQuantity}
+                onChange={(e) => setNewItemQuantity(Math.max(1, parseInt(e.target.value) || 1))}
+                min="1"
+                className="w-full border rounded px-3 py-2"
+              />
+            </div>
+
+            <div className="mb-4">
+              <label className="block text-sm font-semibold mb-2">Unit Price (in dollars) *</label>
+              <div className="flex items-center gap-2">
+                <span className="text-xl">$</span>
+                <input
+                  type="number"
+                  value={newItemUnitPrice}
+                  onChange={(e) => setNewItemUnitPrice(Math.max(0, parseFloat(e.target.value) || 0))}
+                  step="0.01"
+                  min="0"
+                  className="flex-1 border rounded px-3 py-2"
+                />
+              </div>
+            </div>
+
+            <div className="flex gap-2">
+              <button
+                onClick={() => {
+                  setShowAddItems(false)
+                  setNewItemProductName('')
+                  setNewItemQuantity(1)
+                  setNewItemUnitPrice(0)
+                  setError(null)
+                }}
+                className="flex-1 px-4 py-2 border rounded hover:bg-gray-50"
+              >
+                Cancel
+              </button>
+              <button
+                onClick={handleAddItem}
+                disabled={addingItemsToOrderId === selectedOrder.id}
+                className="flex-1 px-4 py-2 bg-sky-600 text-white rounded hover:bg-sky-700 disabled:opacity-60"
+              >
+                {addingItemsToOrderId === selectedOrder.id ? 'Adding...' : 'Add Item'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   )
 }
+

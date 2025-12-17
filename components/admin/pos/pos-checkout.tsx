@@ -137,8 +137,10 @@ export default function POSCheckoutShell({ terminalId }: { terminalId?: string }
         
         // Add amount and method only for immediate payment
         if (!isDeferred) {
-          // payment.amount is already in dollars from the input field
-          apiPayment.amount = payment.amount
+          // payment.amount is now in cents (from pos-payment.tsx)
+          // payment.isMinor tells us if it's already in minor units
+          const amountCents = payment.isMinor ? payment.amount : normalizeToCents(payment.amount)
+          apiPayment.amount = amountCents
           apiPayment.paymentMethod = payment.method
         }
 
@@ -454,7 +456,7 @@ export default function POSCheckoutShell({ terminalId }: { terminalId?: string }
         </div>
       </div>
 
-      {showPayment && <POSPayment total={centsToDollars(total)} onComplete={handlePaymentComplete} onCancel={() => setShowPayment(false)} />}
+      {showPayment && <POSPayment total={total} onComplete={handlePaymentComplete} onCancel={() => setShowPayment(false)} />}
       {receipt && <POSReceipt receipt={receipt} onClose={() => setReceipt(null)} />}
     </div>
   )
