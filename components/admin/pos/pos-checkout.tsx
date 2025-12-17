@@ -137,7 +137,8 @@ export default function POSCheckoutShell({ terminalId }: { terminalId?: string }
         
         // Add amount and method only for immediate payment
         if (!isDeferred) {
-          apiPayment.amount = centsToDollars(Math.round(payment.amount * 100))
+          // payment.amount is already in dollars from the input field
+          apiPayment.amount = payment.amount
           apiPayment.paymentMethod = payment.method
         }
 

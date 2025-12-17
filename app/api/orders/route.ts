@@ -126,7 +126,7 @@ export async function POST(request: NextRequest) {
         discounts,
         notes,
       },
-      userWithRoles
+      userWithRoles // Pass user context with userId for audit trail
     );
 
     // Check if result is error response

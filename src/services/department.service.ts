@@ -530,11 +530,12 @@ export class DepartmentService extends BaseService<IDepartment> {
 
   /**
    * Get department menu derived from inventory items
-   * Returns menu-like items { id, inventoryId, name, price, type, available }
+   * Returns menu-like items { id, inventoryId, name, price, type, available, quantity }
+   * Uses inventory quantities directly (global stock)
    */
   async getDepartmentMenu(departmentCode: string) {
     try {
-      // Resolve department row if possible to determine its logical type
+      // Resolve department to get its logical type
       let category: string | null = null
       try {
         const dept = await (prisma as any).department.findUnique({ where: { code: departmentCode } })
@@ -562,15 +563,20 @@ export class DepartmentService extends BaseService<IDepartment> {
       // Use inventory service to fetch items by category
       const items = await inventoryItemService.getByCategory(category)
 
-      // Map inventory items to menu shape
-      const menu = items.map((it: any) => ({
-        id: `menu-${it.id}`,
-        inventoryId: it.id,
-        name: it.name,
-        price: typeof it.unitPrice === 'object' && typeof it.unitPrice.toNumber === 'function' ? it.unitPrice.toNumber() : Number(it.unitPrice),
-        type: category,
-        available: it.quantity > 0,
-      }));
+      // Map inventory items to menu shape with quantities
+      const menu = items.map((it: any) => {
+        // Use the global inventory quantity
+        const quantity = Number(it.quantity || 0)
+
+        return {
+          id: it.id, // Use the actual inventory item ID (no prefix)
+          name: it.name,
+          price: typeof it.unitPrice === 'object' && typeof it.unitPrice.toNumber === 'function' ? it.unitPrice.toNumber() : Number(it.unitPrice),
+          type: category,
+          available: quantity > 0,
+          quantity: quantity,
+        }
+      })
 
       return menu;
     } catch (error) {

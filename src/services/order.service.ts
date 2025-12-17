@@ -121,6 +121,7 @@ export class OrderService extends BaseService<IOrderHeader> {
           total: subtotal,
           status: 'pending',
           notes: data.notes,
+          createdBy: _ctx?.userId, // Preserve audit trail of who created the order
         },
       });
 

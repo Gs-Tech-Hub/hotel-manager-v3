@@ -897,6 +897,7 @@ model OrderHeader {
   total         Int @default(0)
 
   notes String?
+  createdBy String? // User ID who created this order (for audit trail)
 
   lines        OrderLine[]
   departments  OrderDepartment[]
@@ -910,6 +911,7 @@ model OrderHeader {
   updatedAt DateTime @updatedAt
 
   @@index([customerId])
+  @@index([createdBy])
   @@index([status])
   @@index([createdAt])
   @@map("order_headers")
