@@ -4,12 +4,14 @@ import { useState, useEffect, useMemo } from "react";
 import Link from "next/link";
 import { DataTable, TableSearchBar, TableFilterBar, Column } from "@/components/admin/tables/data-table";
 import { Badge } from "@/components/ui/badge";
-import { formatCents, normalizeToCents, centsToDollars } from '@/lib/price';
+import { formatCents, normalizeToCents, centsToDollars, calculateTax, calculateTotal } from '@/lib/price';
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
 import { Loader2, Plus } from "lucide-react";
+import { POSPayment } from "@/components/admin/pos/pos-payment";
+import Price from '@/components/ui/Price';
 
 type Order = {
     id: string;
@@ -18,9 +20,9 @@ type Order = {
     departments?: { department?: { name?: string; code?: string } }[] | null;
     status: string;
     createdAt: string;
-    total?: number;
-    totalPaid?: number;
-    amountDue?: number;
+    total?: number; // in cents
+    totalPaid?: number; // in cents
+    amountDue?: number; // calculated
     fulfillments?: any[];
 };
 
@@ -35,19 +37,20 @@ export default function PosOrdersPage() {
     const [page, setPage] = useState(1);
     const [total, setTotal] = useState(0);
     
-    // Payment dialog state
-    const [showPaymentDialog, setShowPaymentDialog] = useState(false);
-    const [selectedOrderForPayment, setSelectedOrderForPayment] = useState<Order | null>(null);
-    const [paymentAmount, setPaymentAmount] = useState("");
-    const [isSubmittingPayment, setIsSubmittingPayment] = useState(false);
+    // Sorting state
+    const [sortField, setSortField] = useState("createdAt");
+    const [sortDirection, setSortDirection] = useState<"asc" | "desc">("desc");
     
-    // Add items dialog state
-    const [showAddItemsDialog, setShowAddItemsDialog] = useState(false);
+    // Payment state - using POSPayment component
+    const [showPaymentModal, setShowPaymentModal] = useState(false);
+    const [selectedOrderForPayment, setSelectedOrderForPayment] = useState<Order | null>(null);
+    const [paymentTotalCents, setPaymentTotalCents] = useState(0);
+    
+    // Add items state - cart-based
+    const [showAddItemsModal, setShowAddItemsModal] = useState(false);
     const [selectedOrderForItems, setSelectedOrderForItems] = useState<Order | null>(null);
-    const [newItemProductName, setNewItemProductName] = useState("");
-    const [newItemQuantity, setNewItemQuantity] = useState(1);
-    const [newItemUnitPrice, setNewItemUnitPrice] = useState("");
-    const [isSubmittingItem, setIsSubmittingItem] = useState(false);
+    const [newItemCart, setNewItemCart] = useState<Array<{lineId: string; productName: string; quantity: number; unitPrice: number}>>([]);
+    const [isSubmittingItems, setIsSubmittingItems] = useState(false);
     
     const limit = 10;
 
@@ -61,10 +64,28 @@ export default function PosOrdersPage() {
                 const status = statusFilter || "pending";
                 params.append("status", status);
                 if (departmentFilter) params.append("departmentCode", departmentFilter);
+                // Add sorting parameters
+                params.append("sortBy", sortField);
+                params.append("sortOrder", sortDirection);
+                
                 const res = await fetch(`/api/orders?${params.toString()}`);
                 const data = await res.json();
                 if (data.success) {
-                    setOrders(data.data.items || []);
+                    // Calculate amountDue for each order (total - totalPaid, all in cents)
+                    const processedOrders = (data.data.items || []).map((order: any) => {
+                        // Calculate totalPaid from payments array
+                        const totalPaid = (order.payments || []).reduce((sum: number, p: any) => {
+                            return sum + (p.amount || 0);
+                        }, 0);
+                        
+                        return {
+                            ...order,
+                            total: order.total ?? 0, // in cents
+                            totalPaid, // calculated in cents
+                            amountDue: (order.total ?? 0) - totalPaid, // in cents
+                        };
+                    });
+                    setOrders(processedOrders);
                     setTotal(data.data.meta?.total || 0);
                 }
             } catch (e) {
@@ -74,21 +95,22 @@ export default function PosOrdersPage() {
             }
         };
         fetchOrders();
-    }, [page, search, statusFilter, departmentFilter]);
+    }, [page, search, statusFilter, departmentFilter, sortField, sortDirection]);
 
-    // Payment handler
-    const handlePayment = async () => {
-        if (!selectedOrderForPayment || !paymentAmount) return;
+    // Payment handler - receives from POSPayment component
+    const handlePaymentComplete = async (payment: any) => {
+        if (!selectedOrderForPayment) return;
         
-        setIsSubmittingPayment(true);
         try {
-            const amountCents = normalizeToCents(parseFloat(paymentAmount));
+            // payment.amount is in cents (isMinor: true)
+            const amountCents = payment.isMinor ? payment.amount : normalizeToCents(payment.amount);
+            
             const res = await fetch("/api/orders/settle", {
                 method: "POST",
                 headers: { "Content-Type": "application/json" },
                 body: JSON.stringify({
                     orderId: selectedOrderForPayment.id,
-                    paymentMethod: "cash",
+                    paymentMethod: payment.method,
                     amount: amountCents,
                 }),
                 credentials: "include",
@@ -111,42 +133,42 @@ export default function PosOrdersPage() {
                 setOrders(data.data.items || []);
             }
             
-            setShowPaymentDialog(false);
+            setShowPaymentModal(false);
             setSelectedOrderForPayment(null);
-            setPaymentAmount("");
         } catch (error) {
             alert(error instanceof Error ? error.message : "Payment failed");
-        } finally {
-            setIsSubmittingPayment(false);
         }
     };
 
-    // Add item handler
-    const handleAddItem = async () => {
-        if (!selectedOrderForItems || !newItemProductName || !newItemUnitPrice) return;
+    // Add items handler
+    const handleAddItems = async () => {
+        if (!selectedOrderForItems || newItemCart.length === 0) return;
         
-        setIsSubmittingItem(true);
+        setIsSubmittingItems(true);
         try {
             const departmentCode = selectedOrderForItems.departments?.[0]?.department?.code;
             if (!departmentCode) throw new Error("Order has no department");
             
-            const res = await fetch(`/api/orders/${selectedOrderForItems.id}/items`, {
-                method: "POST",
-                headers: { "Content-Type": "application/json" },
-                body: JSON.stringify({
-                    productId: `${newItemProductName.toLowerCase().replace(/\s+/g, '-')}`,
-                    productType: "inventory",
-                    productName: newItemProductName,
-                    departmentCode,
-                    quantity: newItemQuantity,
-                    unitPrice: parseFloat(newItemUnitPrice),
-                }),
-                credentials: "include",
-            });
-            
-            if (!res.ok) {
-                const json = await res.json();
-                throw new Error(json.error?.message || "Failed to add item");
+            // Submit each item in the cart
+            for (const item of newItemCart) {
+                const res = await fetch(`/api/orders/${selectedOrderForItems.id}/items`, {
+                    method: "POST",
+                    headers: { "Content-Type": "application/json" },
+                    body: JSON.stringify({
+                        productId: `${item.productName.toLowerCase().replace(/\s+/g, '-')}`,
+                        productType: "inventory",
+                        productName: item.productName,
+                        departmentCode,
+                        quantity: item.quantity,
+                        unitPrice: item.unitPrice,
+                    }),
+                    credentials: "include",
+                });
+                
+                if (!res.ok) {
+                    const json = await res.json();
+                    throw new Error(json.error?.message || "Failed to add item");
+                }
             }
             
             // Refresh orders
@@ -161,15 +183,13 @@ export default function PosOrdersPage() {
                 setOrders(data.data.items || []);
             }
             
-            setShowAddItemsDialog(false);
+            setShowAddItemsModal(false);
             setSelectedOrderForItems(null);
-            setNewItemProductName("");
-            setNewItemQuantity(1);
-            setNewItemUnitPrice("");
+            setNewItemCart([]);
         } catch (error) {
-            alert(error instanceof Error ? error.message : "Failed to add item");
+            alert(error instanceof Error ? error.message : "Failed to add items");
         } finally {
-            setIsSubmittingItem(false);
+            setIsSubmittingItems(false);
         }
     };
 
@@ -217,7 +237,7 @@ export default function PosOrdersPage() {
             {
                 key: "total",
                 label: "Total",
-                render: (_v, item) => formatCents(item.total ?? 0),
+                render: (_v, item) => formatCents(item.total ?? 0, undefined, 'NGN'),
                 width: "w-24",
             },
             {
@@ -228,7 +248,7 @@ export default function PosOrdersPage() {
                     const isPaid = due <= 0;
                     return (
                         <span className={isPaid ? "text-green-600 font-semibold" : "text-red-600 font-semibold"}>
-                            {isPaid ? "✓ Paid" : formatCents(due)}
+                            {isPaid ? "✓ Paid" : formatCents(due, undefined, 'NGN')}
                         </span>
                     );
                 },
@@ -258,37 +278,46 @@ export default function PosOrdersPage() {
             {
                 key: "id",
                 label: "Actions",
-                render: (_v, item) => (
-                    <div className="flex gap-2">
-                        {(item.amountDue ?? (item.total ?? 0)) > 0 && (
-                            <>
-                                <Button
-                                    size="sm"
-                                    variant="outline"
-                                    onClick={() => {
-                                        setSelectedOrderForPayment(item);
-                                        setShowPaymentDialog(true);
-                                    }}
-                                >
-                                    Pay
-                                </Button>
-                                <Button
-                                    size="sm"
-                                    variant="outline"
-                                    onClick={() => {
-                                        setSelectedOrderForItems(item);
-                                        setShowAddItemsDialog(true);
-                                    }}
-                                >
-                                    <Plus className="h-4 w-4" /> Item
-                                </Button>
-                            </>
-                        )}
-                        <Link href={`/pos/orders/${item.id}`}>
-                            <Button size="sm" variant="outline">View</Button>
-                        </Link>
-                    </div>
-                ),
+                render: (_v, item) => {
+                    // amountDue is calculated in cents
+                    const amountDueCents = item.amountDue ?? ((item.total ?? 0) - (item.totalPaid ?? 0));
+                    const isUnpaid = amountDueCents > 0;
+                    
+                    return (
+                        <div className="flex gap-2">
+                            {isUnpaid && (
+                                <>
+                                    <Button
+                                        size="sm"
+                                        variant="outline"
+                                        onClick={() => {
+                                            setSelectedOrderForPayment(item);
+                                            // Pass amountDue in cents directly
+                                            setPaymentTotalCents(amountDueCents);
+                                            setShowPaymentModal(true);
+                                        }}
+                                    >
+                                        Pay
+                                    </Button>
+                                    <Button
+                                        size="sm"
+                                        variant="outline"
+                                        onClick={() => {
+                                            setSelectedOrderForItems(item);
+                                            setNewItemCart([]);
+                                            setShowAddItemsModal(true);
+                                        }}
+                                    >
+                                        <Plus className="h-4 w-4" /> Item
+                                    </Button>
+                                </>
+                            )}
+                            <Link href={`/pos/orders/${item.id}`}>
+                                <Button size="sm" variant="outline">View</Button>
+                            </Link>
+                        </div>
+                    );
+                },
                 width: "w-48",
             },
         ],
@@ -355,95 +384,155 @@ export default function PosOrdersPage() {
                         data={orders}
                         isLoading={isLoading}
                         pagination={{ total, page, limit, onPageChange: setPage }}
-                        sorting={{ field: "createdAt", direction: "desc", onSort: () => {} }}
+                        sorting={{ 
+                            field: sortField, 
+                            direction: sortDirection, 
+                            onSort: (field) => {
+                                if (sortField === field) {
+                                    // Toggle direction if same field
+                                    setSortDirection(sortDirection === "asc" ? "desc" : "asc");
+                                } else {
+                                    // New field, default to desc
+                                    setSortField(field);
+                                    setSortDirection("desc");
+                                }
+                                setPage(1); // Reset to first page
+                            }
+                        }}
                     />
                 )}
             </div>
 
-            {/* Payment Dialog */}
-            <Dialog open={showPaymentDialog} onOpenChange={setShowPaymentDialog}>
-                <DialogContent>
-                    <DialogHeader>
-                        <DialogTitle>Record Payment - Order {selectedOrderForPayment?.orderNumber}</DialogTitle>
-                    </DialogHeader>
-                    <div className="space-y-4">
-                        <div>
-                            <p className="text-sm text-muted-foreground">Amount Due:</p>
-                            <p className="text-2xl font-bold text-red-600">
-                                {formatCents(selectedOrderForPayment?.amountDue ?? 0)}
-                            </p>
-                        </div>
-                        <div>
-                            <label className="text-sm font-medium">Payment Amount ($)</label>
-                            <Input
-                                type="number"
-                                step="0.01"
-                                placeholder="0.00"
-                                value={paymentAmount}
-                                onChange={(e) => setPaymentAmount(e.target.value)}
-                                disabled={isSubmittingPayment}
-                            />
-                        </div>
-                    </div>
-                    <DialogFooter>
-                        <Button variant="outline" onClick={() => setShowPaymentDialog(false)}>
-                            Cancel
-                        </Button>
-                        <Button onClick={handlePayment} disabled={isSubmittingPayment || !paymentAmount}>
-                            {isSubmittingPayment ? <Loader2 className="h-4 w-4 animate-spin mr-2" /> : null}
-                            Record Payment
-                        </Button>
-                    </DialogFooter>
-                </DialogContent>
-            </Dialog>
+            {/* Payment Modal - Using POSPayment Component */}
+            {showPaymentModal && selectedOrderForPayment && (
+                <POSPayment 
+                    total={paymentTotalCents}
+                    onComplete={handlePaymentComplete}
+                    onCancel={() => {
+                        setShowPaymentModal(false);
+                        setSelectedOrderForPayment(null);
+                    }}
+                />
+            )}
 
-            {/* Add Items Dialog */}
-            <Dialog open={showAddItemsDialog} onOpenChange={setShowAddItemsDialog}>
-                <DialogContent>
+            {/* Add Items Modal */}
+            <Dialog open={showAddItemsModal} onOpenChange={setShowAddItemsModal}>
+                <DialogContent className="max-w-2xl">
                     <DialogHeader>
-                        <DialogTitle>Add Item to Order {selectedOrderForItems?.orderNumber}</DialogTitle>
+                        <DialogTitle>Add Items to Order {selectedOrderForItems?.orderNumber}</DialogTitle>
                     </DialogHeader>
                     <div className="space-y-4">
-                        <div>
-                            <label className="text-sm font-medium">Product Name</label>
-                            <Input
-                                placeholder="e.g., Extra Appetizer"
-                                value={newItemProductName}
-                                onChange={(e) => setNewItemProductName(e.target.value)}
-                                disabled={isSubmittingItem}
-                            />
-                        </div>
-                        <div className="grid grid-cols-2 gap-4">
-                            <div>
-                                <label className="text-sm font-medium">Quantity</label>
-                                <Input
-                                    type="number"
-                                    min="1"
-                                    value={newItemQuantity}
-                                    onChange={(e) => setNewItemQuantity(Math.max(1, parseInt(e.target.value) || 1))}
-                                    disabled={isSubmittingItem}
-                                />
+                        {/* Item Input Section */}
+                        <div className="border-b pb-4">
+                            <div className="grid grid-cols-3 gap-3">
+                                <div>
+                                    <label className="text-sm font-medium">Product Name</label>
+                                    <Input
+                                        id="itemProductName"
+                                        placeholder="e.g., Extra Appetizer"
+                                        disabled={isSubmittingItems}
+                                    />
+                                </div>
+                                <div>
+                                    <label className="text-sm font-medium">Quantity</label>
+                                    <Input
+                                        id="itemQuantity"
+                                        type="number"
+                                        min="1"
+                                        defaultValue="1"
+                                        disabled={isSubmittingItems}
+                                    />
+                                </div>
+                                <div>
+                                    <label className="text-sm font-medium">Unit Price</label>
+                                    <Input
+                                        id="itemUnitPrice"
+                                        type="number"
+                                        step="0.01"
+                                        placeholder="0.00"
+                                        disabled={isSubmittingItems}
+                                    />
+                                </div>
                             </div>
-                            <div>
-                                <label className="text-sm font-medium">Unit Price ($)</label>
-                                <Input
-                                    type="number"
-                                    step="0.01"
-                                    placeholder="0.00"
-                                    value={newItemUnitPrice}
-                                    onChange={(e) => setNewItemUnitPrice(e.target.value)}
-                                    disabled={isSubmittingItem}
-                                />
-                            </div>
+                            <Button
+                                onClick={() => {
+                                    const productName = (document.getElementById('itemProductName') as HTMLInputElement)?.value;
+                                    const quantity = parseInt((document.getElementById('itemQuantity') as HTMLInputElement)?.value) || 1;
+                                    const unitPrice = parseFloat((document.getElementById('itemUnitPrice') as HTMLInputElement)?.value) || 0;
+                                    
+                                    if (!productName || unitPrice <= 0) {
+                                        alert("Please enter product name and unit price");
+                                        return;
+                                    }
+                                    
+                                    setNewItemCart([...newItemCart, {
+                                        lineId: Math.random().toString(36).slice(2),
+                                        productName,
+                                        quantity,
+                                        unitPrice,
+                                    }]);
+                                    
+                                    // Clear inputs
+                                    (document.getElementById('itemProductName') as HTMLInputElement).value = '';
+                                    (document.getElementById('itemQuantity') as HTMLInputElement).value = '1';
+                                    (document.getElementById('itemUnitPrice') as HTMLInputElement).value = '';
+                                }}
+                                className="mt-3 w-full"
+                                disabled={isSubmittingItems}
+                            >
+                                Add to Cart
+                            </Button>
                         </div>
+
+                        {/* Cart Items */}
+                        {newItemCart.length > 0 && (
+                            <div className="space-y-2">
+                                <h4 className="font-semibold text-sm">Items to Add:</h4>
+                                {newItemCart.map((item) => (
+                                    <div key={item.lineId} className="flex items-center justify-between bg-slate-50 p-2 rounded">
+                                        <div className="flex-1">
+                                            <p className="text-sm font-medium">{item.productName}</p>
+                                            <p className="text-xs text-muted-foreground">
+                                                {item.quantity} × <Price amount={normalizeToCents(item.unitPrice)} isMinor={true} />
+                                            </p>
+                                        </div>
+                                        <div className="text-right">
+                                            <p className="text-sm font-semibold">
+                                                <Price amount={normalizeToCents(item.quantity * item.unitPrice)} isMinor={true} />
+                                            </p>
+                                        </div>
+                                        <Button
+                                            variant="ghost"
+                                            size="sm"
+                                            onClick={() => setNewItemCart(newItemCart.filter(x => x.lineId !== item.lineId))}
+                                            disabled={isSubmittingItems}
+                                        >
+                                            ✕
+                                        </Button>
+                                    </div>
+                                ))}
+                                <div className="border-t pt-2 text-right">
+                                    <p className="text-sm font-semibold">
+                                        Total: <Price amount={newItemCart.reduce((sum, item) => sum + normalizeToCents(item.quantity * item.unitPrice), 0)} isMinor={true} />
+                                    </p>
+                                </div>
+                            </div>
+                        )}
                     </div>
                     <DialogFooter>
-                        <Button variant="outline" onClick={() => setShowAddItemsDialog(false)}>
+                        <Button variant="outline" onClick={() => {
+                            setShowAddItemsModal(false);
+                            setSelectedOrderForItems(null);
+                            setNewItemCart([]);
+                        }}>
                             Cancel
                         </Button>
-                        <Button onClick={handleAddItem} disabled={isSubmittingItem || !newItemProductName || !newItemUnitPrice}>
-                            {isSubmittingItem ? <Loader2 className="h-4 w-4 animate-spin mr-2" /> : null}
-                            Add Item
+                        <Button 
+                            onClick={handleAddItems} 
+                            disabled={isSubmittingItems || newItemCart.length === 0}
+                        >
+                            {isSubmittingItems ? <Loader2 className="h-4 w-4 animate-spin mr-2" /> : null}
+                            Add {newItemCart.length} Item{newItemCart.length !== 1 ? 's' : ''}
                         </Button>
                     </DialogFooter>
                 </DialogContent>

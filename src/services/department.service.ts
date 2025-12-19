@@ -567,11 +567,14 @@ export class DepartmentService extends BaseService<IDepartment> {
       const menu = items.map((it: any) => {
         // Use the global inventory quantity
         const quantity = Number(it.quantity || 0)
+        
+        // Convert unitPrice (major units) to cents (minor units)
+        const priceInCents = Math.round((typeof it.unitPrice === 'object' && typeof it.unitPrice.toNumber === 'function' ? it.unitPrice.toNumber() : Number(it.unitPrice)) * 100)
 
         return {
           id: it.id, // Use the actual inventory item ID (no prefix)
           name: it.name,
-          price: typeof it.unitPrice === 'object' && typeof it.unitPrice.toNumber === 'function' ? it.unitPrice.toNumber() : Number(it.unitPrice),
+          price: priceInCents, // Return price in cents (minor units)
           type: category,
           available: quantity > 0,
           quantity: quantity,

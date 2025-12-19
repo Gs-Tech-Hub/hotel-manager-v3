@@ -7,7 +7,7 @@ import { POSProductGrid, POSProduct } from "@/components/admin/pos/pos-product-g
 import { POSCart, CartLine } from "@/components/admin/pos/pos-cart"
 import { POSPayment } from "@/components/admin/pos/pos-payment"
 import { POSReceipt } from "@/components/admin/pos/pos-receipt"
-import { normalizeToCents, calculateTax, calculateTotal, centsToDollars } from "@/lib/price"
+import { normalizeToCents, centsToDollars } from "@/lib/price"
 import Price from '@/components/ui/Price'
 import { formatPriceDisplay, formatOrderTotal } from "@/lib/formatters"
 
@@ -94,11 +94,11 @@ export default function POSCheckoutShell({ terminalId }: { terminalId?: string }
 
   // Calculate prices in cents for consistency
   const subtotal = cart.reduce((s, c) => {
-    const unitCents = normalizeToCents(c.unitPrice)
-    return s + (unitCents * c.quantity)
+    // c.unitPrice is already in cents from the API, don't normalize
+    return s + (c.unitPrice * c.quantity)
   }, 0)
-  const tax = calculateTax(subtotal, 10) // 10% tax rate
-  const total = calculateTotal(subtotal, 0, tax)
+  // Tax is calculated on the backend during order creation, not in checkout
+  const total = subtotal
 
   const handlePaymentComplete = (payment: any) => {
     ;(async () => {
@@ -273,10 +273,11 @@ export default function POSCheckoutShell({ terminalId }: { terminalId?: string }
           const mapped: POSProduct[] = json.data.map((m: any) => ({
             id: m.id,
             name: m.name,
-            price: Number(m.price || 0),  // price is already in dollars from getDepartmentMenu
+            // API returns price in cents (minor units) already, don't normalize
+            price: Number(m.price || 0),
             available: !!m.available,
             type: m.type,
-            quantity: Number(m.quantity || 0) || (m.available ? 1 : 0),  // Real-time stock quantity
+            quantity: Number(m.quantity || 0) || (m.available ? 1 : 0),  // Real-time stock quantity,
           }))
           setProducts(mapped)
         } else {

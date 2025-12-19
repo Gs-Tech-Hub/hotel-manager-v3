@@ -47,10 +47,13 @@ export function POSPayment({ total, onComplete, onCancel }: { total: number; onC
               <input 
                 type="number" 
                 step="0.01"
-                value={centsToDollars(tenderedCents)} 
+                min="0"
+                value={Math.round(centsToDollars(tenderedCents) * 100) / 100}
                 onChange={(e) => {
                   const newDollars = Number(e.target.value)
-                  setTenderedCents(normalizeToCents(newDollars))
+                  if (!isNaN(newDollars)) {
+                    setTenderedCents(Math.round(newDollars * 100))
+                  }
                 }} 
                 className="w-full border rounded px-3 py-2" 
               />
