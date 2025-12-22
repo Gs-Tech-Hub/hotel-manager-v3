@@ -235,8 +235,10 @@ export async function GET(request: NextRequest) {
     const page = Math.max(1, parseInt(searchParams.get('page') || '1', 10));
     const limit = Math.min(100, Math.max(1, parseInt(searchParams.get('limit') || '20', 10)));
     const customerId = searchParams.get('customerId') || undefined;
-    const status = searchParams.get('status') || undefined;
+    const status = searchParams.get('status') || undefined; // Order fulfillment status: pending, processing, fulfilled, completed, cancelled
+    const paymentStatus = searchParams.get('paymentStatus') || undefined; // Payment status: unpaid, paid, partial, refunded
     const departmentCode = searchParams.get('departmentCode') || undefined;
+    const departmentSectionId = searchParams.get('departmentSectionId') || undefined;
     const fromDate = searchParams.get('fromDate') ? new Date(searchParams.get('fromDate')!) : undefined;
     const toDate = searchParams.get('toDate') ? new Date(searchParams.get('toDate')!) : undefined;
     const sortBy = searchParams.get('sortBy') || 'createdAt';
@@ -265,12 +267,18 @@ export async function GET(request: NextRequest) {
     if (filterCustomerId) {
       filters.customerId = filterCustomerId;
     }
+    // Filter by fulfillment status (pending, processing, fulfilled, completed, cancelled)
     if (status) {
       filters.status = status;
     }
+    // Note: Payment status filtering done post-fetch based on actual paid amounts
     if (departmentCode) {
-      // filter orders that are routed to the given department code
-      filters.departments = { some: { department: { code: departmentCode } } };
+      // Filter orders with lines in the given department (by departmentCode)
+      filters.lines = { some: { departmentCode } };
+    }
+    if (departmentSectionId) {
+      // Filter orders with lines routed to the given department section
+      filters.lines = { some: { departmentSectionId } };
     }
     if (fromDate || toDate) {
       filters.createdAt = {};
@@ -289,7 +297,15 @@ export async function GET(request: NextRequest) {
         where: filters,
         include: {
           customer: true,
-          lines: true,
+          lines: {
+            include: {
+              departmentSection: {
+                include: {
+                  department: true,
+                },
+              },
+            },
+          },
           departments: { include: { department: true } },
           discounts: true,
           payments: true,
@@ -306,15 +322,33 @@ export async function GET(request: NextRequest) {
     const totalPages = Math.ceil(total / limit);
     const hasMore = page < totalPages;
 
+    // Filter by payment status based on actual paid amounts (post-fetch)
+    let filteredOrders = orders;
+    if (paymentStatus) {
+      filteredOrders = orders.filter(order => {
+        const totalPaid = (order.payments || []).reduce((sum: number, p: any) => sum + (p.amount ?? 0), 0);
+        const amountDue = (order.total ?? 0) - totalPaid;
+        
+        let calculatedStatus = 'unpaid';
+        if (amountDue === 0) {
+          calculatedStatus = 'paid';
+        } else if (amountDue < (order.total ?? 0) && amountDue > 0) {
+          calculatedStatus = 'partial';
+        }
+        
+        return calculatedStatus === paymentStatus;
+      });
+    }
+
     return NextResponse.json(
       successResponse({
-        items: orders,
+        items: filteredOrders,
         meta: {
           page,
           limit,
-          total,
-          totalPages,
-          hasMore,
+          total: filteredOrders.length,
+          totalPages: Math.ceil(filteredOrders.length / limit),
+          hasMore: false,
         },
       })
     );

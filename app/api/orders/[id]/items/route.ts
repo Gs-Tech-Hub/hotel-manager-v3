@@ -22,6 +22,7 @@ import { successResponse, errorResponse, ErrorCodes, getStatusCode } from '@/lib
  *   productType: string
  *   productName: string
  *   departmentCode: string
+ *   departmentSectionId?: string
  *   quantity: number
  *   unitPrice: number
  * }
@@ -53,7 +54,7 @@ export async function POST(
 
     // Parse request body
     const body = await request.json();
-    const { productId, productType, productName, departmentCode, quantity, unitPrice } = body;
+    const { productId, productType, productName, departmentCode, departmentSectionId, quantity, unitPrice } = body;
 
     if (!productId || !productName || !departmentCode || !quantity || !unitPrice) {
       return NextResponse.json(
@@ -67,13 +68,22 @@ export async function POST(
       const normalizedUnit = normalizeToCents(unitPrice)
       const lineTotal = quantity * normalizedUnit;
 
+      // Get the next line number
+      const lastLine = await tx.orderLine.findFirst({
+        where: { orderHeaderId: orderId },
+        orderBy: { lineNumber: 'desc' },
+      });
+      const nextLineNumber = (lastLine?.lineNumber ?? 0) + 1;
+
       const newLine = await tx.orderLine.create({
         data: {
           orderHeaderId: orderId,
+          lineNumber: nextLineNumber,
           productId,
           productType,
           productName,
           departmentCode,
+          departmentSectionId,
           quantity,
           unitPrice: normalizedUnit,
           lineTotal,

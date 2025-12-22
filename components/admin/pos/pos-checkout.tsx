@@ -21,6 +21,7 @@ interface SelectedSection {
 export default function POSCheckoutShell({ terminalId }: { terminalId?: string }) {
   const searchParams = useSearchParams()
   const terminalIdFromQuery = searchParams.get('terminal')
+  const addToOrderId = searchParams.get('addToOrder')
   
   const [category, setCategory] = useState<string | null>(null)
   const [cart, setCart] = useState<CartLine[]>([])
@@ -152,50 +153,108 @@ export default function POSCheckoutShell({ terminalId }: { terminalId?: string }
         }
 
         const orderTypeLabel = isDeferred ? 'deferred' : 'immediate'
-        console.log(`[POS] Creating ${orderTypeLabel} order`)
+        console.log(`[POS] ${addToOrderId ? 'Adding items to existing order' : 'Creating new'} ${orderTypeLabel} order`)
         console.log('[POS] sending payload to /api/orders:', payload)
         
-        const res = await fetch('/api/orders', {
-          method: 'POST',
-          credentials: 'include',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify(payload),
-        })
-        console.log('[POS] fetch completed, status:', res.status)
-
-        const json = await res.json().catch((e) => { console.log('[POS] failed to parse JSON:', e); return null })
-        console.log('[POS] parsed json:', json)
-        if (res.status === 401 || res.status === 403 || (json && json.error && json.error.code === 'UNAUTHORIZED')) {
-          const msg = (json && json.error && json.error.message) ? json.error.message : 'Not authorized'
-          console.log('[POS] auth failure, msg:', msg)
-          setTerminalError(`Order failed: ${msg}`)
-          return
-        }
-
-        if (res.ok && json && json.success && json.data) {
-          console.log('[POS] order created successfully:', json.data)
+        // If addToOrderId is present, add items to existing order instead of creating new one
+        if (addToOrderId) {
+          console.log('[POS] Adding items to existing order:', addToOrderId)
           
-          // For deferred orders, show special receipt indicating payment pending
-          if (isDeferred) {
-            const receipt = {
-              ...json.data,
-              isDeferred: true,
-              orderStatus: 'pending',
-              paymentStatus: 'pending_settlement',
-              orderTypeDisplay: 'DEFERRED ORDER - PAYMENT PENDING',
+          // Add each item individually to the existing order
+          for (const item of items) {
+            console.log('[POS] Adding item:', item)
+            const addRes = await fetch(`/api/orders/${addToOrderId}/items`, {
+              method: 'POST',
+              credentials: 'include',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({
+                productId: item.productId,
+                productType: item.productType,
+                productName: item.productName,
+                departmentCode: item.departmentCode,
+                departmentSectionId: departmentSection.id,
+                quantity: item.quantity,
+                unitPrice: item.unitPrice,
+              }),
+            })
+            
+            const addJson = await addRes.json().catch((e) => { console.log('[POS] failed to parse JSON:', e); return null })
+            console.log('[POS] add item response:', addJson, 'status:', addRes.status)
+            
+            if (!addRes.ok || !addJson?.success) {
+              const msg = (addJson && addJson.error && addJson.error.message) ? addJson.error.message : `Failed to add item (${addRes.status})`
+              console.log('[POS] add item failure, msg:', msg)
+              setTerminalError(`Failed to add "${item.productName}": ${msg}`)
+              return
             }
-            setReceipt(receipt)
-          } else {
-            setReceipt(json.data)
           }
           
-          setCart([])
-          setAppliedDiscountCodes([])
+          console.log('[POS] all items added successfully, fetching updated order')
+          // Fetch the updated order to show in receipt
+          const fetchRes = await fetch(`/api/orders/${addToOrderId}`, {
+            credentials: 'include',
+          })
+          const fetchJson = await fetchRes.json()
+          
+          if (fetchRes.ok && fetchJson?.success && fetchJson.data) {
+            console.log('[POS] items added to order successfully:', fetchJson.data)
+            setReceipt({
+              ...fetchJson.data,
+              isDeferred: false,
+              orderTypeDisplay: 'ITEMS ADDED',
+            })
+            setCart([])
+            setAppliedDiscountCodes([])
+          } else {
+            const msg = (fetchJson && fetchJson.error && fetchJson.error.message) ? fetchJson.error.message : `Failed to fetch updated order`
+            console.log('[POS] fetch order failure, msg:', msg)
+            setTerminalError(`Items added but failed to fetch updated order: ${msg}`)
+            return
+          }
         } else {
-          const msg = (json && json.error && json.error.message) ? json.error.message : `Order API error (${res.status})`
-          console.log('[POS] api failure, msg:', msg, 'status:', res.status)
-          setTerminalError(`Order failed: ${msg}`)
-          return
+          // Create new order
+          const res = await fetch('/api/orders', {
+            method: 'POST',
+            credentials: 'include',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(payload),
+          })
+          console.log('[POS] fetch completed, status:', res.status)
+
+          const json = await res.json().catch((e) => { console.log('[POS] failed to parse JSON:', e); return null })
+          console.log('[POS] parsed json:', json)
+          if (res.status === 401 || res.status === 403 || (json && json.error && json.error.code === 'UNAUTHORIZED')) {
+            const msg = (json && json.error && json.error.message) ? json.error.message : 'Not authorized'
+            console.log('[POS] auth failure, msg:', msg)
+            setTerminalError(`Order failed: ${msg}`)
+            return
+          }
+
+          if (res.ok && json && json.success && json.data) {
+            console.log('[POS] order created successfully:', json.data)
+            
+            // For deferred orders, show special receipt indicating payment pending
+            if (isDeferred) {
+              const receipt = {
+                ...json.data,
+                isDeferred: true,
+                orderStatus: 'pending',
+                paymentStatus: 'pending_settlement',
+                orderTypeDisplay: 'DEFERRED ORDER - PAYMENT PENDING',
+              }
+              setReceipt(receipt)
+            } else {
+              setReceipt(json.data)
+            }
+            
+            setCart([])
+            setAppliedDiscountCodes([])
+          } else {
+            const msg = (json && json.error && json.error.message) ? json.error.message : `Order API error (${res.status})`
+            console.log('[POS] api failure, msg:', msg, 'status:', res.status)
+            setTerminalError(`Order failed: ${msg}`)
+            return
+          }
         }
       } catch (err) {
         console.error('[POS] Error posting order:', err)

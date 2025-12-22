@@ -22,6 +22,13 @@ export function POSReceipt({ receipt, onClose }: { receipt: any; onClose?: () =>
           <div className="text-center font-bold">Paradise Hotel</div>
           <div className="text-center">Receipt</div>
           
+          {/* Items Added Badge */}
+          {receipt?.orderTypeDisplay === 'ITEMS ADDED' && (
+            <div className="mt-2 p-2 bg-green-100 border border-green-400 rounded text-center font-bold text-green-900">
+              ✓ ITEMS ADDED
+            </div>
+          )}
+          
           {/* Deferred Order Badge */}
           {receipt?.isDeferred && (
             <div className="mt-2 p-2 bg-amber-100 border border-amber-400 rounded text-center font-bold text-amber-900">
@@ -73,6 +80,14 @@ export function POSReceipt({ receipt, onClose }: { receipt: any; onClose?: () =>
 
         <div className="flex gap-2 mt-4">
           <button onClick={handlePrint} className="flex-1 px-3 py-2 bg-sky-600 text-white rounded">Print</button>
+          {receipt?.orderTypeDisplay === 'ITEMS ADDED' && (
+            <button 
+              onClick={() => window.location.href = '/pos/orders'}
+              className="flex-1 px-3 py-2 bg-blue-600 text-white rounded"
+            >
+              Back to Orders
+            </button>
+          )}
           <button onClick={onClose} className="flex-1 px-3 py-2 border rounded">Close</button>
         </div>
       </div>

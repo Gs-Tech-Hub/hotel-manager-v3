@@ -827,6 +827,9 @@ model DepartmentSection {
 
   // per-section inventory records
   inventories DepartmentInventory[]
+  
+  // order lines routed to this section
+  orderLines  OrderLine[]
 
   metadata     Json?     @default("{}")
   isActive     Boolean   @default(true)
@@ -890,7 +893,8 @@ model OrderHeader {
 
   departmentCode String? // Primary department (can span multiple)
   status         String  @default("pending") // pending, processing, fulfilled, completed, cancelled
-
+  paymentStatus  String  @default("unpaid") // unpaid, paid, partial, refunded
+  
   subtotal      Int @default(0)
   discountTotal Int @default(0)
   tax           Int @default(0)
@@ -913,6 +917,7 @@ model OrderHeader {
   @@index([customerId])
   @@index([createdBy])
   @@index([status])
+  @@index([paymentStatus])
   @@index([createdAt])
   @@map("order_headers")
 }
@@ -925,6 +930,10 @@ model OrderLine {
   orderHeader   OrderHeader @relation(fields: [orderHeaderId], references: [id], onDelete: Cascade)
 
   departmentCode String
+  
+  departmentSectionId String?
+  departmentSection   DepartmentSection? @relation(fields: [departmentSectionId], references: [id], onDelete: SetNull)
+  
   productId      String // Could be FoodItem, Drink, HotelService, etc.
   productType    String // food, drink, service, membership, game, etc.
   productName    String
@@ -943,6 +952,7 @@ model OrderLine {
 
   @@index([orderHeaderId])
   @@index([departmentCode])
+  @@index([departmentSectionId])
   @@map("order_lines")
 }
 

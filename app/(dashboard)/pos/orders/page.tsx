@@ -18,7 +18,15 @@ type Order = {
     orderNumber?: string;
     customer?: { name?: string; phone?: string } | null;
     departments?: { department?: { name?: string; code?: string } }[] | null;
+    lines?: {
+        departmentSectionId?: string | null;
+        departmentSection?: {
+            name?: string;
+            department?: { code?: string; name?: string };
+        } | null;
+    }[] | null;
     status: string;
+    paymentStatus?: string; // unpaid, paid, partial, refunded
     createdAt: string;
     total?: number; // in cents
     totalPaid?: number; // in cents
@@ -31,26 +39,28 @@ export default function PosOrdersPage() {
     const [orders, setOrders] = useState<Order[]>([]);
     const [isLoading, setIsLoading] = useState(true);
     const [search, setSearch] = useState("");
-    const [statusFilter, setStatusFilter] = useState("pending");
+    const [statusFilter, setStatusFilter] = useState(""); // Fulfillment status (empty = all)
+    const [paymentStatusFilter, setPaymentStatusFilter] = useState(""); // Payment status (empty = all)
     const [departmentFilter, setDepartmentFilter] = useState("");
+    const [departmentSectionFilter, setDepartmentSectionFilter] = useState("");
     const [departmentsList, setDepartmentsList] = useState<{ code: string; name?: string }[]>([]);
+    const [departmentSectionsList, setDepartmentSectionsList] = useState<{ id: string; name?: string; slug?: string }[]>([]);
     const [page, setPage] = useState(1);
     const [total, setTotal] = useState(0);
     
     // Sorting state
     const [sortField, setSortField] = useState("createdAt");
     const [sortDirection, setSortDirection] = useState<"asc" | "desc">("desc");
+    const [refreshTrigger, setRefreshTrigger] = useState(0);
     
     // Payment state - using POSPayment component
     const [showPaymentModal, setShowPaymentModal] = useState(false);
     const [selectedOrderForPayment, setSelectedOrderForPayment] = useState<Order | null>(null);
     const [paymentTotalCents, setPaymentTotalCents] = useState(0);
     
-    // Add items state - cart-based
+    // Add items state
     const [showAddItemsModal, setShowAddItemsModal] = useState(false);
     const [selectedOrderForItems, setSelectedOrderForItems] = useState<Order | null>(null);
-    const [newItemCart, setNewItemCart] = useState<Array<{lineId: string; productName: string; quantity: number; unitPrice: number}>>([]);
-    const [isSubmittingItems, setIsSubmittingItems] = useState(false);
     
     const limit = 10;
 
@@ -60,10 +70,11 @@ export default function PosOrdersPage() {
             try {
                 const params = new URLSearchParams({ page: String(page), limit: String(limit) });
                 if (search) params.append("search", search);
-                // Always include status filter for open orders - default to pending
-                const status = statusFilter || "pending";
-                params.append("status", status);
+                // Include status filters only if explicitly set (not using defaults)
+                if (statusFilter) params.append("status", statusFilter);
+                if (paymentStatusFilter) params.append("paymentStatus", paymentStatusFilter);
                 if (departmentFilter) params.append("departmentCode", departmentFilter);
+                if (departmentSectionFilter) params.append("departmentSectionId", departmentSectionFilter);
                 // Add sorting parameters
                 params.append("sortBy", sortField);
                 params.append("sortOrder", sortDirection);
@@ -95,7 +106,7 @@ export default function PosOrdersPage() {
             }
         };
         fetchOrders();
-    }, [page, search, statusFilter, departmentFilter, sortField, sortDirection]);
+    }, [page, search, statusFilter, paymentStatusFilter, departmentFilter, departmentSectionFilter, sortField, sortDirection, refreshTrigger]);
 
     // Payment handler - receives from POSPayment component
     const handlePaymentComplete = async (payment: any) => {
@@ -121,75 +132,69 @@ export default function PosOrdersPage() {
                 throw new Error(json.error?.message || "Payment failed");
             }
             
-            // Refresh orders
-            const params = new URLSearchParams({ page: String(page), limit: String(limit) });
-            if (search) params.append("search", search);
-            const status = statusFilter || "pending";
-            params.append("status", status);
-            if (departmentFilter) params.append("departmentCode", departmentFilter);
-            const refreshRes = await fetch(`/api/orders?${params.toString()}`);
-            const data = await refreshRes.json();
-            if (data.success) {
-                setOrders(data.data.items || []);
-            }
-            
+            // Trigger auto-reload
             setShowPaymentModal(false);
             setSelectedOrderForPayment(null);
+            setRefreshTrigger(t => t + 1);
         } catch (error) {
             alert(error instanceof Error ? error.message : "Payment failed");
         }
     };
 
-    // Add items handler
+    // Add items handler - routes to originating section terminal to maintain inventory integrity
     const handleAddItems = async () => {
-        if (!selectedOrderForItems || newItemCart.length === 0) return;
+        if (!selectedOrderForItems) return;
         
-        setIsSubmittingItems(true);
         try {
-            const departmentCode = selectedOrderForItems.departments?.[0]?.department?.code;
-            if (!departmentCode) throw new Error("Order has no department");
-            
-            // Submit each item in the cart
-            for (const item of newItemCart) {
-                const res = await fetch(`/api/orders/${selectedOrderForItems.id}/items`, {
-                    method: "POST",
-                    headers: { "Content-Type": "application/json" },
-                    body: JSON.stringify({
-                        productId: `${item.productName.toLowerCase().replace(/\s+/g, '-')}`,
-                        productType: "inventory",
-                        productName: item.productName,
-                        departmentCode,
-                        quantity: item.quantity,
-                        unitPrice: item.unitPrice,
-                    }),
-                    credentials: "include",
-                });
-                
-                if (!res.ok) {
-                    const json = await res.json();
-                    throw new Error(json.error?.message || "Failed to add item");
-                }
+            // Get originating section ID from first line
+            const firstLine = selectedOrderForItems.lines?.[0];
+            if (!firstLine?.departmentSectionId) {
+                throw new Error("Cannot determine order origin section");
             }
             
-            // Refresh orders
-            const params = new URLSearchParams({ page: String(page), limit: String(limit) });
-            if (search) params.append("search", search);
-            const status = statusFilter || "pending";
-            params.append("status", status);
-            if (departmentFilter) params.append("departmentCode", departmentFilter);
-            const refreshRes = await fetch(`/api/orders?${params.toString()}`);
-            const data = await refreshRes.json();
-            if (data.success) {
-                setOrders(data.data.items || []);
+            const sectionId = firstLine.departmentSectionId;
+            console.log('[Orders] Adding items - section ID:', sectionId);
+            
+            // Fetch terminals to find the one matching this section ID
+            const res = await fetch('/api/pos/terminals', { credentials: 'include' });
+            const json = await res.json();
+            
+            if (!json?.success || !Array.isArray(json.data)) {
+                throw new Error("Failed to load terminals");
             }
             
-            setShowAddItemsModal(false);
-            setSelectedOrderForItems(null);
-            setNewItemCart([]);
+            console.log('[Orders] Available terminals:', json.data);
+            
+            // Find the terminal (section) matching this ID
+            const foundTerminal = json.data.find((t: any) => t.id === sectionId);
+            console.log('[Orders] Found terminal:', foundTerminal);
+            
+            if (!foundTerminal) {
+                throw new Error("Terminal not found");
+            }
+            
+            // Get slug - generate from name if not set in DB
+            let slug = foundTerminal.slug;
+            if (!slug && foundTerminal.name) {
+                slug = foundTerminal.name
+                    .toLowerCase()
+                    .replace(/\s+/g, '-')
+                    .replace(/[^a-z0-9\-]/g, '');
+                console.log('[Orders] Generated slug from name:', slug);
+            }
+            
+            if (!slug) {
+                throw new Error("Cannot generate terminal route - missing name or slug");
+            }
+            
+            // Route to section terminal with order context using proper slug-based route
+            // Format: /pos-terminals/{slug}/checkout?terminal={terminalId}&addToOrder={orderId}
+            const targetUri = `/pos-terminals/${encodeURIComponent(slug)}/checkout?terminal=${sectionId}&addToOrder=${selectedOrderForItems.id}`;
+            console.log('[Orders] Navigating to:', targetUri);
+            window.location.href = targetUri;
         } catch (error) {
-            alert(error instanceof Error ? error.message : "Failed to add items");
-        } finally {
-            setIsSubmittingItems(false);
+            console.error('[Orders] Error adding items:', error);
+            alert(error instanceof Error ? error.message : "Failed to route to terminal");
         }
     };
 
@@ -206,12 +211,31 @@ export default function PosOrdersPage() {
                 console.error("Failed to load departments", err);
             }
         };
+
+        const fetchDepartmentSections = async () => {
+            try {
+                const res = await fetch(`/api/departments/sections?limit=500`);
+                const data = await res.json();
+                if (data?.success) {
+                    const list = (data.data || []).map((s: any) => ({ 
+                        id: s.id, 
+                        name: s.name,
+                        slug: s.slug
+                    }));
+                    setDepartmentSectionsList(list);
+                }
+            } catch (err) {
+                console.error("Failed to load department sections", err);
+            }
+        };
+
         fetchDepartments();
+        fetchDepartmentSections();
     }, []);
 
     const columns = useMemo<Column<Order>[]>(
         () => [
-            { key: "orderNumber", label: "Order #", sortable: true, width: "w-28" },
+            { key: "orderNumber", label: "Order #", sortable: true, width: "w-20", render: (v) => String(v).slice(-8) },
             {
                 key: "customer",
                 label: "Customer",
@@ -220,18 +244,43 @@ export default function PosOrdersPage() {
             },
             {
                 key: "departments",
-                label: "Departments",
+                label: "Department / Section",
                 render: (_v, item) => {
-                    const names = (item.departments || []).map((d) => d?.department?.name).filter(Boolean);
-                    return <span className="text-xs">{names.length ? names.join(", ") : "-"}</span>;
+                    // Get unique sections from lines
+                    const sections = (item.lines || [])
+                        .filter((l: any) => l.departmentSection?.name)
+                        .map((l: any) => ({ name: l.departmentSection?.name, deptCode: l.departmentSection?.department?.code }))
+                        .filter((v: any, i: number, a: any) => a.findIndex((x: any) => x.name === v.name) === i);
+                    
+                    // Format: "DeptCode: Section1, Section2"
+                    if (sections.length > 0) {
+                        const groupedByDept = sections.reduce((acc: any, s: any) => {
+                            const key = s.deptCode || 'Unknown';
+                            if (!acc[key]) acc[key] = [];
+                            acc[key].push(s.name);
+                            return acc;
+                        }, {});
+                        
+                        const display = Object.entries(groupedByDept)
+                            .map(([deptCode, names]: any) => `${deptCode}: ${names.join(", ")}`)
+                            .join(" | ");
+                        return <span className="text-xs font-medium">{display || "-"}</span>;
+                    }
+                    
+                    // Fallback to departments if no sections
+                    const deptNames = (item.departments || []).map((d: any) => d?.department?.name).filter(Boolean);
+                    return <span className="text-xs font-medium">{deptNames.join(", ") || "-"}</span>;
                 },
-                width: "w-40",
+                width: "w-48",
             },
             {
                 key: "createdAt",
                 label: "Created",
-                render: (v) => new Date(String(v)).toLocaleString(),
-                width: "w-36",
+                render: (v) => {
+                    const date = new Date(String(v));
+                    return date.toLocaleDateString('en-US', { month: '2-digit', day: '2-digit' }) + ' ' + date.toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit', hour12: false });
+                },
+                width: "w-28",
                 sortable: true,
             },
             {
@@ -239,6 +288,28 @@ export default function PosOrdersPage() {
                 label: "Total",
                 render: (_v, item) => formatCents(item.total ?? 0, undefined, 'NGN'),
                 width: "w-24",
+            },
+
+            {
+                key: "status",
+                label: "Fulfillment",
+                render: (v) => {
+                    const s = String(v || "pending");
+                    const cls =
+                        s === "pending"
+                            ? "bg-slate-100 text-slate-800"
+                            : s === "processing"
+                            ? "bg-blue-100 text-blue-800"
+                            : s === "fulfilled"
+                            ? "bg-green-100 text-green-800"
+                            : s === "completed"
+                            ? "bg-emerald-100 text-emerald-800"
+                            : s === "cancelled"
+                            ? "bg-red-100 text-red-800"
+                            : "bg-gray-100 text-gray-800";
+                    return <Badge className={cls}>{s}</Badge>;
+                },
+                width: "w-28",
             },
             {
                 key: "amountDue",
@@ -251,27 +322,6 @@ export default function PosOrdersPage() {
                             {isPaid ? "✓ Paid" : formatCents(due, undefined, 'NGN')}
                         </span>
                     );
-                },
-                width: "w-28",
-            },
-            {
-                key: "status",
-                label: "Status",
-                render: (v) => {
-                    const s = String(v);
-                    const cls =
-                        s === "pending"
-                            ? "bg-yellow-100 text-yellow-800"
-                            : s === "processing"
-                            ? "bg-blue-100 text-blue-800"
-                            : s === "completed"
-                            ? "bg-green-100 text-green-800"
-                            : s === "fulfilled"
-                            ? "bg-green-100 text-green-800"
-                            : s === "cancelled"
-                            ? "bg-red-100 text-red-800"
-                            : "bg-gray-100 text-gray-800";
-                    return <Badge className={cls}>{s}</Badge>;
                 },
                 width: "w-28",
             },
@@ -304,7 +354,6 @@ export default function PosOrdersPage() {
                                         variant="outline"
                                         onClick={() => {
                                             setSelectedOrderForItems(item);
-                                            setNewItemCart([]);
                                             setShowAddItemsModal(true);
                                         }}
                                     >
@@ -339,12 +388,26 @@ export default function PosOrdersPage() {
                     <TableFilterBar
                         filters={[
                             {
-                                key: "status",
-                                label: "Status",
-                                value: statusFilter || "pending",
+                                key: "paymentStatus",
+                                label: "Payment Status",
+                                value: paymentStatusFilter || "all",
                                 options: [
-                                    { value: "pending", label: "Pending Payment" },
-                                    { value: "processing", label: "In Progress" },
+                                    { value: "all", label: "All Payment Status" },
+                                    { value: "unpaid", label: "Unpaid" },
+                                    { value: "partial", label: "Partial" },
+                                    { value: "paid", label: "Paid" },
+                                    { value: "refunded", label: "Refunded" },
+                                ],
+                            },
+                            {
+                                key: "status",
+                                label: "Fulfillment Status",
+                                value: statusFilter || "all",
+                                options: [
+                                    { value: "all", label: "All Fulfillment Status" },
+                                    { value: "pending", label: "Pending" },
+                                    { value: "processing", label: "Processing" },
+                                    { value: "fulfilled", label: "Fulfilled" },
                                     { value: "completed", label: "Completed" },
                                     { value: "cancelled", label: "Cancelled" },
                                 ],
@@ -358,14 +421,31 @@ export default function PosOrdersPage() {
                                     ...departmentsList.map((d) => ({ value: d.code, label: d.name || d.code })),
                                 ],
                             },
+                            {
+                                key: "departmentSection",
+                                label: "Department Section",
+                                value: departmentSectionFilter || "all",
+                                options: [
+                                    { value: "all", label: "All Sections" },
+                                    ...departmentSectionsList.map((s) => ({ value: s.id, label: s.name || s.id })),
+                                ],
+                            },
                         ]}
                         onFilterChange={(k, v) => {
+                            if (k === "paymentStatus") {
+                                setPaymentStatusFilter(v === "all" ? "" : v);
+                                setPage(1);
+                            }
                             if (k === "status") {
-                                setStatusFilter(v === "all" ? "pending" : v);
+                                setStatusFilter(v === "all" ? "" : v);
                                 setPage(1);
                             }
                             if (k === "department") {
                                 setDepartmentFilter(v === "all" ? "" : v);
+                                setPage(1);
+                            }
+                            if (k === "departmentSection") {
+                                setDepartmentSectionFilter(v === "all" ? "" : v);
                                 setPage(1);
                             }
                         }}
@@ -416,105 +496,42 @@ export default function PosOrdersPage() {
             )}
 
             {/* Add Items Modal */}
-            <Dialog open={showAddItemsModal} onOpenChange={setShowAddItemsModal}>
-                <DialogContent className="max-w-2xl">
+            <Dialog open={showAddItemsModal} onOpenChange={(open) => {
+                setShowAddItemsModal(open);
+                if (!open) {
+                    setSelectedOrderForItems(null);
+                }
+            }}>
+                <DialogContent className="max-w-md">
                     <DialogHeader>
                         <DialogTitle>Add Items to Order {selectedOrderForItems?.orderNumber}</DialogTitle>
                     </DialogHeader>
                     <div className="space-y-4">
-                        {/* Item Input Section */}
-                        <div className="border-b pb-4">
-                            <div className="grid grid-cols-3 gap-3">
-                                <div>
-                                    <label className="text-sm font-medium">Product Name</label>
-                                    <Input
-                                        id="itemProductName"
-                                        placeholder="e.g., Extra Appetizer"
-                                        disabled={isSubmittingItems}
-                                    />
-                                </div>
-                                <div>
-                                    <label className="text-sm font-medium">Quantity</label>
-                                    <Input
-                                        id="itemQuantity"
-                                        type="number"
-                                        min="1"
-                                        defaultValue="1"
-                                        disabled={isSubmittingItems}
-                                    />
-                                </div>
-                                <div>
-                                    <label className="text-sm font-medium">Unit Price</label>
-                                    <Input
-                                        id="itemUnitPrice"
-                                        type="number"
-                                        step="0.01"
-                                        placeholder="0.00"
-                                        disabled={isSubmittingItems}
-                                    />
-                                </div>
+                        {/* Originating Section Info */}
+                        {selectedOrderForItems?.lines?.[0]?.departmentSection && (
+                            <div className="bg-blue-50 border border-blue-200 rounded p-3">
+                                <p className="text-sm font-semibold text-blue-900">Originating Section</p>
+                                <p className="text-sm text-blue-800 mt-1">
+                                    {selectedOrderForItems.lines[0].departmentSection.name}
+                                    {selectedOrderForItems.lines[0].departmentSection.department?.code && (
+                                        <span className="font-medium"> ({selectedOrderForItems.lines[0].departmentSection.department.code})</span>
+                                    )}
+                                </p>
+                                <p className="text-xs text-blue-700 mt-2">Items will be added to this section to maintain inventory integrity.</p>
                             </div>
-                            <Button
-                                onClick={() => {
-                                    const productName = (document.getElementById('itemProductName') as HTMLInputElement)?.value;
-                                    const quantity = parseInt((document.getElementById('itemQuantity') as HTMLInputElement)?.value) || 1;
-                                    const unitPrice = parseFloat((document.getElementById('itemUnitPrice') as HTMLInputElement)?.value) || 0;
-                                    
-                                    if (!productName || unitPrice <= 0) {
-                                        alert("Please enter product name and unit price");
-                                        return;
-                                    }
-                                    
-                                    setNewItemCart([...newItemCart, {
-                                        lineId: Math.random().toString(36).slice(2),
-                                        productName,
-                                        quantity,
-                                        unitPrice,
-                                    }]);
-                                    
-                                    // Clear inputs
-                                    (document.getElementById('itemProductName') as HTMLInputElement).value = '';
-                                    (document.getElementById('itemQuantity') as HTMLInputElement).value = '1';
-                                    (document.getElementById('itemUnitPrice') as HTMLInputElement).value = '';
-                                }}
-                                className="mt-3 w-full"
-                                disabled={isSubmittingItems}
-                            >
-                                Add to Cart
-                            </Button>
-                        </div>
+                        )}
 
-                        {/* Cart Items */}
-                        {newItemCart.length > 0 && (
-                            <div className="space-y-2">
-                                <h4 className="font-semibold text-sm">Items to Add:</h4>
-                                {newItemCart.map((item) => (
-                                    <div key={item.lineId} className="flex items-center justify-between bg-slate-50 p-2 rounded">
-                                        <div className="flex-1">
-                                            <p className="text-sm font-medium">{item.productName}</p>
-                                            <p className="text-xs text-muted-foreground">
-                                                {item.quantity} × <Price amount={normalizeToCents(item.unitPrice)} isMinor={true} />
-                                            </p>
+                        {/* Existing Items - Frozen */}
+                        {selectedOrderForItems?.lines && selectedOrderForItems.lines.length > 0 && (
+                            <div className="border-b pb-4">
+                                <p className="text-sm font-semibold mb-2">Existing Items (Frozen)</p>
+                                <div className="space-y-1 max-h-40 overflow-y-auto">
+                                    {selectedOrderForItems.lines.map((line: any, idx: number) => (
+                                        <div key={idx} className="text-xs bg-slate-50 p-2 rounded">
+                                            <p className="font-medium">{line.productName || 'Unknown'}</p>
+                                            <p className="text-muted-foreground">Qty: {line.quantity}</p>
                                         </div>
-                                        <div className="text-right">
-                                            <p className="text-sm font-semibold">
-                                                <Price amount={normalizeToCents(item.quantity * item.unitPrice)} isMinor={true} />
-                                            </p>
-                                        </div>
-                                        <Button
-                                            variant="ghost"
-                                            size="sm"
-                                            onClick={() => setNewItemCart(newItemCart.filter(x => x.lineId !== item.lineId))}
-                                            disabled={isSubmittingItems}
-                                        >
-                                            ✕
-                                        </Button>
-                                    </div>
-                                ))}
-                                <div className="border-t pt-2 text-right">
-                                    <p className="text-sm font-semibold">
-                                        Total: <Price amount={newItemCart.reduce((sum, item) => sum + normalizeToCents(item.quantity * item.unitPrice), 0)} isMinor={true} />
-                                    </p>
+                                    ))}
                                 </div>
                             </div>
                         )}
@@ -523,16 +540,13 @@ export default function PosOrdersPage() {
                         <Button variant="outline" onClick={() => {
                             setShowAddItemsModal(false);
                             setSelectedOrderForItems(null);
-                            setNewItemCart([]);
                         }}>
                             Cancel
                         </Button>
                         <Button 
-                            onClick={handleAddItems} 
-                            disabled={isSubmittingItems || newItemCart.length === 0}
+                            onClick={handleAddItems}
                         >
-                            {isSubmittingItems ? <Loader2 className="h-4 w-4 animate-spin mr-2" /> : null}
-                            Add {newItemCart.length} Item{newItemCart.length !== 1 ? 's' : ''}
+                            Open Terminal
                         </Button>
                     </DialogFooter>
                 </DialogContent>

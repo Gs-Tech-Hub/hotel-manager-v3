@@ -120,9 +120,10 @@ export class OrderService extends BaseService<IOrderHeader> {
           tax: 0,
           total: subtotal,
           status: 'pending',
+          paymentStatus: 'unpaid', // Initialize as unpaid
           notes: data.notes,
           createdBy: _ctx?.userId, // Preserve audit trail of who created the order
-        },
+        } as any,
       });
 
       // Extract department codes for later routing
@@ -135,6 +136,20 @@ export class OrderService extends BaseService<IOrderHeader> {
         return out
       }
 
+      // Map department codes to their default sections for order discovery
+      // This ensures orders created through a terminal maintain section context
+      // allowing consistent linkage when adding items back to the originating section
+      const deptCodeToSectionId: { [key: string]: string } = {};
+      for (const code of deptCodes) {
+        const dept = await prisma.department.findUnique({
+          where: { code },
+          include: { sections: { take: 1, orderBy: { createdAt: 'asc' } } }
+        });
+        if (dept?.sections?.[0]) {
+          deptCodeToSectionId[code] = dept.sections[0].id;
+        }
+      }
+
       // Prepare order lines and reservation rows
       const linesData = data.items.map((item: any, idx: number) => {
         const unitPriceCents = (item as any)._normalizedUnitPrice ?? normalizeToCents(item.unitPrice);
@@ -145,6 +160,7 @@ export class OrderService extends BaseService<IOrderHeader> {
           lineNumber: idx + 1,
           orderHeaderId: header.id,
           departmentCode: item.departmentCode,
+          departmentSectionId: deptCodeToSectionId[item.departmentCode] || null,
           productId: item.productId,
           productType: item.productType,
           productName: item.productName,
@@ -594,11 +610,25 @@ export class OrderService extends BaseService<IOrderHeader> {
       const allPayments = await (prisma as any).orderPayment.findMany({ where: { orderHeaderId: orderId } });
   const totalPayments = allPayments.reduce((sum: number, p: any) => sum + p.amount, 0);
 
+      // Determine payment status based on total paid vs order total
+      let paymentStatus = 'unpaid';
+      if (totalPayments >= order.total) {
+        paymentStatus = 'paid'; // Fully paid
+      } else if (totalPayments > 0) {
+        paymentStatus = 'partial'; // Partially paid
+      }
+
       if (totalPayments >= order.total) {
         // Fully paid: move to processing and consume reserved inventory for inventory-based departments
         await prisma.$transaction(async (tx: any) => {
-          // Update order status and sync department rows atomically
-          await tx.orderHeader.update({ where: { id: orderId }, data: { status: 'processing' } });
+          // Update order status and payment status, sync department rows atomically
+          await tx.orderHeader.update({ 
+            where: { id: orderId }, 
+            data: { 
+              status: 'processing',
+              paymentStatus: 'paid', // Explicitly mark as paid
+            } 
+          });
           await tx.orderDepartment.updateMany({ where: { orderHeaderId: orderId }, data: { status: 'processing' } });
 
 
@@ -686,6 +716,14 @@ export class OrderService extends BaseService<IOrderHeader> {
         } catch (e) {
           try { const logger = await import('@/lib/logger'); logger.error(e, { context: 'rollupParentStats.recordPayment' }); } catch {}
         }
+      } else if (totalPayments > 0) {
+        // Partially paid: update payment status to 'partial'
+        await prisma.orderHeader.update({
+          where: { id: orderId },
+          data: { 
+            paymentStatus: 'partial' 
+          } as any,
+        });
       }
 
       return payment;

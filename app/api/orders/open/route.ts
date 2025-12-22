@@ -51,12 +51,13 @@ export async function GET(request: NextRequest) {
     const searchParams = request.nextUrl.searchParams;
     const departmentCode = searchParams.get('departmentCode');
     const customerId = searchParams.get('customerId');
+    const paymentStatus = searchParams.get('paymentStatus') || 'unpaid'; // Default to unpaid orders
     const limit = Math.min(parseInt(searchParams.get('limit') || '50'), 100);
     const offset = parseInt(searchParams.get('offset') || '0');
 
     // Build filter
     const whereClause: any = {
-      status: 'pending', // Only pending orders (deferred payments)
+      paymentStatus: paymentStatus, // Filter by payment status instead of order status
     };
 
     if (departmentCode) {
@@ -81,7 +82,11 @@ export async function GET(request: NextRequest) {
       where: whereClause,
       include: {
         customer: true,
-        lines: true,
+        lines: {
+          include: {
+            departmentSection: true,
+          },
+        },
         departments: {
           include: {
             department: true,
@@ -89,7 +94,7 @@ export async function GET(request: NextRequest) {
         },
         payments: true,
         discounts: true,
-      },
+      } as any,
       orderBy: {
         createdAt: 'desc',
       },
@@ -98,7 +103,7 @@ export async function GET(request: NextRequest) {
     });
 
     // Format response
-    const formattedOrders = orders.map((order) => ({
+    const formattedOrders = orders.map((order: any) => ({
       id: order.id,
       orderNumber: order.orderNumber,
       customerId: order.customerId,
@@ -106,29 +111,32 @@ export async function GET(request: NextRequest) {
       customerEmail: order.customer.email,
       customerPhone: order.customer.phone,
       status: order.status,
+      paymentStatus: order.paymentStatus,
       subtotal: order.subtotal,
       discountTotal: order.discountTotal,
       tax: order.tax,
       total: order.total,
       itemCount: order.lines.length,
-      departmentCodes: order.departments.map((d) => d.department.code),
-      departmentNames: order.departments.map((d) => d.department.name),
+      departmentCodes: order.departments.map((d: any) => d.department.code),
+      departmentNames: order.departments.map((d: any) => d.department.name),
+      departmentSections: [...new Set(order.lines.map((l: any) => l.departmentSection?.name).filter(Boolean))],
       totalPaid: order.payments
-        .filter((p) => p.paymentStatus === 'completed')
-        .reduce((sum, p) => sum + p.amount, 0),
+        .filter((p: any) => p.paymentStatus === 'completed')
+        .reduce((sum: number, p: any) => sum + p.amount, 0),
       amountDue: order.total -
         order.payments
-          .filter((p) => p.paymentStatus === 'completed')
-          .reduce((sum, p) => sum + p.amount, 0),
+          .filter((p: any) => p.paymentStatus === 'completed')
+          .reduce((sum: number, p: any) => sum + p.amount, 0),
       createdAt: order.createdAt,
       createdAtFormatted: order.createdAt.toLocaleString(),
       notes: order.notes,
-      lineItems: order.lines.map((line) => ({
+      lineItems: order.lines.map((line: any) => ({
         id: line.id,
         productName: line.productName,
         quantity: line.quantity,
         unitPrice: line.unitPrice,
         lineTotal: line.lineTotal,
+        departmentSection: line.departmentSection?.name || line.departmentCode,
       })),
     }));
 
