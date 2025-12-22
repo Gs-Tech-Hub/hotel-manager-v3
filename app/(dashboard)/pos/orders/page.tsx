@@ -492,6 +492,7 @@ export default function PosOrdersPage() {
                         setShowPaymentModal(false);
                         setSelectedOrderForPayment(null);
                     }}
+                    allowDeferred={false}
                 />
             )}
 

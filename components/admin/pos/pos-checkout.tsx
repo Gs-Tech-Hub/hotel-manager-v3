@@ -130,14 +130,17 @@ export default function POSCheckoutShell({ terminalId }: { terminalId?: string }
         // Determine if this is a deferred (pay later) order
         const isDeferred = payment.isDeferred === true || payment.method === 'deferred'
         
+        // When adding items to existing order, skip payment entirely
+        const isAddingItems = addToOrderId && payment.method === 'none'
+        
         // Format payment for API
         const apiPayment: any = {
           method: payment.method,
           isDeferred: isDeferred,
         }
         
-        // Add amount and method only for immediate payment
-        if (!isDeferred) {
+        // Add amount and method only for immediate payment (skip for adding items)
+        if (!isDeferred && !isAddingItems) {
           // payment.amount is now in cents (from pos-payment.tsx)
           // payment.isMinor tells us if it's already in minor units
           const amountCents = payment.isMinor ? payment.amount : normalizeToCents(payment.amount)
@@ -149,7 +152,11 @@ export default function POSCheckoutShell({ terminalId }: { terminalId?: string }
           items,
           discounts: appliedDiscountCodes,
           notes: `POS sale - ${departmentSection.name}`,
-          payment: apiPayment,
+        }
+        
+        // Only add payment if not adding items to existing order
+        if (!isAddingItems) {
+          payload.payment = apiPayment
         }
 
         const orderTypeLabel = isDeferred ? 'deferred' : 'immediate'
@@ -511,7 +518,25 @@ export default function POSCheckoutShell({ terminalId }: { terminalId?: string }
           </div>
 
           <div className="mt-4">
-            <button onClick={() => setShowPayment(true)} disabled={cart.length === 0} className="w-full py-2 bg-emerald-600 text-white rounded">Proceed to Payment</button>
+            {addToOrderId ? (
+              // When adding items to existing order, skip payment and just add
+              <button 
+                onClick={() => handlePaymentComplete({ method: 'none', isDeferred: false })} 
+                disabled={cart.length === 0} 
+                className="w-full py-2 bg-blue-600 text-white rounded"
+              >
+                Add Items to Order
+              </button>
+            ) : (
+              // When creating new order, show payment option
+              <button 
+                onClick={() => setShowPayment(true)} 
+                disabled={cart.length === 0} 
+                className="w-full py-2 bg-emerald-600 text-white rounded"
+              >
+                Proceed to Payment
+              </button>
+            )}
           </div>
         </div>
       </div>

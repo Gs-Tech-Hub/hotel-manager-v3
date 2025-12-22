@@ -4,11 +4,11 @@ import { useState } from "react"
 import Price from '@/components/ui/Price'
 import { normalizeToCents, centsToDollars } from '@/lib/price'
 
-export function POSPayment({ total, onComplete, onCancel }: { total: number; onComplete: (r: { method: string; amount?: number; isMinor?: boolean; isDeferred?: boolean }) => void; onCancel?: () => void }) {
+export function POSPayment({ total, onComplete, onCancel, allowDeferred = true }: { total: number; onComplete: (r: { method: string; amount?: number; isMinor?: boolean; isDeferred?: boolean }) => void; onCancel?: () => void; allowDeferred?: boolean }) {
   // total is expected to come in as cents from POS checkout
   const totalCents = total
   
-  const [paymentType, setPaymentType] = useState<'immediate'|'deferred'>('immediate')
+  const [paymentType, setPaymentType] = useState<'immediate'|'deferred'>(allowDeferred ? 'immediate' : 'immediate')
   const [method, setMethod] = useState<'cash'|'card'>('cash')
   const [tenderedCents, setTenderedCents] = useState<number>(totalCents)
 
@@ -24,7 +24,9 @@ export function POSPayment({ total, onComplete, onCancel }: { total: number; onC
           <label className="block text-sm font-semibold mb-2">Payment Type</label>
           <div className="flex gap-2">
             <button onClick={() => setPaymentType('immediate')} className={`flex-1 px-3 py-2 rounded transition ${paymentType==='immediate' ? 'bg-sky-600 text-white' : 'bg-slate-100 hover:bg-slate-200'}`}>Pay Now</button>
-            <button onClick={() => setPaymentType('deferred')} className={`flex-1 px-3 py-2 rounded transition ${paymentType==='deferred' ? 'bg-amber-600 text-white' : 'bg-slate-100 hover:bg-slate-200'}`}>Pay Later</button>
+            {allowDeferred && (
+              <button onClick={() => setPaymentType('deferred')} className={`flex-1 px-3 py-2 rounded transition ${paymentType==='deferred' ? 'bg-amber-600 text-white' : 'bg-slate-100 hover:bg-slate-200'}`}>Pay Later</button>
+            )}
           </div>
         </div>
 

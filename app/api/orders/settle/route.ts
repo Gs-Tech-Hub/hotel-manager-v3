@@ -100,11 +100,13 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    if (order.status !== 'pending') {
+    // Check payment status, not fulfillment status
+    // Orders can be fulfilled but still need payment - these are independent concerns
+    if (order.paymentStatus === 'paid' || order.paymentStatus === 'refunded') {
       return NextResponse.json(
         errorResponse(
           ErrorCodes.VALIDATION_ERROR,
-          `Cannot settle order with status: ${order.status}. Only pending orders can be settled.`
+          `Cannot settle order with payment status: ${order.paymentStatus}. Only unpaid or partially paid orders can be settled.`
         ),
         { status: getStatusCode(ErrorCodes.VALIDATION_ERROR) }
       );
