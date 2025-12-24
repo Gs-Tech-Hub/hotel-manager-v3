@@ -535,10 +535,13 @@ export class DepartmentService extends BaseService<IDepartment> {
    */
   async getDepartmentMenu(departmentCode: string) {
     try {
+      // Handle section codes (format: PARENT:section) by extracting parent code
+      const lookupCode = departmentCode.includes(':') ? departmentCode.split(':')[0] : departmentCode;
+      
       // Resolve department to get its logical type
       let category: string | null = null
       try {
-        const dept = await (prisma as any).department.findUnique({ where: { code: departmentCode } })
+        const dept = await (prisma as any).department.findUnique({ where: { code: lookupCode } })
         if (dept) {
           // Prefer department.type values (e.g., 'restaurants', 'bars')
           const t = (dept.type || '').toString().toLowerCase()
@@ -551,7 +554,7 @@ export class DepartmentService extends BaseService<IDepartment> {
 
       // Fallback mapping for legacy department codes
       if (!category) {
-        const up = (departmentCode || '').toString().toUpperCase()
+        const up = (lookupCode || '').toString().toUpperCase()
         if (up === 'RESTAURANT' || up === 'RESTAURANT_DEPT') category = 'food'
         else if (up === 'BAR_CLUB' || up === 'BAR' || up === 'BAR_AND_CLUBS') category = 'drink'
       }
@@ -560,7 +563,13 @@ export class DepartmentService extends BaseService<IDepartment> {
         return errorResponse(ErrorCodes.VALIDATION_ERROR, 'Department does not expose a menu')
       }
 
-      // Use inventory service to fetch items by category
+      // If this is a section code, fetch section-specific inventory
+      if (departmentCode.includes(':')) {
+        const items = await this.getSectionMenuItems(departmentCode, category);
+        return items;
+      }
+
+      // Use inventory service to fetch items by category (parent department level)
       const items = await inventoryItemService.getByCategory(category)
 
       // Map inventory items to menu shape with quantities
@@ -585,6 +594,68 @@ export class DepartmentService extends BaseService<IDepartment> {
     } catch (error) {
       console.error('Error building department menu:', error);
       return errorResponse(ErrorCodes.INTERNAL_ERROR, 'Failed to fetch department menu');
+    }
+  }
+
+  private async getSectionMenuItems(sectionCode: string, category: string) {
+    try {
+      const parts = sectionCode.split(':');
+      const parentCode = parts[0];
+      const sectionSlugOrId = parts.slice(1).join(':');
+
+      // Find the parent department
+      const parentDept = await (prisma as any).department.findUnique({ where: { code: parentCode } });
+      if (!parentDept) {
+        return errorResponse(ErrorCodes.NOT_FOUND, 'Parent department not found');
+      }
+
+      // Find the section
+      const section = await (prisma as any).departmentSection.findFirst({
+        where: {
+          departmentId: parentDept.id,
+          OR: [
+            { slug: sectionSlugOrId },
+            { id: sectionSlugOrId }
+          ]
+        }
+      });
+
+      if (!section) {
+        return errorResponse(ErrorCodes.NOT_FOUND, 'Section not found');
+      }
+
+      // Get section-specific inventory
+      const inventories = await (prisma as any).departmentInventory.findMany({
+        where: {
+          sectionId: section.id,
+          inventoryItem: {
+            category: category
+          }
+        },
+        include: {
+          inventoryItem: true
+        }
+      });
+
+      // Map to menu shape
+      const menu = inventories.map((inv: any) => {
+        const quantity = Number(inv.quantity || 0);
+        const priceInCents = Math.round((typeof inv.inventoryItem.unitPrice === 'object' && typeof inv.inventoryItem.unitPrice.toNumber === 'function' ? inv.inventoryItem.unitPrice.toNumber() : Number(inv.inventoryItem.unitPrice)) * 100);
+
+        return {
+          id: inv.inventoryItemId,
+          name: inv.inventoryItem.name,
+          price: priceInCents,
+          type: category,
+          available: quantity > 0,
+          quantity: quantity,
+        };
+      });
+
+      return menu;
+    } catch (error) {
+      console.error('Error building section menu:', error);
+      return errorResponse(ErrorCodes.INTERNAL_ERROR, 'Failed to fetch section menu');
     }
   }
 }

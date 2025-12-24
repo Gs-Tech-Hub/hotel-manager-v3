@@ -223,8 +223,24 @@ export async function PUT(
             try {
               const dept = await tx.department.findUnique({ where: { code: txLine.departmentCode } });
               if (dept) {
+                // Build the where clause to include sectionId if available
+                // This ensures we decrement the correct section's inventory
+                const whereClause: any = { 
+                  departmentId: dept.id, 
+                  inventoryItemId: txLine.productId, 
+                  quantity: { gte: fulfilledQty } 
+                };
+                
+                // If this line has a departmentSectionId, scope to that section
+                if (txLine.departmentSectionId) {
+                  whereClause.sectionId = txLine.departmentSectionId;
+                } else {
+                  // Legacy: if no sectionId, scope to parent (sectionId = null)
+                  whereClause.sectionId = null;
+                }
+                
                 const res = await tx.departmentInventory.updateMany({
-                  where: { departmentId: dept.id, inventoryItemId: txLine.productId, quantity: { gte: fulfilledQty } },
+                  where: whereClause,
                   data: { quantity: { decrement: fulfilledQty } },
                 });
 

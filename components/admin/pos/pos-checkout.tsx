@@ -16,6 +16,7 @@ interface SelectedSection {
   name: string
   departmentCode: string
   departmentName: string
+  sectionCode?: string
 }
 
 export default function POSCheckoutShell({ terminalId }: { terminalId?: string }) {
@@ -121,7 +122,8 @@ export default function POSCheckoutShell({ terminalId }: { terminalId?: string }
           productId: c.productId,
           productType: (c as any).type || 'inventory',
           productName: c.productName,
-          departmentCode: departmentSection.departmentCode,
+          departmentCode: departmentSection.sectionCode || departmentSection.departmentCode,
+          departmentSectionId: departmentSection.id,
           quantity: c.quantity,
           unitPrice: c.unitPrice,
         }))
@@ -152,6 +154,7 @@ export default function POSCheckoutShell({ terminalId }: { terminalId?: string }
           items,
           discounts: appliedDiscountCodes,
           notes: `POS sale - ${departmentSection.name}`,
+          departmentSectionId: departmentSection.id,
         }
         
         // Only add payment if not adding items to existing order
@@ -298,7 +301,8 @@ export default function POSCheckoutShell({ terminalId }: { terminalId?: string }
               id: foundTerminal.id,
               name: foundTerminal.name,
               departmentCode: foundTerminal.departmentCode,
-              departmentName: foundTerminal.departmentName
+              departmentName: foundTerminal.departmentName,
+              sectionCode: foundTerminal.sectionCode
             })
           } else {
             setTerminalError('Terminal not found')
@@ -321,7 +325,7 @@ export default function POSCheckoutShell({ terminalId }: { terminalId?: string }
 
   // Load products for selected section
   useEffect(() => {
-    const code = departmentSection?.departmentCode
+    const code = departmentSection?.sectionCode || departmentSection?.departmentCode
     if (!code) {
       setProducts([])
       return
@@ -362,7 +366,7 @@ export default function POSCheckoutShell({ terminalId }: { terminalId?: string }
     return () => {
       mounted = false
     }
-  }, [departmentSection?.departmentCode])
+  }, [departmentSection?.sectionCode, departmentSection?.departmentCode])
 
   // Fetch sales summary
   useEffect(() => {

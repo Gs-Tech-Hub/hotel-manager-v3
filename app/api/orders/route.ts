@@ -20,10 +20,11 @@ import { OrderService } from '@/services/order.service';
  * {
  *   customerId: string
  *   items: [
- *     { productId, productType, productName, departmentCode, quantity, unitPrice }
+ *     { productId, productType, productName, departmentCode, departmentSectionId?, quantity, unitPrice }
  *   ]
  *   discounts?: string[]
  *   notes?: string
+ *   departmentSectionId?: string
  * }
  */
 export async function POST(request: NextRequest) {
@@ -63,7 +64,7 @@ export async function POST(request: NextRequest) {
 
     // Parse request body
     const body = await request.json();
-    const { customerId: incomingCustomerId, items, discounts, notes } = body;
+    const { customerId: incomingCustomerId, items, discounts, notes, departmentSectionId } = body;
 
     // If no customerId provided (walk-in), create a guest customer record
     let customerId = incomingCustomerId
@@ -125,6 +126,7 @@ export async function POST(request: NextRequest) {
         items,
         discounts,
         notes,
+        departmentSectionId,
       },
       userWithRoles // Pass user context with userId for audit trail
     );

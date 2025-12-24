@@ -46,11 +46,13 @@ export class OrderService extends BaseService<IOrderHeader> {
       productType: string;
       productName: string;
       departmentCode: string;
+      departmentSectionId?: string;
       quantity: number;
       unitPrice: number;
     }>;
     discounts?: string[]; // Promo codes/rule IDs
     notes?: string;
+    departmentSectionId?: string;
   }, _ctx?: UserContext) {
     try {
       // Validate customer exists
@@ -62,8 +64,12 @@ export class OrderService extends BaseService<IOrderHeader> {
       // Generate unique order number
       const orderNumber = `ORD-${Date.now()}-${Math.random().toString(36).substr(2, 9).toUpperCase()}`;
 
-      // Pre-fetch all departments to resolve IDs
-      const departmentCodes = Array.from(new Set(data.items.map(i => i.departmentCode)));
+      // Extract parent department codes from items (handle section codes like "RESTAURANT:main")
+      const departmentCodes = Array.from(new Set(data.items.map(i => {
+        const code = i.departmentCode || '';
+        // If this is a section code (contains ':'), extract parent code
+        return code.includes(':') ? code.split(':')[0] : code;
+      })));
       const deptRecords = await prisma.department.findMany({ where: { code: { in: departmentCodes } } });
       const deptMap: Record<string, string> = {};
       for (const d of deptRecords) {
@@ -136,17 +142,55 @@ export class OrderService extends BaseService<IOrderHeader> {
         return out
       }
 
-      // Map department codes to their default sections for order discovery
-      // This ensures orders created through a terminal maintain section context
-      // allowing consistent linkage when adding items back to the originating section
+      // Map department codes to their sections for order discovery
+      // Prioritize:
+      // 1. departmentSectionId passed per-item from POS terminal
+      // 2. departmentSectionId passed at order level (fallback for whole order)
+      // 3. First section of department (legacy default)
+      // Note: departmentCode might be a full section code like "RESTAURANT:main" now
       const deptCodeToSectionId: { [key: string]: string } = {};
       for (const code of deptCodes) {
-        const dept = await prisma.department.findUnique({
-          where: { code },
-          include: { sections: { take: 1, orderBy: { createdAt: 'asc' } } }
+        // If this is a section code, resolve it to the section ID
+        if (code.includes(':')) {
+          const parts = code.split(':');
+          const parentCode = parts[0];
+          const sectionSlugOrId = parts.slice(1).join(':');
+          
+          const parentDept = await prisma.department.findUnique({ where: { code: parentCode } });
+          if (parentDept) {
+            const section = await prisma.departmentSection.findFirst({
+              where: {
+                departmentId: parentDept.id,
+                OR: [
+                  { slug: sectionSlugOrId },
+                  { id: sectionSlugOrId }
+                ]
+              }
+            });
+            if (section) {
+              deptCodeToSectionId[parentCode] = section.id;
+            }
+          }
+        } else {
+          // Regular parent code - use first section if available
+          const dept = await prisma.department.findUnique({
+            where: { code },
+            include: { sections: { take: 1, orderBy: { createdAt: 'asc' } } }
+          });
+          if (dept?.sections?.[0]) {
+            deptCodeToSectionId[code] = dept.sections[0].id;
+          }
+        }
+      }
+      
+      // If a departmentSectionId was provided at the order level, use it for all items of its department
+      if (data.departmentSectionId) {
+        const deptForSection = await prisma.departmentSection.findUnique({
+          where: { id: data.departmentSectionId },
+          include: { department: true }
         });
-        if (dept?.sections?.[0]) {
-          deptCodeToSectionId[code] = dept.sections[0].id;
+        if (deptForSection?.department?.code) {
+          deptCodeToSectionId[deptForSection.department.code] = data.departmentSectionId;
         }
       }
 
@@ -156,11 +200,17 @@ export class OrderService extends BaseService<IOrderHeader> {
         const lineTotalCents = item.quantity * unitPriceCents;
         validatePrice(lineTotalCents, `Line ${idx + 1} total`);
         
+        // Extract parent code if departmentCode is a section code
+        const parentCode = item.departmentCode?.includes(':') ? item.departmentCode.split(':')[0] : item.departmentCode;
+        
+        // Use per-item departmentSectionId if provided, otherwise use the dept code mapping
+        const sectionId = item.departmentSectionId || deptCodeToSectionId[parentCode] || null;
+        
         return {
           lineNumber: idx + 1,
           orderHeaderId: header.id,
           departmentCode: item.departmentCode,
-          departmentSectionId: deptCodeToSectionId[item.departmentCode] || null,
+          departmentSectionId: sectionId,
           productId: item.productId,
           productType: item.productType,
           productName: item.productName,
@@ -173,7 +223,11 @@ export class OrderService extends BaseService<IOrderHeader> {
       });
 
       const reservationRows = data.items
-        .filter((it: any) => ['RESTAURANT', 'BAR_CLUB'].includes(it.departmentCode))
+        .filter((it: any) => {
+          const deptCode = it.departmentCode || '';
+          const parentCode = deptCode.includes(':') ? deptCode.split(':')[0] : deptCode;
+          return ['RESTAURANT', 'BAR_CLUB'].includes(parentCode);
+        })
         .map((it: any) => ({
           inventoryItemId: it.productId,
           orderHeaderId: header.id,
@@ -183,7 +237,9 @@ export class OrderService extends BaseService<IOrderHeader> {
 
       const orderDepartmentRows: any[] = [];
       for (const code of deptCodes) {
-        const deptId = deptMap[code];
+        // If this is a section code, extract parent code for department lookup
+        const parentCode = code.includes(':') ? code.split(':')[0] : code;
+        const deptId = deptMap[parentCode];
         if (deptId) orderDepartmentRows.push({ orderHeaderId: header.id, departmentId: deptId, status: 'pending' });
       }
 
