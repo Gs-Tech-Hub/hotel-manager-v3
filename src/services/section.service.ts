@@ -61,11 +61,19 @@ export class SectionService {
         const ids = mapped.map((m: any) => m.id)
         const allPossibleIds = [...ids, ...ids.map((id) => `menu-${id}`)]
 
+        // Only count items as sold if:
+        // 1. Line status is 'fulfilled' (fulfillment requirement)
+        // 2. Order header status is 'fulfilled' or 'completed'
+        // 3. Payment status is 'paid' or 'partial' (payment was made)
         const soldGroups = await prisma.orderLine.groupBy({
           by: ['productId'],
           where: {
             productId: { in: allPossibleIds },
-            OR: [ { orderHeader: { status: { in: ['completed', 'fulfilled'] } } }, { status: 'fulfilled' } ],
+            status: 'fulfilled',
+            orderHeader: { 
+              status: { in: ['fulfilled', 'completed'] },
+              paymentStatus: { in: ['paid', 'partial'] }
+            },
             ...(sectionFilter ? { departmentCode: sectionFilter } : {}),
           },
           _sum: { quantity: true, lineTotal: true },
@@ -115,11 +123,19 @@ export class SectionService {
         const ids = mapped.map((m: any) => m.id)
         const allPossibleIds = [...ids, ...ids.map((id) => `menu-${id}`)]
 
+        // Only count items as sold if:
+        // 1. Line status is 'fulfilled' (fulfillment requirement)
+        // 2. Order header status is 'fulfilled' or 'completed'
+        // 3. Payment status is 'paid' or 'partial' (payment was made)
         const soldGroups = await prisma.orderLine.groupBy({
           by: ['productId'],
           where: {
             productId: { in: allPossibleIds },
-            OR: [ { orderHeader: { status: { in: ['completed', 'fulfilled'] } } }, { status: 'fulfilled' } ],
+            status: 'fulfilled',
+            orderHeader: { 
+              status: { in: ['fulfilled', 'completed'] },
+              paymentStatus: { in: ['paid', 'partial'] }
+            },
             ...(sectionFilter ? { departmentCode: sectionFilter } : {}),
           },
           _sum: { quantity: true, lineTotal: true },
@@ -220,11 +236,19 @@ export class SectionService {
         const ids = mapped.map((m: any) => m.id)
         const allPossibleIds = [...ids, ...ids.map((id) => `menu-${id}`)]
 
+        // Only count items as sold if:
+        // 1. Line status is 'fulfilled' (fulfillment requirement)
+        // 2. Order header status is 'fulfilled' or 'completed'
+        // 3. Payment status is 'paid' or 'partial' (payment was made)
         const soldGroups = await prisma.orderLine.groupBy({
           by: ['productId'],
           where: {
             productId: { in: allPossibleIds },
-            OR: [ { orderHeader: { status: { in: ['completed', 'fulfilled'] } } }, { status: 'fulfilled' } ],
+            status: 'fulfilled',
+            orderHeader: { 
+              status: { in: ['fulfilled', 'completed'] },
+              paymentStatus: { in: ['paid', 'partial'] }
+            },
             ...(sectionFilter ? { departmentCode: sectionFilter } : {}),
           },
           _sum: { quantity: true, lineTotal: true },

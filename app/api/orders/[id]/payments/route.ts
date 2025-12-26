@@ -81,6 +81,21 @@ export async function POST(
       );
     }
 
+    // Prevent recording payments on cancelled or refunded orders
+    if (order.status === 'cancelled') {
+      return NextResponse.json(
+        errorResponse(ErrorCodes.VALIDATION_ERROR, 'Cannot record payment for a cancelled order'),
+        { status: getStatusCode(ErrorCodes.VALIDATION_ERROR) }
+      );
+    }
+
+    if (order.status === 'refunded') {
+      return NextResponse.json(
+        errorResponse(ErrorCodes.VALIDATION_ERROR, 'Cannot record payment for a refunded order'),
+        { status: getStatusCode(ErrorCodes.VALIDATION_ERROR) }
+      );
+    }
+
     // Verify payment type exists
     const paymentType = await prisma.paymentType.findUnique({
       where: { id: paymentTypeId },

@@ -74,6 +74,14 @@ export async function POST(
       );
     }
 
+    // Prevent applying discounts to cancelled or refunded orders
+    if (order.status === 'cancelled' || order.status === 'refunded') {
+      return NextResponse.json(
+        errorResponse(ErrorCodes.VALIDATION_ERROR, `Cannot apply discounts to a ${order.status} order`),
+        { status: getStatusCode(ErrorCodes.VALIDATION_ERROR) }
+      );
+    }
+
     // Get discount rule
     const discountService = new DiscountService();
     const rule = discountRuleId

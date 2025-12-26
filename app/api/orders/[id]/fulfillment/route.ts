@@ -174,6 +174,15 @@ export async function PUT(
       );
     }
 
+    // Prevent fulfillment updates on cancelled or refunded orders
+    if (order.status === 'cancelled' || order.status === 'refunded') {
+      return NextResponse.json(
+        errorResponse(ErrorCodes.VALIDATION_ERROR, 
+          `Cannot update fulfillment for a ${order.status} order`),
+        { status: getStatusCode(ErrorCodes.VALIDATION_ERROR) }
+      );
+    }
+
     // Fetch line item
     const lineItem = order.lines.find((l: any) => l.id === lineItemId);
     if (!lineItem) {

@@ -4,10 +4,18 @@ import { useEffect, useState } from "react";
 import { useParams, useRouter } from "next/navigation";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-import { Loader2, CheckCircle2 } from "lucide-react";
+import { Loader2, CheckCircle2, AlertCircle, X } from "lucide-react";
 import { formatCents } from '@/lib/price';
 import Link from "next/link";
 import { Badge } from "@/components/ui/badge";
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogHeader,
+  DialogTitle,
+  DialogFooter,
+} from "@/components/ui/dialog";
 
 export default function OrderDetailPage() {
     const params = useParams();
@@ -16,6 +24,11 @@ export default function OrderDetailPage() {
     const [order, setOrder] = useState<any | null>(null);
     const [isLoading, setIsLoading] = useState(true);
     const [isUpdating, setIsUpdating] = useState(false);
+    const [cancelDialogOpen, setCancelDialogOpen] = useState(false);
+    const [refundDialogOpen, setRefundDialogOpen] = useState(false);
+    const [cancelError, setCancelError] = useState<string | null>(null);
+    const [refundError, setRefundError] = useState<string | null>(null);
+    const [refundReason, setRefundReason] = useState("");
 
     useEffect(() => {
         if (!id) return;
@@ -84,6 +97,68 @@ export default function OrderDetailPage() {
         }
     };
 
+    const handleCancelOrder = async () => {
+        if (!order) return;
+        setIsUpdating(true);
+        setCancelError(null);
+        try {
+            const res = await fetch(`/api/orders/${order.id}`, {
+                method: "DELETE",
+                credentials: 'same-origin',
+                headers: { "Content-Type": "application/json" },
+            });
+            const data = await res.json();
+            if (res.ok && data && data.success) {
+                setCancelDialogOpen(false);
+                // Refresh order
+                const r = await fetch(`/api/orders/${order.id}`, { credentials: 'same-origin' });
+                const d = await r.json();
+                if (r.ok && d && d.success) {
+                    setOrder(d.data);
+                }
+            } else {
+                setCancelError(data?.error?.message || 'Failed to cancel order');
+            }
+        } catch (e: any) {
+            console.error('Error cancelling order:', e);
+            setCancelError(e?.message || 'Failed to cancel order');
+        } finally {
+            setIsUpdating(false);
+        }
+    };
+
+    const handleRefundOrder = async () => {
+        if (!order) return;
+        setIsUpdating(true);
+        setRefundError(null);
+        try {
+            const res = await fetch(`/api/orders/${order.id}/refund`, {
+                method: "POST",
+                credentials: 'same-origin',
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({ reason: refundReason || undefined }),
+            });
+            const data = await res.json();
+            if (res.ok && data && data.success) {
+                setRefundDialogOpen(false);
+                setRefundReason("");
+                // Refresh order
+                const r = await fetch(`/api/orders/${order.id}`, { credentials: 'same-origin' });
+                const d = await r.json();
+                if (r.ok && d && d.success) {
+                    setOrder(d.data);
+                }
+            } else {
+                setRefundError(data?.error?.message || 'Failed to refund order');
+            }
+        } catch (e: any) {
+            console.error('Error refunding order:', e);
+            setRefundError(e?.message || 'Failed to refund order');
+        } finally {
+            setIsUpdating(false);
+        }
+    };
+
     const formatPrice = (price: any) => formatCents(price);
 
     if (isLoading) {
@@ -107,24 +182,55 @@ export default function OrderDetailPage() {
 
     const departmentNames = (order.departments || []).map((d: any) => d?.department?.name).filter(Boolean);
     const statusColor = order.status === 'fulfilled' ? 'bg-green-100 text-green-800' : 
+                       order.status === 'completed' ? 'bg-green-100 text-green-800' :
                        order.status === 'processing' ? 'bg-blue-100 text-blue-800' :
+                       order.status === 'cancelled' ? 'bg-red-100 text-red-800' :
+                       order.status === 'refunded' ? 'bg-orange-100 text-orange-800' :
                        'bg-yellow-100 text-yellow-800';
+    const paymentColor = order.paymentStatus === 'paid' ? 'bg-green-100 text-green-800' :
+                        order.paymentStatus === 'partial' ? 'bg-blue-100 text-blue-800' :
+                        order.paymentStatus === 'refunded' ? 'bg-orange-100 text-orange-800' :
+                        'bg-gray-100 text-gray-800';
+    
+    // Determine available actions
+    const canCancel = order.status === 'pending';
+    const canRefund = order.status === 'pending' && 
+                      (order.paymentStatus === 'paid' || order.paymentStatus === 'partial');
 
     return (
         <div className="space-y-8">
             <div className="flex items-center justify-between">
                 <div>
                     <h1 className="text-2xl font-bold">Order #{order.orderNumber || order.id}</h1>
-                    <div className="flex gap-2 mt-2">
+                    <div className="flex gap-2 mt-2 flex-wrap">
                         <Badge className={statusColor}>{order.status}</Badge>
+                        <Badge className={paymentColor}>{order.paymentStatus}</Badge>
                         <p className="text-muted-foreground text-sm">{departmentNames.join(', ') || "-"} • {new Date(order.createdAt).toLocaleString()}</p>
                     </div>
                 </div>
-                <div className="flex gap-2">
+                <div className="flex gap-2 flex-wrap">
                     <Button variant="outline" onClick={() => router.push('/pos/orders')}>Back</Button>
-                    <Button onClick={fulfillAll} disabled={isUpdating}>
+                    <Button onClick={fulfillAll} disabled={isUpdating || order.status === 'cancelled' || order.status === 'refunded'}>
                         {isUpdating ? 'Working...' : 'Mark All Fulfilled'}
                     </Button>
+                    {canCancel && (
+                        <Button 
+                            variant="destructive" 
+                            onClick={() => setCancelDialogOpen(true)}
+                            disabled={isUpdating}
+                        >
+                            Cancel Order
+                        </Button>
+                    )}
+                    {canRefund && (
+                        <Button 
+                            variant="outline"
+                            onClick={() => setRefundDialogOpen(true)}
+                            disabled={isUpdating}
+                        >
+                            Refund
+                        </Button>
+                    )}
                 </div>
             </div>
 
@@ -266,6 +372,89 @@ export default function OrderDetailPage() {
                     </CardContent>
                 </Card>
             )}
+
+            {/* Cancel Order Dialog */}
+            <Dialog open={cancelDialogOpen} onOpenChange={setCancelDialogOpen}>
+                <DialogContent>
+                    <DialogHeader>
+                        <DialogTitle>Cancel Order?</DialogTitle>
+                        <DialogDescription>
+                            This will cancel the pending order and release all inventory reservations.
+                            This action cannot be undone.
+                        </DialogDescription>
+                    </DialogHeader>
+                    {cancelError && (
+                        <div className="flex gap-2 items-start bg-red-50 border border-red-200 rounded p-3">
+                            <AlertCircle className="h-5 w-5 text-red-600 flex-shrink-0 mt-0.5" />
+                            <p className="text-sm text-red-800">{cancelError}</p>
+                        </div>
+                    )}
+                    <DialogFooter>
+                        <Button 
+                            variant="outline"
+                            onClick={() => setCancelDialogOpen(false)}
+                            disabled={isUpdating}
+                        >
+                            Keep Order
+                        </Button>
+                        <Button 
+                            variant="destructive"
+                            onClick={handleCancelOrder}
+                            disabled={isUpdating}
+                        >
+                            {isUpdating ? 'Cancelling...' : 'Cancel Order'}
+                        </Button>
+                    </DialogFooter>
+                </DialogContent>
+            </Dialog>
+
+            {/* Refund Order Dialog */}
+            <Dialog open={refundDialogOpen} onOpenChange={setRefundDialogOpen}>
+                <DialogContent>
+                    <DialogHeader>
+                        <DialogTitle>Refund Order?</DialogTitle>
+                        <DialogDescription>
+                            This will refund the fulfilled order and reverse the payment.
+                            The order will no longer count as sold.
+                        </DialogDescription>
+                    </DialogHeader>
+                    {refundError && (
+                        <div className="flex gap-2 items-start bg-red-50 border border-red-200 rounded p-3">
+                            <AlertCircle className="h-5 w-5 text-red-600 flex-shrink-0 mt-0.5" />
+                            <p className="text-sm text-red-800">{refundError}</p>
+                        </div>
+                    )}
+                    <div className="space-y-3">
+                        <div>
+                            <label className="text-sm font-medium">Refund Reason (optional)</label>
+                            <textarea
+                                value={refundReason}
+                                onChange={(e) => setRefundReason(e.target.value)}
+                                placeholder="e.g., Customer request, damaged item, etc."
+                                className="w-full mt-2 p-2 border rounded text-sm"
+                                rows={3}
+                                disabled={isUpdating}
+                            />
+                        </div>
+                    </div>
+                    <DialogFooter>
+                        <Button 
+                            variant="outline"
+                            onClick={() => setRefundDialogOpen(false)}
+                            disabled={isUpdating}
+                        >
+                            Keep Order
+                        </Button>
+                        <Button 
+                            variant="destructive"
+                            onClick={handleRefundOrder}
+                            disabled={isUpdating}
+                        >
+                            {isUpdating ? 'Processing...' : 'Refund Order'}
+                        </Button>
+                    </DialogFooter>
+                </DialogContent>
+            </Dialog>
         </div>
     );
 }

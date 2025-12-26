@@ -52,13 +52,34 @@ export async function POST(
       );
     }
 
+    // Fetch order
+    const order = await (prisma as any).orderHeader.findUnique({
+      where: { id: orderId },
+    });
+
+    if (!order) {
+      return NextResponse.json(
+        errorResponse(ErrorCodes.NOT_FOUND, 'Order not found'),
+        { status: getStatusCode(ErrorCodes.NOT_FOUND) }
+      );
+    }
+
+    // Prevent adding items to cancelled or refunded orders
+    if (order.status === 'cancelled' || order.status === 'refunded') {
+      return NextResponse.json(
+        errorResponse(ErrorCodes.VALIDATION_ERROR, `Cannot add items to a ${order.status} order`),
+        { status: getStatusCode(ErrorCodes.VALIDATION_ERROR) }
+      );
+    }
+
     // Parse request body
     const body = await request.json();
     const { productId, productType, productName, departmentCode, departmentSectionId, quantity, unitPrice } = body;
 
-    if (!productId || !productName || !departmentCode || !quantity || !unitPrice) {
+    // Validate required fields
+    if (!productId || !productType || !productName || !departmentCode || !quantity || unitPrice === undefined) {
       return NextResponse.json(
-        errorResponse(ErrorCodes.VALIDATION_ERROR, 'Missing required line item fields'),
+        errorResponse(ErrorCodes.VALIDATION_ERROR, 'Missing required fields'),
         { status: getStatusCode(ErrorCodes.VALIDATION_ERROR) }
       );
     }

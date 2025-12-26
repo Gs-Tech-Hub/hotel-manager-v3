@@ -262,7 +262,8 @@ export class DepartmentService extends BaseService<IDepartment> {
 
       const totalUnitsRes: any = await client.orderLine.aggregate({ _sum: { quantity: true }, where: { departmentCode } });
       const fulfilledUnitsRes: any = await client.orderLine.aggregate({ _sum: { quantity: true }, where: { departmentCode, status: 'fulfilled' } });
-      const amountRes: any = await client.orderLine.aggregate({ _sum: { lineTotal: true }, where: { departmentCode, status: { in: ['fulfilled', 'completed'] } } });
+      // Only count amount for fulfilled orders with payment made (paid or partial)
+      const amountRes: any = await client.orderLine.aggregate({ _sum: { lineTotal: true }, where: { departmentCode, status: 'fulfilled', orderHeader: { status: { in: ['fulfilled', 'completed'] }, paymentStatus: { in: ['paid', 'partial'] } } } });
 
       const totalUnits = totalUnitsRes._sum.quantity || 0;
       const fulfilledUnits = fulfilledUnitsRes._sum.quantity || 0;

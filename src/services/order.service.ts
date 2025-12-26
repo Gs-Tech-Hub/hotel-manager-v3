@@ -890,22 +890,36 @@ export class OrderService extends BaseService<IOrderHeader> {
 
   /**
    * Cancel order and release reservations
+   * Only pending orders can be cancelled.
+   * For fulfilled orders with payment, use refundOrder() instead.
    */
   async cancelOrder(id: string, reason?: string, ctx?: UserContext) {
     try {
       const forbidden = requireRole(ctx, ['admin', 'manager']);
       if (forbidden) return forbidden;
 
-      const order = await (prisma as any).orderHeader.findUnique({ where: { id } });
+      const order = await (prisma as any).orderHeader.findUnique({ 
+        where: { id },
+        include: { payments: true }
+      });
       if (!order) {
         return errorResponse(ErrorCodes.NOT_FOUND, 'Order not found');
       }
 
-  await prisma.$transaction(async (tx: any) => {
+      // Only allow cancellation of pending orders
+      if (order.status !== 'pending') {
+        return errorResponse(ErrorCodes.VALIDATION_ERROR, `Cannot cancel ${order.status} orders. Use refund for fulfilled orders with payment.`);
+      }
+
+      await prisma.$transaction(async (tx: any) => {
         // Mark order as cancelled and propagate to department rows
         await tx.orderHeader.update({
           where: { id },
-          data: { status: 'cancelled' },
+          data: { 
+            status: 'cancelled',
+            // If there are payments, mark them as refunded (auto-refund on cancellation)
+            paymentStatus: (order.payments && order.payments.length > 0) ? 'refunded' : order.paymentStatus
+          },
         });
         await tx.orderDepartment.updateMany({ where: { orderHeaderId: id }, data: { status: 'cancelled' } });
 
@@ -920,6 +934,20 @@ export class OrderService extends BaseService<IOrderHeader> {
           where: { orderHeaderId: id, status: { not: 'fulfilled' } },
           data: { status: 'cancelled' },
         });
+
+        // Mark order lines as cancelled
+        await tx.orderLine.updateMany({
+          where: { orderHeaderId: id, status: { not: 'fulfilled' } },
+          data: { status: 'cancelled' },
+        });
+
+        // If there are any payments, mark them as refunded (auto-refund on cancel)
+        if (order.payments && order.payments.length > 0) {
+          await tx.orderPayment.updateMany({
+            where: { orderHeaderId: id },
+            data: { status: 'refunded' },
+          });
+        }
       });
 
       // Recalculate section stats for departments involved in the order
@@ -936,10 +964,95 @@ export class OrderService extends BaseService<IOrderHeader> {
         try { const logger = await import('@/lib/logger'); logger.error(e, { context: 'recalculateSectionStats.cancelOrder' }); } catch {}
       }
 
-      return { success: true, message: 'Order cancelled and reservations released' };
+      return { success: true, message: 'Order cancelled and any payments refunded' };
     } catch (error) {
       console.error('Error cancelling order:', error);
       return errorResponse(ErrorCodes.INTERNAL_ERROR, 'Failed to cancel order');
+    }
+  }
+
+  /**
+   * Refund a pending order with payment
+   * Only pending orders with paid/partial payment can be refunded.
+   * Sets order status to 'refunded' and payment status to 'refunded'.
+   */
+  async refundOrder(id: string, reason?: string, ctx?: UserContext) {
+    try {
+      const forbidden = requireRole(ctx, ['admin', 'manager']);
+      if (forbidden) return forbidden;
+
+      const order = await (prisma as any).orderHeader.findUnique({ 
+        where: { id },
+        include: { payments: true }
+      });
+      if (!order) {
+        return errorResponse(ErrorCodes.NOT_FOUND, 'Order not found');
+      }
+
+      // Only allow refunds for pending orders
+      if (order.status !== 'pending') {
+        return errorResponse(ErrorCodes.VALIDATION_ERROR, `Cannot refund ${order.status} orders. Only pending orders can be refunded.`);
+      }
+
+      if (!['paid', 'partial'].includes(order.paymentStatus)) {
+        return errorResponse(ErrorCodes.VALIDATION_ERROR, `Order payment status is ${order.paymentStatus}. Only paid/partial orders can be refunded.`);
+      }
+
+      await prisma.$transaction(async (tx: any) => {
+        // Mark order as refunded
+        await tx.orderHeader.update({
+          where: { id },
+          data: { 
+            status: 'refunded',
+            paymentStatus: 'refunded'
+          },
+        });
+
+        // Update all order lines to refunded
+        await tx.orderLine.updateMany({
+          where: { orderHeaderId: id },
+          data: { status: 'refunded' },
+        });
+
+        // Update department statuses to refunded
+        await tx.orderDepartment.updateMany({ 
+          where: { orderHeaderId: id }, 
+          data: { status: 'refunded' } 
+        });
+
+        // Mark fulfillments as refunded
+        await tx.orderFulfillment.updateMany({
+          where: { orderHeaderId: id },
+          data: { status: 'refunded' },
+        });
+
+        // Update any associated payments to refunded
+        if (order.payments && order.payments.length > 0) {
+          await tx.orderPayment.updateMany({
+            where: { orderHeaderId: id },
+            data: { status: 'refunded' },
+          });
+        }
+      });
+
+      // Recalculate section stats - refunded items should no longer count as sold
+      try {
+        const lines = await prisma.orderLine.findMany({ where: { orderHeaderId: id } });
+        const deptCodes = Array.from(new Set(lines.map((l: any) => l.departmentCode)));
+        for (const code of deptCodes) {
+          if (!code) continue;
+          await departmentService.recalculateSectionStats(code as string);
+          // Also roll up to parent
+          await departmentService.rollupParentStats(code);
+        }
+      } catch (e) {
+        try { const logger = await import('@/lib/logger'); logger.error(e, { context: 'recalculateSectionStats.refundOrder' }); } catch {}
+      }
+
+      return { success: true, message: 'Order refunded successfully' };
+    } catch (error) {
+      console.error('Error refunding order:', error);
+      return errorResponse(ErrorCodes.INTERNAL_ERROR, 'Failed to refund order');
     }
   }
 

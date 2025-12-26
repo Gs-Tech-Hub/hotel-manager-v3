@@ -332,10 +332,17 @@ export default function PosOrdersPage() {
                     // amountDue is calculated in cents
                     const amountDueCents = item.amountDue ?? ((item.total ?? 0) - (item.totalPaid ?? 0));
                     const isUnpaid = amountDueCents > 0;
+                    const isPaid = item.paymentStatus === 'paid' || item.paymentStatus === 'partial';
+                    const isCancelledOrRefunded = item.status === 'cancelled' || item.status === 'refunded';
+                    
+                    // Determine which buttons to show
+                    const canPay = isUnpaid && !isCancelledOrRefunded;
+                    const canAddItem = !isCancelledOrRefunded && item.status === 'pending';
+                    const canRefund = item.status === 'pending' && isPaid;
                     
                     return (
                         <div className="flex gap-2">
-                            {isUnpaid && (
+                            {canPay && (
                                 <>
                                     <Button
                                         size="sm"
@@ -360,6 +367,11 @@ export default function PosOrdersPage() {
                                         <Plus className="h-4 w-4" /> Item
                                     </Button>
                                 </>
+                            )}
+                            {canRefund && (
+                                <Link href={`/pos/orders/${item.id}`}>
+                                    <Button size="sm" variant="outline" className="text-orange-600">Refund</Button>
+                                </Link>
                             )}
                             <Link href={`/pos/orders/${item.id}`}>
                                 <Button size="sm" variant="outline">View</Button>
