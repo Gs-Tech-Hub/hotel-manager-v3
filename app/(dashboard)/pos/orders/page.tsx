@@ -12,6 +12,7 @@ import { Input } from "@/components/ui/input";
 import { Loader2, Plus } from "lucide-react";
 import { POSPayment } from "@/components/admin/pos/pos-payment";
 import Price from '@/components/ui/Price';
+import DateRangeFilter from '@/components/departments/DateRangeFilter';
 
 type Order = {
     id: string;
@@ -48,6 +49,15 @@ export default function PosOrdersPage() {
     const [page, setPage] = useState(1);
     const [total, setTotal] = useState(0);
     
+    // Helper to get today's date in YYYY-MM-DD format
+    const getTodayDate = () => {
+      const today = new Date()
+      return today.toISOString().split('T')[0]
+    }
+    
+    const [fromDate, setFromDate] = useState<string | null>(getTodayDate());
+    const [toDate, setToDate] = useState<string | null>(getTodayDate());
+    
     // Sorting state
     const [sortField, setSortField] = useState("createdAt");
     const [sortDirection, setSortDirection] = useState<"asc" | "desc">("desc");
@@ -78,6 +88,9 @@ export default function PosOrdersPage() {
                 // Add sorting parameters
                 params.append("sortBy", sortField);
                 params.append("sortOrder", sortDirection);
+                // Add date filters
+                if (fromDate) params.append("fromDate", fromDate);
+                if (toDate) params.append("toDate", toDate);
                 
                 const res = await fetch(`/api/orders?${params.toString()}`);
                 const data = await res.json();
@@ -106,7 +119,7 @@ export default function PosOrdersPage() {
             }
         };
         fetchOrders();
-    }, [page, search, statusFilter, paymentStatusFilter, departmentFilter, departmentSectionFilter, sortField, sortDirection, refreshTrigger]);
+    }, [page, search, statusFilter, paymentStatusFilter, departmentFilter, departmentSectionFilter, sortField, sortDirection, refreshTrigger, fromDate, toDate]);
 
     // Payment handler - receives from POSPayment component
     const handlePaymentComplete = async (payment: any) => {
@@ -393,10 +406,19 @@ export default function PosOrdersPage() {
             </div>
 
             <div className="grid gap-4">
-                <div className="flex items-center gap-4">
-                    <div className="flex-1">
+                <div className="flex items-center gap-4 flex-wrap">
+                    <div className="flex-1 min-w-[300px]">
                         <TableSearchBar value={search} onChange={(v) => { setSearch(v); setPage(1); }} placeholder="Search by order number or customer" isLoading={isLoading} />
                     </div>
+                    <DateRangeFilter
+                        onDateChange={(from, to) => {
+                            setFromDate(from);
+                            setToDate(to);
+                            setPage(1);
+                        }}
+                        defaultFromDate={fromDate}
+                        defaultToDate={toDate}
+                    />
                     <TableFilterBar
                         filters={[
                             {

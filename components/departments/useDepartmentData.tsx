@@ -2,7 +2,7 @@
 
 import { useEffect, useState, useCallback } from 'react'
 
-export default function useDepartmentData(decodedCode: string | undefined) {
+export default function useDepartmentData(decodedCode: string | undefined, fromDate?: string | null, toDate?: string | null) {
   const [menu, setMenu] = useState<any[]>([])
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
@@ -43,7 +43,7 @@ export default function useDepartmentData(decodedCode: string | undefined) {
     }
   }, [])
 
-  const fetchSectionProducts = useCallback(async (sectionCode: string) => {
+  const fetchSectionProducts = useCallback(async (sectionCode: string, fromDate?: string | null, toDate?: string | null) => {
     setSectionProductsLoading(true)
     setSectionProducts(null)
     try {
@@ -53,10 +53,25 @@ export default function useDepartmentData(decodedCode: string | undefined) {
         if (parts.length >= 2) parent = parts.slice(0, 2).join(':')
       }
 
-      let url = `/api/departments/${encodeURIComponent(parent)}/products?details=true&section=${encodeURIComponent(sectionCode)}&pageSize=100`
+      const params = new URLSearchParams({
+        details: 'true',
+        section: sectionCode,
+        pageSize: '100',
+      })
+      
+      if (fromDate) params.append('fromDate', fromDate)
+      if (toDate) params.append('toDate', toDate)
+
+      let url = `/api/departments/${encodeURIComponent(parent)}/products?${params.toString()}`
       let res = await fetch(url)
       if (!res.ok) {
-        url = `/api/departments/${encodeURIComponent(sectionCode)}/products?details=true&pageSize=100`
+        const params2 = new URLSearchParams({
+          details: 'true',
+          pageSize: '100',
+        })
+        if (fromDate) params2.append('fromDate', fromDate)
+        if (toDate) params2.append('toDate', toDate)
+        url = `/api/departments/${encodeURIComponent(sectionCode)}/products?${params2.toString()}`
         res = await fetch(url)
       }
 
@@ -236,7 +251,11 @@ export default function useDepartmentData(decodedCode: string | undefined) {
         if (decodedCode.includes(':')) {
           setSectionProductsLoading(true)
           try {
-            const sectionRes = await fetch(`/api/departments/${encodeURIComponent(decodedCode)}/section`)
+            const params = new URLSearchParams()
+            if (fromDate) params.append('fromDate', fromDate)
+            if (toDate) params.append('toDate', toDate)
+            const sectionUrl = `/api/departments/${encodeURIComponent(decodedCode)}/section${params.toString() ? '?' + params.toString() : ''}`
+            const sectionRes = await fetch(sectionUrl)
             if (!sectionRes.ok) throw new Error('Failed to fetch section')
             const sectionJson = await sectionRes.json()
             const sectionData = sectionJson.data || {}
@@ -296,7 +315,7 @@ export default function useDepartmentData(decodedCode: string | undefined) {
     }
 
     fetchDepartment()
-  }, [decodedCode, fetchMenu, fetchPendingOrderLines, loadChildrenForDepartment])
+  }, [decodedCode, fromDate, toDate, fetchMenu, fetchPendingOrderLines, loadChildrenForDepartment])
 
   // Expose a refresh function so callers can re-fetch department + section data on demand
   const refreshDepartment = async (code?: string) => {
@@ -308,7 +327,11 @@ export default function useDepartmentData(decodedCode: string | undefined) {
       if (useCode.includes(':')) {
         setSectionProductsLoading(true)
         try {
-          const sectionRes = await fetch(`/api/departments/${encodeURIComponent(useCode)}/section`)
+          const params = new URLSearchParams()
+          if (fromDate) params.append('fromDate', fromDate)
+          if (toDate) params.append('toDate', toDate)
+          const sectionUrl = `/api/departments/${encodeURIComponent(useCode)}/section${params.toString() ? '?' + params.toString() : ''}`
+          const sectionRes = await fetch(sectionUrl)
           if (!sectionRes.ok) throw new Error('Failed to fetch section')
           const sectionJson = await sectionRes.json()
           const sectionData = sectionJson.data || {}

@@ -4,8 +4,9 @@ import { successResponse, errorResponse, ErrorCodes, getStatusCode } from '@/lib
 
 /**
  * GET /api/departments/[code]/products
- * Query params: ?type=drink|inventoryItem&page=1&pageSize=20&search=...
+ * Query params: ?type=drink|inventoryItem&page=1&pageSize=20&search=...&fromDate=2024-01-01&toDate=2024-12-31
  * Returns paginated list of products relevant to the department with available quantity.
+ * Date filters apply to sold items reporting (amountSold, unitsSold).
  */
 export async function GET(request: NextRequest, { params }: { params: Promise<{ code: string }> }) {
   try {
@@ -17,6 +18,8 @@ export async function GET(request: NextRequest, { params }: { params: Promise<{ 
     const search = url.searchParams.get('search') || ''
     const includeDetails = url.searchParams.get('details') === 'true'
     const sectionFilter = url.searchParams.get('section') || null
+    const fromDate = url.searchParams.get('fromDate') || null
+    const toDate = url.searchParams.get('toDate') || null
 
     // Use sectionService for all logic
     const result = await sectionService.getProducts({
@@ -27,6 +30,8 @@ export async function GET(request: NextRequest, { params }: { params: Promise<{ 
       search,
       sectionFilter,
       includeDetails,
+      fromDate,
+      toDate,
     })
     return NextResponse.json(successResponse(result))
   } catch (err: any) {

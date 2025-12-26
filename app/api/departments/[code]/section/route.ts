@@ -13,6 +13,8 @@ import { successResponse, errorResponse, ErrorCodes, getStatusCode } from '@/lib
  *   - code: department or section code (e.g., "RESTAURANT" or "RESTAURANT:bar")
  *   - type: optional product type filter (drink|food|inventoryItem)
  *   - pageSize: optional page size (default 20, max 100)
+ *   - fromDate: optional ISO date string to filter sales from this date
+ *   - toDate: optional ISO date string to filter sales to this date
  * 
  * Returns:
  * {
@@ -47,6 +49,8 @@ export async function GET(
     const url = new URL(request.url)
     const type = url.searchParams.get('type') || ''
     const pageSize = Math.min(100, Math.max(5, Number(url.searchParams.get('pageSize') || '20')))
+    const fromDate = url.searchParams.get('fromDate') || null
+    const toDate = url.searchParams.get('toDate') || null
 
     // Allow public reads but include role/context if provided
     const ctx = await extractUserContext(request)
@@ -115,6 +119,8 @@ export async function GET(
         pageSize,
         includeDetails: true,
         sectionFilter: lookupCode.includes(':') ? lookupCode : null,
+        fromDate,
+        toDate,
       })
     } catch (e) {
       console.error('Failed to fetch products:', e)

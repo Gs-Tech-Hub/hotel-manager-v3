@@ -58,6 +58,10 @@ export default function DepartmentDetail() {
   const decodedCode = useMemo(() => (code ? decodeURIComponent(code) : ''), [code])
   const router = useRouter()
 
+  // Date filter state - must be declared before useDepartmentData
+  const [sectionFromDate, setSectionFromDate] = useState<string | null>(null)
+  const [sectionToDate, setSectionToDate] = useState<string | null>(null)
+
   const {
     menu,
     loading,
@@ -81,7 +85,7 @@ export default function DepartmentDetail() {
     setPendingModalOpen,
     refreshDepartment,
     setPendingModalItems,
-  } = useDepartmentData(decodedCode)
+  } = useDepartmentData(decodedCode, sectionFromDate, sectionToDate)
 
   const { hasPermission } = useAuth()
 
@@ -302,7 +306,17 @@ export default function DepartmentDetail() {
                 <div className="text-sm text-muted-foreground">Loading products...</div>
               ) : (
                 <>
-                  <SectionProductsTable products={sectionProducts} />
+                  <SectionProductsTable 
+                    products={sectionProducts} 
+                    departmentCode={decodedCode.split(':')[0]}
+                    sectionCode={decodedCode}
+                    onDateChange={(from, to) => {
+                      setSectionFromDate(from)
+                      setSectionToDate(to)
+                    }}
+                    dateFromFilter={sectionFromDate}
+                    dateToFilter={sectionToDate}
+                  />
 
                   
                 </>

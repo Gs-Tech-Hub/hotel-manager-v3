@@ -4,15 +4,19 @@ import Link from 'next/link'
 import Price from '@/components/ui/Price'
 import { getDisplayUnit, formatQuantityWithUnit } from '@/src/lib/unit-mapper'
 import { useEffect, useState } from 'react'
+import DateRangeFilter from './DateRangeFilter'
 
 type Props = {
   products?: any[] | null
   departmentCode?: string
   sectionCode?: string
   pageSize?: number
+  onDateChange?: (fromDate: string | null, toDate: string | null) => void
+  dateFromFilter?: string | null
+  dateToFilter?: string | null
 }
 
-export default function SectionProductsTable({ products: initialProducts, departmentCode, sectionCode, pageSize = 20 }: Props) {
+export default function SectionProductsTable({ products: initialProducts, departmentCode, sectionCode, pageSize = 20, onDateChange, dateFromFilter, dateToFilter }: Props) {
   const [products, setProducts] = useState<any[] | null>(initialProducts ?? null)
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
@@ -20,15 +24,32 @@ export default function SectionProductsTable({ products: initialProducts, depart
   const [totalCount, setTotalCount] = useState<number>(0)
   const [totalPages, setTotalPages] = useState<number>(1)
   const [pageSizeState, setPageSizeState] = useState<number>(pageSize)
+  
+  // Helper to get today's date in YYYY-MM-DD format
+  const getTodayDate = () => {
+    const today = new Date()
+    return today.toISOString().split('T')[0]
+  }
+  
+  const [fromDate, setFromDate] = useState<string | null>(dateFromFilter || getTodayDate())
+  const [toDate, setToDate] = useState<string | null>(dateToFilter || getTodayDate())
 
-  // If caller provided products, use them; otherwise fetch from API using departmentCode/sectionCode
+  // If caller provided products, use them initially; but when dates change, fetch fresh data
   useEffect(() => {
     let mounted = true
     const MAX_PAGE_SIZE = 100
     const ps = Math.min(MAX_PAGE_SIZE, Math.max(5, pageSizeState || 20))
 
     const fetchProducts = async () => {
-      if (initialProducts) return
+      // If we have initial products AND no date filtering, use them
+      if (initialProducts && !fromDate && !toDate) {
+        setProducts(initialProducts)
+        setTotalCount(initialProducts.length)
+        setTotalPages(Math.max(1, Math.ceil(initialProducts.length / ps)))
+        return
+      }
+      
+      // Otherwise, fetch from API (with or without dates)
       if (!sectionCode) {
         setProducts([])
         return
@@ -37,7 +58,17 @@ export default function SectionProductsTable({ products: initialProducts, depart
       setError(null)
       try {
         const parent = departmentCode || sectionCode
-        const url = `/api/departments/${encodeURIComponent(parent)}/products?details=true&section=${encodeURIComponent(sectionCode)}&pageSize=${ps}&page=${page}`
+        const params = new URLSearchParams({
+          details: 'true',
+          section: sectionCode,
+          pageSize: String(ps),
+          page: String(page),
+        })
+        
+        if (fromDate) params.append('fromDate', fromDate)
+        if (toDate) params.append('toDate', toDate)
+        
+        const url = `/api/departments/${encodeURIComponent(parent)}/products?${params.toString()}`
         const res = await fetch(url)
         if (!res.ok) throw new Error('Failed to load products')
         const j = await res.json()
@@ -61,7 +92,20 @@ export default function SectionProductsTable({ products: initialProducts, depart
 
     fetchProducts()
     return () => { mounted = false }
-  }, [initialProducts, departmentCode, sectionCode, pageSizeState, page])
+  }, [initialProducts, departmentCode, sectionCode, pageSizeState, page, fromDate, toDate])
+
+  // Debug: log prices
+  useEffect(() => {
+    if (products && products.length > 0) {
+      console.log('[SectionProductsTable] Sample prices:', {
+        first: {
+          name: products[0].name,
+          unitPrice: products[0].unitPrice,
+          amountSold: products[0].amountSold,
+        }
+      })
+    }
+  }, [products])
 
   if (loading) return <div className="text-sm text-muted-foreground">Loading products...</div>
   if (error) return <div className="text-sm text-red-600">{error}</div>
@@ -69,6 +113,19 @@ export default function SectionProductsTable({ products: initialProducts, depart
 
   return (
     <div>
+      {/* Date Range Filter */}
+      <div className="mb-4 flex items-center justify-between">
+        <DateRangeFilter
+          onDateChange={(from, to) => {
+            setFromDate(from)
+            setToDate(to)
+            setPage(1) // Reset to first page when filtering
+          }}
+          defaultFromDate={fromDate}
+          defaultToDate={toDate}
+        />
+      </div>
+
       <div className="mt-6 overflow-auto">
         <table className="w-full text-sm">
         <thead className="border-b">
@@ -90,14 +147,14 @@ export default function SectionProductsTable({ products: initialProducts, depart
                 {p.sku && <div className="text-xs text-muted-foreground">{p.sku}</div>}
               </td>
               <td className="text-right py-2 px-2 text-muted-foreground">
-                {p.unitPrice ? <Price amount={p.unitPrice} isMinor={false} /> : '—'}
+                {p.unitPrice ? <Price amount={p.unitPrice} isMinor={true} /> : '—'}
               </td>
               <td className="text-right py-2 px-2 font-medium">
                 {formatQuantityWithUnit(p.available ?? 0, getDisplayUnit(p.category, p.itemType))}
               </td>
               <td className="text-right py-2 px-2">{p.unitsSold ?? 0}</td>
               <td className="text-right py-2 px-2">
-                {p.amountSold ? <Price amount={p.amountSold} isMinor={false} /> : <Price amount={0} isMinor={false} />}
+                {p.amountSold ? <Price amount={p.amountSold} isMinor={true} /> : <Price amount={0} isMinor={true} />}
               </td>
               <td className="text-right py-2 px-2">{p.pendingQuantity ?? 0}</td>
               <td className="text-right py-2 px-2">

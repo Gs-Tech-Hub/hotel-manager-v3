@@ -10,6 +10,8 @@ type ProductParams = {
   search?: string
   sectionFilter?: string | null
   includeDetails?: boolean
+  fromDate?: string | null
+  toDate?: string | null
 }
 
 export class SectionService {
