@@ -152,6 +152,21 @@ export async function GET(
 
     try {
       const codeStr = (dept.code || '').toString()
+      // Build date filter for orderHeader
+      const dateWhere: any = {}
+      if (fromDate || toDate) {
+        if (fromDate && toDate) {
+          dateWhere.createdAt = {
+            gte: new Date(fromDate),
+            lte: new Date(new Date(toDate).getTime() + 86400000 - 1), // End of toDate
+          }
+        } else if (fromDate) {
+          dateWhere.createdAt = { gte: new Date(fromDate) }
+        } else if (toDate) {
+          dateWhere.createdAt = { lte: new Date(new Date(toDate).getTime() + 86400000 - 1) }
+        }
+      }
+
       if (codeStr.includes(':')) {
         // Section: count by department code on order lines
         const headerRows = await (prisma as any).orderLine.findMany({
@@ -163,7 +178,7 @@ export async function GET(
         if (headerIds.length) {
           const hdrCounts = await (prisma as any).orderHeader.groupBy({
             by: ['status'],
-            where: { id: { in: headerIds } },
+            where: { id: { in: headerIds }, ...dateWhere },
             _count: { _all: true }
           })
           for (const r of hdrCounts) {
@@ -176,10 +191,10 @@ export async function GET(
         }
       } else {
         // Parent department: use OrderDepartment table
-        totalOrders = await (prisma as any).orderDepartment.count({ where: { departmentId: dept.id } })
-        pendingOrders = await (prisma as any).orderDepartment.count({ where: { departmentId: dept.id, status: 'pending' } })
-        processingOrders = await (prisma as any).orderDepartment.count({ where: { departmentId: dept.id, status: 'processing' } })
-        fulfilledOrders = await (prisma as any).orderDepartment.count({ where: { departmentId: dept.id, status: 'fulfilled' } })
+        totalOrders = await (prisma as any).orderDepartment.count({ where: { departmentId: dept.id, ...(Object.keys(dateWhere).length > 0 ? { orderHeader: dateWhere } : {}) } })
+        pendingOrders = await (prisma as any).orderDepartment.count({ where: { departmentId: dept.id, status: 'pending', ...(Object.keys(dateWhere).length > 0 ? { orderHeader: dateWhere } : {}) } })
+        processingOrders = await (prisma as any).orderDepartment.count({ where: { departmentId: dept.id, status: 'processing', ...(Object.keys(dateWhere).length > 0 ? { orderHeader: dateWhere } : {}) } })
+        fulfilledOrders = await (prisma as any).orderDepartment.count({ where: { departmentId: dept.id, status: 'fulfilled', ...(Object.keys(dateWhere).length > 0 ? { orderHeader: dateWhere } : {}) } })
       }
     } catch (e) {
       // Ignore errors and keep zeros

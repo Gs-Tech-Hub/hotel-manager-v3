@@ -98,7 +98,12 @@ export default function Price({ amount, currency, autoConvert = true, showOrigin
   // Fallback formatting for original amount — respect `isMinor` flag and prefer currency symbol
   if (sourceCurrency) {
     try {
-      const formattedOriginal = new Intl.NumberFormat(undefined, { style: 'currency', currency: sourceCurrency }).format(majorNumber)
+      const formattedOriginal = new Intl.NumberFormat(undefined, { 
+        style: 'currency', 
+        currency: sourceCurrency,
+        minimumFractionDigits: 2,
+        maximumFractionDigits: 2
+      }).format(majorNumber)
       return (
         <span>
           {formattedOriginal}

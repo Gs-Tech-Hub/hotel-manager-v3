@@ -4,7 +4,6 @@ import Link from 'next/link'
 import Price from '@/components/ui/Price'
 import { getDisplayUnit, formatQuantityWithUnit } from '@/src/lib/unit-mapper'
 import { useEffect, useState } from 'react'
-import DateRangeFilter from './DateRangeFilter'
 
 type Props = {
   products?: any[] | null
@@ -31,8 +30,16 @@ export default function SectionProductsTable({ products: initialProducts, depart
     return today.toISOString().split('T')[0]
   }
   
-  const [fromDate, setFromDate] = useState<string | null>(dateFromFilter || getTodayDate())
-  const [toDate, setToDate] = useState<string | null>(dateToFilter || getTodayDate())
+  // Default to today if no dates provided
+  const [fromDate, setFromDate] = useState<string | null>(dateFromFilter ?? getTodayDate())
+  const [toDate, setToDate] = useState<string | null>(dateToFilter ?? getTodayDate())
+
+  // Sync parent date changes to internal state
+  useEffect(() => {
+    setFromDate(dateFromFilter ?? getTodayDate())
+    setToDate(dateToFilter ?? getTodayDate())
+    setPage(1) // Reset to first page when dates change
+  }, [dateFromFilter, dateToFilter])
 
   // If caller provided products, use them initially; but when dates change, fetch fresh data
   useEffect(() => {
@@ -113,19 +120,6 @@ export default function SectionProductsTable({ products: initialProducts, depart
 
   return (
     <div>
-      {/* Date Range Filter */}
-      <div className="mb-4 flex items-center justify-between">
-        <DateRangeFilter
-          onDateChange={(from, to) => {
-            setFromDate(from)
-            setToDate(to)
-            setPage(1) // Reset to first page when filtering
-          }}
-          defaultFromDate={fromDate}
-          defaultToDate={toDate}
-        />
-      </div>
-
       <div className="mt-6 overflow-auto">
         <table className="w-full text-sm">
         <thead className="border-b">
@@ -147,14 +141,14 @@ export default function SectionProductsTable({ products: initialProducts, depart
                 {p.sku && <div className="text-xs text-muted-foreground">{p.sku}</div>}
               </td>
               <td className="text-right py-2 px-2 text-muted-foreground">
-                {p.unitPrice ? <Price amount={p.unitPrice} isMinor={true} /> : '—'}
+                {p.unitPrice ? <Price amount={p.unitPrice} isMinor={false} /> : '—'}
               </td>
               <td className="text-right py-2 px-2 font-medium">
                 {formatQuantityWithUnit(p.available ?? 0, getDisplayUnit(p.category, p.itemType))}
               </td>
               <td className="text-right py-2 px-2">{p.unitsSold ?? 0}</td>
               <td className="text-right py-2 px-2">
-                {p.amountSold ? <Price amount={p.amountSold} isMinor={true} /> : <Price amount={0} isMinor={true} />}
+                {p.amountSold ? <Price amount={p.amountSold} isMinor={false} /> : <Price amount={0} isMinor={false} />}
               </td>
               <td className="text-right py-2 px-2">{p.pendingQuantity ?? 0}</td>
               <td className="text-right py-2 px-2">

@@ -67,6 +67,21 @@ export class SectionService {
         // 1. Line status is 'fulfilled' (fulfillment requirement)
         // 2. Order header status is 'fulfilled' or 'completed'
         // 3. Payment status is 'paid' or 'partial' (payment was made)
+        // 4. Order created within date range (if provided)
+        const dateWhere: any = {}
+        if (params.fromDate || params.toDate) {
+          if (params.fromDate && params.toDate) {
+            dateWhere.createdAt = {
+              gte: new Date(params.fromDate),
+              lte: new Date(new Date(params.toDate).getTime() + 86400000 - 1),
+            }
+          } else if (params.fromDate) {
+            dateWhere.createdAt = { gte: new Date(params.fromDate) }
+          } else if (params.toDate) {
+            dateWhere.createdAt = { lte: new Date(new Date(params.toDate).getTime() + 86400000 - 1) }
+          }
+        }
+
         const soldGroups = await prisma.orderLine.groupBy({
           by: ['productId'],
           where: {
@@ -74,7 +89,8 @@ export class SectionService {
             status: 'fulfilled',
             orderHeader: { 
               status: { in: ['fulfilled', 'completed'] },
-              paymentStatus: { in: ['paid', 'partial'] }
+              paymentStatus: { in: ['paid', 'partial'] },
+              ...dateWhere,
             },
             ...(sectionFilter ? { departmentCode: sectionFilter } : {}),
           },
@@ -86,7 +102,7 @@ export class SectionService {
           where: {
             productId: { in: allPossibleIds },
             status: { in: ['pending', 'processing'] },
-            orderHeader: { status: { not: 'cancelled' } },
+            orderHeader: { status: { not: 'cancelled' }, ...dateWhere },
             ...(sectionFilter ? { departmentCode: sectionFilter } : {}),
           },
           _sum: { quantity: true },
@@ -95,12 +111,16 @@ export class SectionService {
         const soldMap = new Map(soldGroups.map((g: any) => [g.productId, g._sum]))
         const pendingMap = new Map(pendingGroups.map((g: any) => [g.productId, g._sum]))
 
-        mapped = mapped.map((m: any) => ({
-          ...m,
-          unitsSold: (soldMap.get(m.id) as any)?.quantity || (soldMap.get(`menu-${m.id}`) as any)?.quantity || 0,
-          amountSold: (soldMap.get(m.id) as any)?.lineTotal || (soldMap.get(`menu-${m.id}`) as any)?.lineTotal || 0,
-          pendingQuantity: (pendingMap.get(m.id) as any)?.quantity || (pendingMap.get(`menu-${m.id}`) as any)?.quantity || 0,
-        }))
+        mapped = mapped.map((m: any) => {
+          const sold = (soldMap.get(m.id) as any) || (soldMap.get(`menu-${m.id}`) as any)
+          // amountSold is lineTotal from database (Decimal type, already in cents)
+          return {
+            ...m,
+            unitsSold: sold?.quantity || 0,
+            amountSold: sold?.lineTotal ? prismaDecimalToCents(sold.lineTotal) : 0,
+            pendingQuantity: (pendingMap.get(m.id) as any)?.quantity || (pendingMap.get(`menu-${m.id}`) as any)?.quantity || 0,
+          }
+        })
       }
 
       return { items: mapped, total, page, pageSize }
@@ -129,6 +149,21 @@ export class SectionService {
         // 1. Line status is 'fulfilled' (fulfillment requirement)
         // 2. Order header status is 'fulfilled' or 'completed'
         // 3. Payment status is 'paid' or 'partial' (payment was made)
+        // 4. Order created within date range (if provided)
+        const dateWhere: any = {}
+        if (params.fromDate || params.toDate) {
+          if (params.fromDate && params.toDate) {
+            dateWhere.createdAt = {
+              gte: new Date(params.fromDate),
+              lte: new Date(new Date(params.toDate).getTime() + 86400000 - 1),
+            }
+          } else if (params.fromDate) {
+            dateWhere.createdAt = { gte: new Date(params.fromDate) }
+          } else if (params.toDate) {
+            dateWhere.createdAt = { lte: new Date(new Date(params.toDate).getTime() + 86400000 - 1) }
+          }
+        }
+
         const soldGroups = await prisma.orderLine.groupBy({
           by: ['productId'],
           where: {
@@ -136,7 +171,8 @@ export class SectionService {
             status: 'fulfilled',
             orderHeader: { 
               status: { in: ['fulfilled', 'completed'] },
-              paymentStatus: { in: ['paid', 'partial'] }
+              paymentStatus: { in: ['paid', 'partial'] },
+              ...dateWhere,
             },
             ...(sectionFilter ? { departmentCode: sectionFilter } : {}),
           },
@@ -148,7 +184,7 @@ export class SectionService {
           where: {
             productId: { in: allPossibleIds },
             status: { in: ['pending', 'processing'] },
-            orderHeader: { status: { not: 'cancelled' } },
+            orderHeader: { status: { not: 'cancelled' }, ...dateWhere },
             ...(sectionFilter ? { departmentCode: sectionFilter } : {}),
           },
           _sum: { quantity: true },
@@ -157,12 +193,16 @@ export class SectionService {
         const soldMap = new Map(soldGroups.map((g: any) => [g.productId, g._sum]))
         const pendingMap = new Map(pendingGroups.map((g: any) => [g.productId, g._sum]))
 
-        mapped = mapped.map((m: any) => ({
-          ...m,
-          unitsSold: (soldMap.get(m.id) as any)?.quantity || (soldMap.get(`menu-${m.id}`) as any)?.quantity || 0,
-          amountSold: (soldMap.get(m.id) as any)?.lineTotal || (soldMap.get(`menu-${m.id}`) as any)?.lineTotal || 0,
-          pendingQuantity: (pendingMap.get(m.id) as any)?.quantity || (pendingMap.get(`menu-${m.id}`) as any)?.quantity || 0,
-        }))
+        mapped = mapped.map((m: any) => {
+          const sold = (soldMap.get(m.id) as any) || (soldMap.get(`menu-${m.id}`) as any)
+          // amountSold is lineTotal from database (Decimal type, already in cents)
+          return {
+            ...m,
+            unitsSold: sold?.quantity || 0,
+            amountSold: sold?.lineTotal ? prismaDecimalToCents(sold.lineTotal) : 0,
+            pendingQuantity: (pendingMap.get(m.id) as any)?.quantity || (pendingMap.get(`menu-${m.id}`) as any)?.quantity || 0,
+          }
+        })
       }
 
       return { items: mapped, total, page, pageSize }
@@ -242,6 +282,21 @@ export class SectionService {
         // 1. Line status is 'fulfilled' (fulfillment requirement)
         // 2. Order header status is 'fulfilled' or 'completed'
         // 3. Payment status is 'paid' or 'partial' (payment was made)
+        // 4. Order created within date range (if provided)
+        const dateWhere: any = {}
+        if (params.fromDate || params.toDate) {
+          if (params.fromDate && params.toDate) {
+            dateWhere.createdAt = {
+              gte: new Date(params.fromDate),
+              lte: new Date(new Date(params.toDate).getTime() + 86400000 - 1),
+            }
+          } else if (params.fromDate) {
+            dateWhere.createdAt = { gte: new Date(params.fromDate) }
+          } else if (params.toDate) {
+            dateWhere.createdAt = { lte: new Date(new Date(params.toDate).getTime() + 86400000 - 1) }
+          }
+        }
+
         const soldGroups = await prisma.orderLine.groupBy({
           by: ['productId'],
           where: {
@@ -249,7 +304,8 @@ export class SectionService {
             status: 'fulfilled',
             orderHeader: { 
               status: { in: ['fulfilled', 'completed'] },
-              paymentStatus: { in: ['paid', 'partial'] }
+              paymentStatus: { in: ['paid', 'partial'] },
+              ...dateWhere,
             },
             ...(sectionFilter ? { departmentCode: sectionFilter } : {}),
           },
@@ -261,7 +317,7 @@ export class SectionService {
           where: {
             productId: { in: allPossibleIds },
             status: { in: ['pending', 'processing'] },
-            orderHeader: { status: { not: 'cancelled' } },
+            orderHeader: { status: { not: 'cancelled' }, ...dateWhere },
             ...(sectionFilter ? { departmentCode: sectionFilter } : {}),
           },
           _sum: { quantity: true },
@@ -269,6 +325,7 @@ export class SectionService {
 
         let reservations: any[] = []
         try {
+          // Reservations are not date-filtered as they're current state, not historical
           reservations = await (prisma as any).inventoryReservation.groupBy({
             by: ['inventoryItemId'],
             where: { inventoryItemId: { in: ids }, status: { in: ['reserved', 'confirmed'] } },
@@ -282,13 +339,17 @@ export class SectionService {
         const pendingMap = new Map(pendingGroups.map((g: any) => [g.productId, g._sum]))
         const resMap = new Map(reservations.map((r: any) => [r.inventoryItemId, r._sum]))
 
-        mapped = mapped.map((m: any) => ({
-          ...m,
-          unitsSold: (soldMap.get(m.id) as any)?.quantity || (soldMap.get(`menu-${m.id}`) as any)?.quantity || 0,
-          amountSold: (soldMap.get(m.id) as any)?.lineTotal || (soldMap.get(`menu-${m.id}`) as any)?.lineTotal || 0,
-          pendingQuantity: (pendingMap.get(m.id) as any)?.quantity || (pendingMap.get(`menu-${m.id}`) as any)?.quantity || 0,
-          reservedQuantity: (resMap.get(m.id) as any)?.quantity || 0,
-        }))
+        mapped = mapped.map((m: any) => {
+          const sold = (soldMap.get(m.id) as any) || (soldMap.get(`menu-${m.id}`) as any)
+          // amountSold is lineTotal from database (Decimal type, already in cents)
+          return {
+            ...m,
+            unitsSold: sold?.quantity || 0,
+            amountSold: sold?.lineTotal ? prismaDecimalToCents(sold.lineTotal) : 0,
+            pendingQuantity: (pendingMap.get(m.id) as any)?.quantity || (pendingMap.get(`menu-${m.id}`) as any)?.quantity || 0,
+            reservedQuantity: (resMap.get(m.id) as any)?.quantity || 0,
+          }
+        })
       }
 
       return { items: mapped, total, page, pageSize }

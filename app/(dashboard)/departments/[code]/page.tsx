@@ -4,6 +4,7 @@ import { Utensils, Coffee, Activity, Gamepad, BookOpen } from 'lucide-react'
 import { useMemo, useState, useEffect } from 'react'
 import { useAuth } from '@/components/auth-context'
 import Price from '@/components/ui/Price'
+import DateRangeFilter from '../../../../components/departments/DateRangeFilter'
 import useDepartmentData from '../../../../components/departments/useDepartmentData'
 import SectionsList from '../../../../components/departments/SectionsList'
 import SectionProductsTable from '../../../../components/departments/SectionProductsTable'
@@ -58,9 +59,15 @@ export default function DepartmentDetail() {
   const decodedCode = useMemo(() => (code ? decodeURIComponent(code) : ''), [code])
   const router = useRouter()
 
-  // Date filter state - must be declared before useDepartmentData
-  const [sectionFromDate, setSectionFromDate] = useState<string | null>(null)
-  const [sectionToDate, setSectionToDate] = useState<string | null>(null)
+  // Helper to get today's date in YYYY-MM-DD format
+  const getTodayDate = () => {
+    const today = new Date()
+    return today.toISOString().split('T')[0]
+  }
+
+  // Date filter state - default to today
+  const [sectionFromDate, setSectionFromDate] = useState<string | null>(getTodayDate())
+  const [sectionToDate, setSectionToDate] = useState<string | null>(getTodayDate())
 
   const {
     menu,
@@ -284,6 +291,18 @@ export default function DepartmentDetail() {
 
       {decodedCode.includes(':') && (
         <>
+          {/* Date Range Filter */}
+          <div className="mb-4">
+            <DateRangeFilter
+              onDateChange={(from, to) => {
+                setSectionFromDate(from)
+                setSectionToDate(to)
+              }}
+              defaultFromDate={sectionFromDate}
+              defaultToDate={sectionToDate}
+            />
+          </div>
+
           {/* Order Stats Card */}
           {department?.metadata?.sectionStats && (
             <div className="p-4 bg-green-50 rounded border border-green-200">
