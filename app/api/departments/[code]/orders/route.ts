@@ -9,6 +9,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { prisma } from '@/lib/prisma';
 import { extractUserContext, loadUserWithRoles, hasAnyRole } from '@/lib/user-context';
 import { successResponse, errorResponse, ErrorCodes, getStatusCode } from '@/lib/api-response';
+import { buildDateFilter } from '@/src/lib/date-filter';
 
 /**
  * GET /api/departments/[code]/orders
@@ -51,6 +52,9 @@ export async function GET(
     const toDate = searchParams.get('toDate') || undefined;
     const page = Math.max(1, parseInt(searchParams.get('page') || '1', 10));
     const limit = Math.min(100, Math.max(1, parseInt(searchParams.get('limit') || '20', 10)));
+
+    // Build date filter using centralized utility
+    const dateWhere = buildDateFilter(fromDate, toDate);
 
     // Normalize code (decode if needed)
     let lookupCode = departmentCode;
@@ -108,36 +112,37 @@ export async function GET(
         lineWhere.status = status;
       }
 
-      const headerRows = await (prisma as any).orderLine.findMany({
-        where: lineWhere,
+      // Build date filter for orderHeader FIRST, then filter lines by those headers
+      const headerDateWhere = buildDateFilter(fromDate, toDate);
+
+      // Get header IDs that match date range first
+      const headerRows = await (prisma as any).orderHeader.findMany({
+        where: headerDateWhere,
+        select: { id: true },
+        orderBy: { createdAt: 'desc' },
+      });
+
+      const allHeaderIds = (headerRows || []).map((h: any) => h.id).filter(Boolean);
+
+      // Now filter by section - find lines in those headers
+      const sectionLineRows = await (prisma as any).orderLine.findMany({
+        where: {
+          ...lineWhere,
+          orderHeaderId: { in: allHeaderIds },
+        },
         distinct: ['orderHeaderId'],
         select: { orderHeaderId: true },
       });
 
-      const headerIds = (headerRows || []).map((h: any) => h.orderHeaderId).filter(Boolean);
+      const headerIds = (sectionLineRows || []).map((h: any) => h.orderHeaderId).filter(Boolean);
       total = headerIds.length;
 
       const skip = (page - 1) * limit;
       const paginatedIds = headerIds.slice(skip, skip + limit);
 
       if (paginatedIds.length > 0) {
-        // Build date filter for orderHeader
-        const dateWhere: any = {};
-        if (fromDate || toDate) {
-          if (fromDate && toDate) {
-            dateWhere.createdAt = {
-              gte: new Date(fromDate),
-              lte: new Date(new Date(toDate).getTime() + 86400000 - 1), // End of toDate
-            };
-          } else if (fromDate) {
-            dateWhere.createdAt = { gte: new Date(fromDate) };
-          } else if (toDate) {
-            dateWhere.createdAt = { lte: new Date(new Date(toDate).getTime() + 86400000 - 1) };
-          }
-        }
-
         const orderHeaders = await (prisma as any).orderHeader.findMany({
-          where: { id: { in: paginatedIds }, ...dateWhere },
+          where: { id: { in: paginatedIds } },
           include: {
             customer: true,
             lines: {
@@ -162,31 +167,19 @@ export async function GET(
         filters.status = status;
       }
 
-      // Build date filter for orderHeader
-      const dateWhere: any = {};
-      if (fromDate || toDate) {
-        if (fromDate && toDate) {
-          dateWhere.createdAt = {
-            gte: new Date(fromDate),
-            lte: new Date(new Date(toDate).getTime() + 86400000 - 1), // End of toDate
-          };
-        } else if (fromDate) {
-          dateWhere.createdAt = { gte: new Date(fromDate) };
-        } else if (toDate) {
-          dateWhere.createdAt = { lte: new Date(new Date(toDate).getTime() + 86400000 - 1) };
-        }
-      }
+      // Build date filter for orderHeader (using centralized utility)
+      const headerDateWhere = buildDateFilter(fromDate, toDate);
 
       const skip = (page - 1) * limit;
       const [orderDepartments, countTotal] = await Promise.all([
         (prisma as any).orderDepartment.findMany({
           where: {
             ...filters,
-            ...(Object.keys(dateWhere).length > 0 ? { orderHeader: dateWhere } : {}),
+            ...(Object.keys(headerDateWhere).length > 0 ? { orderHeader: headerDateWhere } : {}),
           },
           include: {
             orderHeader: {
-              where: Object.keys(dateWhere).length > 0 ? dateWhere : undefined,
+              where: Object.keys(headerDateWhere).length > 0 ? headerDateWhere : undefined,
               include: {
                 customer: true,
                 lines: {
@@ -202,7 +195,7 @@ export async function GET(
         (prisma as any).orderDepartment.count({
           where: {
             ...filters,
-            ...(Object.keys(dateWhere).length > 0 ? { orderHeader: dateWhere } : {}),
+            ...(Object.keys(headerDateWhere).length > 0 ? { orderHeader: headerDateWhere } : {}),
           },
         }),
       ]);

@@ -3,6 +3,7 @@ import { prisma } from '@/lib/prisma'
 import { sectionService } from '@/src/services/section.service'
 import { extractUserContext, loadUserWithRoles } from '@/lib/user-context'
 import { successResponse, errorResponse, ErrorCodes, getStatusCode } from '@/lib/api-response'
+import { buildDateFilter } from '@/src/lib/date-filter'
 
 /**
  * GET /api/departments/[code]/section
@@ -152,20 +153,8 @@ export async function GET(
 
     try {
       const codeStr = (dept.code || '').toString()
-      // Build date filter for orderHeader
-      const dateWhere: any = {}
-      if (fromDate || toDate) {
-        if (fromDate && toDate) {
-          dateWhere.createdAt = {
-            gte: new Date(fromDate),
-            lte: new Date(new Date(toDate).getTime() + 86400000 - 1), // End of toDate
-          }
-        } else if (fromDate) {
-          dateWhere.createdAt = { gte: new Date(fromDate) }
-        } else if (toDate) {
-          dateWhere.createdAt = { lte: new Date(new Date(toDate).getTime() + 86400000 - 1) }
-        }
-      }
+      // Build date filter for orderHeader using centralized utility
+      const dateWhere = buildDateFilter(fromDate, toDate)
 
       if (codeStr.includes(':')) {
         // Section: count by department code on order lines

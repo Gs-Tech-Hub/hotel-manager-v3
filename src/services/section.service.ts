@@ -1,6 +1,7 @@
 import { prisma } from '@/lib/prisma'
 import { prismaDecimalToCents } from '@/lib/price'
 import { stockService } from './stock.service'
+import { buildDateFilter } from '@/src/lib/date-filter'
 
 type ProductParams = {
   departmentCode: string
@@ -68,19 +69,7 @@ export class SectionService {
         // 2. Order header status is 'fulfilled' or 'completed'
         // 3. Payment status is 'paid' or 'partial' (payment was made)
         // 4. Order created within date range (if provided)
-        const dateWhere: any = {}
-        if (params.fromDate || params.toDate) {
-          if (params.fromDate && params.toDate) {
-            dateWhere.createdAt = {
-              gte: new Date(params.fromDate),
-              lte: new Date(new Date(params.toDate).getTime() + 86400000 - 1),
-            }
-          } else if (params.fromDate) {
-            dateWhere.createdAt = { gte: new Date(params.fromDate) }
-          } else if (params.toDate) {
-            dateWhere.createdAt = { lte: new Date(new Date(params.toDate).getTime() + 86400000 - 1) }
-          }
-        }
+        const dateWhere = buildDateFilter(params.fromDate, params.toDate)
 
         const soldGroups = await prisma.orderLine.groupBy({
           by: ['productId'],
@@ -150,19 +139,7 @@ export class SectionService {
         // 2. Order header status is 'fulfilled' or 'completed'
         // 3. Payment status is 'paid' or 'partial' (payment was made)
         // 4. Order created within date range (if provided)
-        const dateWhere: any = {}
-        if (params.fromDate || params.toDate) {
-          if (params.fromDate && params.toDate) {
-            dateWhere.createdAt = {
-              gte: new Date(params.fromDate),
-              lte: new Date(new Date(params.toDate).getTime() + 86400000 - 1),
-            }
-          } else if (params.fromDate) {
-            dateWhere.createdAt = { gte: new Date(params.fromDate) }
-          } else if (params.toDate) {
-            dateWhere.createdAt = { lte: new Date(new Date(params.toDate).getTime() + 86400000 - 1) }
-          }
-        }
+        const dateWhere = buildDateFilter(params.fromDate, params.toDate)
 
         const soldGroups = await prisma.orderLine.groupBy({
           by: ['productId'],
@@ -283,19 +260,7 @@ export class SectionService {
         // 2. Order header status is 'fulfilled' or 'completed'
         // 3. Payment status is 'paid' or 'partial' (payment was made)
         // 4. Order created within date range (if provided)
-        const dateWhere: any = {}
-        if (params.fromDate || params.toDate) {
-          if (params.fromDate && params.toDate) {
-            dateWhere.createdAt = {
-              gte: new Date(params.fromDate),
-              lte: new Date(new Date(params.toDate).getTime() + 86400000 - 1),
-            }
-          } else if (params.fromDate) {
-            dateWhere.createdAt = { gte: new Date(params.fromDate) }
-          } else if (params.toDate) {
-            dateWhere.createdAt = { lte: new Date(new Date(params.toDate).getTime() + 86400000 - 1) }
-          }
-        }
+        const dateWhere = buildDateFilter(params.fromDate, params.toDate)
 
         const soldGroups = await prisma.orderLine.groupBy({
           by: ['productId'],
