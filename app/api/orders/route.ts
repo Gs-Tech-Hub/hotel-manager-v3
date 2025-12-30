@@ -10,6 +10,7 @@ import { prisma } from '@/lib/prisma';
 import { extractUserContext, loadUserWithRoles, hasAnyRole } from '@/lib/user-context';
 import { checkPermission, type PermissionContext } from '@/lib/auth/rbac';
 import { successResponse, errorResponse, ErrorCodes, getStatusCode } from '@/lib/api-response';
+import { buildDateFilter } from '@/src/lib/date-filter';
 import { OrderService } from '@/services/order.service';
 
 /**
@@ -241,8 +242,8 @@ export async function GET(request: NextRequest) {
     const paymentStatus = searchParams.get('paymentStatus') || undefined; // Payment status: unpaid, paid, partial, refunded
     const departmentCode = searchParams.get('departmentCode') || undefined;
     const departmentSectionId = searchParams.get('departmentSectionId') || undefined;
-    const fromDate = searchParams.get('fromDate') ? new Date(searchParams.get('fromDate')!) : undefined;
-    const toDate = searchParams.get('toDate') ? new Date(searchParams.get('toDate')!) : undefined;
+    const fromDate = searchParams.get('fromDate') || undefined; // YYYY-MM-DD format
+    const toDate = searchParams.get('toDate') || undefined; // YYYY-MM-DD format
     const sortBy = searchParams.get('sortBy') || 'createdAt';
     const sortOrder = (searchParams.get('sortOrder') || 'desc') as 'asc' | 'desc';
 
@@ -282,10 +283,10 @@ export async function GET(request: NextRequest) {
       // Filter orders with lines routed to the given department section
       filters.lines = { some: { departmentSectionId } };
     }
-    if (fromDate || toDate) {
-      filters.createdAt = {};
-      if (fromDate) filters.createdAt.gte = fromDate;
-      if (toDate) filters.createdAt.lte = toDate;
+    // Build date filter using centralized utility (handles local timezone correctly)
+    const dateFilter = buildDateFilter(fromDate, toDate);
+    if (Object.keys(dateFilter).length > 0) {
+      filters.createdAt = dateFilter.createdAt;
     }
 
     // Build sort
