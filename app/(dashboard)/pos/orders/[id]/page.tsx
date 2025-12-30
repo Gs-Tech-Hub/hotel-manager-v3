@@ -4,7 +4,7 @@ import { useEffect, useState } from "react";
 import { useParams, useRouter } from "next/navigation";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-import { Loader2, CheckCircle2, AlertCircle, X } from "lucide-react";
+import { Loader2, CheckCircle2, AlertCircle, X, Plus } from "lucide-react";
 import { formatCents } from '@/lib/price';
 import Link from "next/link";
 import { Badge } from "@/components/ui/badge";
@@ -16,6 +16,8 @@ import {
   DialogTitle,
   DialogFooter,
 } from "@/components/ui/dialog";
+import { OrderExtrasDialog } from "@/components/pos/orders/OrderExtrasDialog";
+import { OrderLineExtras } from "@/components/pos/orders/OrderLineExtras";
 
 export default function OrderDetailPage() {
     const params = useParams();
@@ -29,6 +31,8 @@ export default function OrderDetailPage() {
     const [cancelError, setCancelError] = useState<string | null>(null);
     const [refundError, setRefundError] = useState<string | null>(null);
     const [refundReason, setRefundReason] = useState("");
+    const [extrasDialogOpen, setExtrasDialogOpen] = useState(false);
+    const [selectedLineId, setSelectedLineId] = useState<string | null>(null);
 
     useEffect(() => {
         if (!id) return;
@@ -51,6 +55,20 @@ export default function OrderDetailPage() {
         };
         fetchOrder();
     }, [id]);
+
+    // Refresh order details
+    const refreshOrder = async () => {
+        if (!order?.id) return;
+        try {
+            const res = await fetch(`/api/orders/${order.id}`, { credentials: 'same-origin' });
+            const data = await res.json();
+            if (res.ok && data && data.success) {
+                setOrder(data.data);
+            }
+        } catch (e) {
+            console.error("Error refreshing order:", e);
+        }
+    };
 
     const updateFulfillmentStatus = async (lineId: string, status: 'processing' | 'fulfilled') => {
         if (!order) return;
@@ -304,45 +322,68 @@ export default function OrderDetailPage() {
                     {order.lines && order.lines.length > 0 ? (
                         <div className="space-y-4">
                             {order.lines.map((line: any) => (
-                                <div key={line.id} className="flex items-center justify-between border-b pb-4 last:border-b-0">
-                                    <div>
-                                        <div className="font-medium">{line.productName}</div>
-                                        <div className="text-sm text-muted-foreground">
-                                            Qty: {line.quantity} × {formatPrice(line.unitPrice)}
+                                <div key={line.id} className="border-b pb-4 last:border-b-0">
+                                    <div className="flex items-center justify-between mb-3">
+                                        <div>
+                                            <div className="font-medium">{line.productName}</div>
+                                            <div className="text-sm text-muted-foreground">
+                                                Qty: {line.quantity} × {formatPrice(line.unitPrice)}
+                                            </div>
+                                            <div className="text-xs text-muted-foreground mt-1">
+                                                Dept: {line.departmentCode} • Status: <Badge variant="outline">{line.status}</Badge>
+                                            </div>
                                         </div>
-                                        <div className="text-xs text-muted-foreground mt-1">
-                                            Dept: {line.departmentCode} • Status: <Badge variant="outline">{line.status}</Badge>
-                                        </div>
-                                    </div>
-                                    <div className="flex flex-col items-end gap-2">
-                                        <div className="font-semibold">{formatPrice(line.lineTotal)}</div>
-                                        {line.status !== 'fulfilled' && (
-                                            <div className="flex gap-1">
-                                                {line.status === 'pending' && (
-                                                    <Button
-                                                        size="sm"
-                                                        variant="outline"
-                                                        onClick={() => updateFulfillmentStatus(line.id, 'processing')}
-                                                        disabled={isUpdating}
-                                                    >
-                                                        Start
-                                                    </Button>
+                                        <div className="flex flex-col items-end gap-2">
+                                            <div className="font-semibold">{formatPrice(line.lineTotal)}</div>
+                                            <div className="flex gap-1 flex-wrap justify-end">
+                                                <Button
+                                                    size="sm"
+                                                    variant="outline"
+                                                    onClick={() => {
+                                                        setSelectedLineId(line.id);
+                                                        setExtrasDialogOpen(true);
+                                                    }}
+                                                    disabled={isUpdating}
+                                                >
+                                                    <Plus className="h-4 w-4 mr-1" />
+                                                    Add Extras
+                                                </Button>
+                                                {line.status !== 'fulfilled' && (
+                                                    <>
+                                                        {line.status === 'pending' && (
+                                                            <Button
+                                                                size="sm"
+                                                                variant="outline"
+                                                                onClick={() => updateFulfillmentStatus(line.id, 'processing')}
+                                                                disabled={isUpdating}
+                                                            >
+                                                                Start
+                                                            </Button>
+                                                        )}
+                                                        {line.status === 'processing' && (
+                                                            <Button
+                                                                size="sm"
+                                                                onClick={() => updateFulfillmentStatus(line.id, 'fulfilled')}
+                                                                disabled={isUpdating}
+                                                            >
+                                                                Complete
+                                                            </Button>
+                                                        )}
+                                                    </>
                                                 )}
-                                                {line.status === 'processing' && (
-                                                    <Button
-                                                        size="sm"
-                                                        onClick={() => updateFulfillmentStatus(line.id, 'fulfilled')}
-                                                        disabled={isUpdating}
-                                                    >
-                                                        Complete
-                                                    </Button>
+                                                {line.status === 'fulfilled' && (
+                                                    <CheckCircle2 className="h-5 w-5 text-green-600" />
                                                 )}
                                             </div>
-                                        )}
-                                        {line.status === 'fulfilled' && (
-                                            <CheckCircle2 className="h-5 w-5 text-green-600" />
-                                        )}
+                                        </div>
                                     </div>
+
+                                    {/* Display extras for this line */}
+                                    <OrderLineExtras
+                                        orderLineId={line.id}
+                                        orderHeaderId={order.id}
+                                        onExtrasChanged={refreshOrder}
+                                    />
                                 </div>
                             ))}
                         </div>
@@ -455,6 +496,15 @@ export default function OrderDetailPage() {
                     </DialogFooter>
                 </DialogContent>
             </Dialog>
+
+            {/* Extras Dialog */}
+            <OrderExtrasDialog
+                open={extrasDialogOpen}
+                onOpenChange={setExtrasDialogOpen}
+                orderHeaderId={order?.id || ''}
+                orderLineId={selectedLineId || ''}
+                onSuccess={refreshOrder}
+            />
         </div>
     );
 }

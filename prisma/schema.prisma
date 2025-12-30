@@ -539,6 +539,9 @@ model InventoryItem {
 
   // per-department inventory balances
   departmentInventories DepartmentInventory[]
+  
+  // Can be used as an extra item (with inventory tracking)
+  usedAsExtras Extra[]
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
@@ -807,6 +810,9 @@ model Department {
   // per-department inventory records
   departmentInventories DepartmentInventory[]
 
+  // extras available in this department
+  extras Extra[]
+
   // RBAC: Role assignments scoped to this department
   userRoles       UserRole[]
   userPermissions UserPermission[]
@@ -908,6 +914,7 @@ model OrderHeader {
   discounts    OrderDiscount[]
   payments     OrderPayment[]
   fulfillments OrderFulfillment[]
+  extras       OrderExtra[] @relation("OrderExtras")
   reservations InventoryReservation[]
   legacyOrders Order[]
 
@@ -946,6 +953,7 @@ model OrderLine {
   status String @default("pending") // pending, processing, fulfilled, cancelled
 
   fulfillments OrderFulfillment[]
+  extras       OrderExtra[]
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
@@ -1059,6 +1067,74 @@ model OrderFulfillment {
   @@index([orderHeaderId])
   @@index([status])
   @@map("order_fulfillments")
+}
+
+// ==================== EXTRAS (RESTAURANT TERMINALS) ====================
+
+/// Extra items are supplementary items with units for restaurant terminals
+/// Examples: side dishes, sauces, extra portions, toppings, etc.
+model Extra {
+  id           String  @id @default(cuid())
+  name         String  // e.g., "Extra Sauce", "Extra Portion", "Topping"
+  description  String?
+  unit         String  // e.g., "portion", "container", "piece", "pump"
+  price        Int     // Price in cents
+  isActive     Boolean @default(true)
+
+  // Link to department where this extra is available
+  departmentId String?
+  department   Department? @relation(fields: [departmentId], references: [id], onDelete: SetNull)
+
+  // Option 3: Hybrid approach - can link to inventory item
+  // If productId is set, this extra tracks inventory
+  productId    String?
+  product      InventoryItem? @relation(fields: [productId], references: [id], onDelete: SetNull)
+  
+  // If true, adding this extra deducts from inventory
+  // If false, no inventory impact (standalone extra like sauce)
+  trackInventory Boolean @default(false)
+
+  // Reverse relation to order extras
+  orderExtras  OrderExtra[]
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([departmentId])
+  @@index([productId])
+  @@index([isActive])
+  @@map("extras")
+}
+
+/// Order extras: extras added to specific order lines
+model OrderExtra {
+  id String @id @default(cuid())
+
+  orderHeaderId String
+  orderHeader   OrderHeader @relation("OrderExtras", fields: [orderHeaderId], references: [id], onDelete: Cascade)
+
+  orderLineId String?
+  orderLine   OrderLine? @relation(fields: [orderLineId], references: [id], onDelete: SetNull)
+
+  extraId String
+  extra   Extra @relation(fields: [extraId], references: [id], onDelete: Restrict)
+
+  quantity     Int
+  unitPrice    Int // Price at time of order (in cents)
+  lineTotal    Int // quantity * unitPrice (in cents)
+
+  status String @default("pending") // pending, processing, fulfilled, cancelled
+
+  notes String?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([orderHeaderId])
+  @@index([orderLineId])
+  @@index([extraId])
+  @@index([status])
+  @@map("order_extras")
 }
 
 model InventoryReservation {
