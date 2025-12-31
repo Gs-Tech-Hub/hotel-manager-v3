@@ -8,7 +8,8 @@ import { getDisplayUnit, formatQuantityWithUnit } from '@/src/lib/unit-mapper'
 // avoid next/navigation useSearchParams here to prevent prerender/suspense issues
 import TransferAuditPanel from '@/components/departments/TransferAuditPanel'
 import Price from '@/components/ui/Price'
-import { Plus, Trash2 } from 'lucide-react'
+import { Plus, Trash2, Zap } from 'lucide-react'
+import { ExtrasFormDialog } from '@/components/admin/ExtrasFormDialog'
 
 type Department = { id: string; code: string; name: string }
 
@@ -35,12 +36,19 @@ export default function InventoryPage() {
   const [formError, setFormError] = useState<string | null>(null)
   const [categories, setCategories] = useState<string[]>([])
   const [autoGenSku, setAutoGenSku] = useState(true)
+  const [extrasFormOpen, setExtrasFormOpen] = useState(false)
+  const [selectedItemForExtra, setSelectedItemForExtra] = useState<InventoryItem | null>(null)
 
   const generateSku = (cat: string) => {
     if (!cat) return ''
     const timestamp = Date.now().toString().slice(-6)
     const prefix = cat.slice(0, 3).toUpperCase()
     return `${prefix}-${timestamp}`
+  }
+
+  const handleConvertToExtra = (item: InventoryItem) => {
+    setSelectedItemForExtra(item)
+    setExtrasFormOpen(true)
   }
   
 
@@ -207,6 +215,15 @@ export default function InventoryPage() {
               <Plus size={16} /> Add Item
             </button>
           )}
+          <button
+            onClick={() => {
+              setSelectedItemForExtra(null)
+              setExtrasFormOpen(true)
+            }}
+            className="px-3 py-1 bg-amber-600 text-white rounded text-sm mr-2 inline-flex items-center gap-2 hover:bg-amber-700"
+          >
+            <Plus size={16} /> Add Extra
+          </button>
           <button onClick={() => fetchItems(selectedDept)} className="px-3 py-1 border rounded text-sm mr-2">Refresh</button>
           <Link href={selectedDept ? `/inventory/transfer?source=${encodeURIComponent(selectedDept)}` : '#'} className={`px-3 py-1 border rounded text-sm mr-2 ${!selectedDept ? 'opacity-60 pointer-events-none' : ''}`}>Transfer</Link>
           <Link href="/inventory/movements" className="px-3 py-1 border rounded text-sm">Movements</Link>
@@ -377,6 +394,13 @@ export default function InventoryPage() {
                       <Trash2 size={14} /> Delete
                     </button>
                   )}
+                  <button
+                    onClick={() => handleConvertToExtra(it)}
+                    className="px-2 py-1 bg-amber-600 text-white rounded text-sm inline-flex items-center gap-1 hover:bg-amber-700"
+                    title="Convert to Extra"
+                  >
+                    <Zap size={14} /> Extra
+                  </button>
                 </td>
               </tr>
             ))}
@@ -384,6 +408,25 @@ export default function InventoryPage() {
         </table>
       </div>
       {/* Transfer audit removed from inventory page to avoid movement artifact */}
+
+      {/* Extras Form Dialog */}
+      <ExtrasFormDialog
+        open={extrasFormOpen}
+        onOpenChange={setExtrasFormOpen}
+        extra={selectedItemForExtra ? {
+          name: selectedItemForExtra.name,
+          description: '',
+          unit: 'portion',
+          price: Math.round(parseFloat(selectedItemForExtra.unitPrice.toString()) * 100),
+          productId: selectedItemForExtra.id,
+          trackInventory: true,
+          isActive: true,
+        } : null}
+        onSuccess={() => {
+          setExtrasFormOpen(false)
+          setSelectedItemForExtra(null)
+        }}
+      />
       
     </div>
   )

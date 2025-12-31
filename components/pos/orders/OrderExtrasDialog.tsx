@@ -21,6 +21,14 @@ interface Extra {
   unit: string;
   price: number;
   description?: string;
+  productId?: string;
+  trackInventory?: boolean;
+  product?: {
+    id: string;
+    name: string;
+    sku: string;
+    quantity: number;
+  };
 }
 
 interface SelectedExtra {
@@ -87,8 +95,20 @@ export function OrderExtrasDialog({
     fetchExtras();
   }, [open, departmentCode]);
 
-  // Handle quantity change
+  // Handle quantity change with inventory validation
   const handleQuantityChange = (extraId: string, quantity: number) => {
+    // Get the extra to check inventory limits
+    const extra = extras.find(e => e.id === extraId);
+    
+    // If tracked extra, validate against inventory
+    if (extra?.trackInventory && extra?.product) {
+      const maxQuantity = extra.product.quantity;
+      if (quantity > maxQuantity) {
+        setError(`Cannot exceed available inventory: ${maxQuantity} ${extra.unit}`);
+        return;
+      }
+    }
+
     if (quantity <= 0) {
       setSelectedExtras((prev) => {
         const updated = new Map(prev);
@@ -101,6 +121,10 @@ export function OrderExtrasDialog({
         updated.set(extraId, { extraId, quantity });
         return updated;
       });
+      // Clear error when valid quantity entered
+      if (error?.includes('Cannot exceed')) {
+        setError(null);
+      }
     }
   };
 
@@ -196,6 +220,15 @@ export function OrderExtrasDialog({
                         <Badge variant="outline" className="text-xs">
                           {extra.unit}
                         </Badge>
+                        {extra.trackInventory ? (
+                          <Badge variant="secondary" className="text-xs">
+                            In stock: {extra.product?.quantity ?? 0}
+                          </Badge>
+                        ) : (
+                          <Badge variant="outline" className="text-xs text-gray-500">
+                            Standalone
+                          </Badge>
+                        )}
                       </div>
                       {extra.description && (
                         <p className="text-xs text-muted-foreground mt-1">
@@ -212,7 +245,7 @@ export function OrderExtrasDialog({
                       <Input
                         type="number"
                         min="0"
-                        max="999"
+                        max={extra.trackInventory ? extra.product?.quantity : 999}
                         value={quantity}
                         onChange={(e) =>
                           handleQuantityChange(
@@ -220,7 +253,7 @@ export function OrderExtrasDialog({
                             parseInt(e.target.value) || 0
                           )
                         }
-                        disabled={submitting}
+                        disabled={submitting || (extra.trackInventory && (extra.product?.quantity ?? 0) === 0)}
                         className="w-16 text-center"
                         placeholder="0"
                       />

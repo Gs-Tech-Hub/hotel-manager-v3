@@ -210,6 +210,11 @@ export default function OrderDetailPage() {
                         order.paymentStatus === 'refunded' ? 'bg-orange-100 text-orange-800' :
                         'bg-gray-100 text-gray-800';
     
+    // Calculate extras total from order extras
+    const extrasTotal = (order.extras || []).reduce((sum: number, extra: any) => {
+      return sum + (extra.lineTotal || 0);
+    }, 0);
+    
     // Determine available actions
     const canCancel = order.status === 'pending';
     const canRefund = order.status === 'pending' && 
@@ -271,6 +276,9 @@ export default function OrderDetailPage() {
                     <CardContent>
                         <div className="space-y-2">
                             <div className="flex justify-between"><span className="text-sm text-muted-foreground">Subtotal</span><span>{formatPrice(order.subtotal)}</span></div>
+                            {extrasTotal > 0 && (
+                                <div className="flex justify-between"><span className="text-sm text-muted-foreground">Extras</span><span>{formatPrice(extrasTotal)}</span></div>
+                            )}
                             {order.discountTotal > 0 && (
                                 <div className="flex justify-between text-green-600"><span className="text-sm">Discount</span><span>-{formatPrice(order.discountTotal)}</span></div>
                             )}

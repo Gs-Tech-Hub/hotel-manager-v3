@@ -1,7 +1,7 @@
 /**
- * GET/PATCH/DELETE /api/extras/[id]
+ * GET/PUT/PATCH/DELETE /api/extras/[id]
  * - GET: Get single extra
- * - PATCH: Update extra
+ * - PUT/PATCH: Update extra
  * - DELETE: Delete extra (soft delete)
  */
 
@@ -40,10 +40,10 @@ export async function GET(
 }
 
 /**
- * PATCH /api/extras/[id]
+ * PUT /api/extras/[id]
  * Update an extra (admin/manager only)
  */
-export async function PATCH(
+export async function PUT(
   request: NextRequest,
   { params }: { params: Promise<{ id: string }> }
 ) {
@@ -78,12 +78,23 @@ export async function PATCH(
       { status: 200 }
     );
   } catch (error) {
-    console.error(`PATCH /api/extras/[id] error:`, error);
+    console.error(`PUT /api/extras/[id] error:`, error);
     return NextResponse.json(
       errorResponse(ErrorCodes.INTERNAL_ERROR, 'Failed to update extra'),
       { status: getStatusCode(ErrorCodes.INTERNAL_ERROR) }
     );
   }
+}
+
+/**
+ * PATCH /api/extras/[id]
+ * Update an extra (admin/manager only) - alias for PUT
+ */
+export async function PATCH(
+  request: NextRequest,
+  { params }: { params: Promise<{ id: string }> }
+) {
+  return PUT(request, { params });
 }
 
 /**

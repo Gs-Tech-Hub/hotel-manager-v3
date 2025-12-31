@@ -12,21 +12,21 @@ import { extrasService } from '@/src/services/extras.service';
 
 /**
  * GET /api/extras
- * List all extras optionally filtered by department
+ * List all extras optionally filtered by section
  * 
  * Query parameters:
- * - departmentId: filter by department
+ * - sectionId: filter by department section
  * - includeInactive: include inactive extras (default: false)
  */
 export async function GET(request: NextRequest) {
   try {
     const searchParams = request.nextUrl.searchParams;
-    const departmentId = searchParams.get('departmentId') || undefined;
+    const sectionId = searchParams.get('sectionId') || undefined;
     const includeInactive = searchParams.get('includeInactive') === 'true';
 
     let extras;
-    if (departmentId) {
-      extras = await extrasService.getExtrasForDepartment(departmentId, includeInactive);
+    if (sectionId) {
+      extras = await extrasService.getExtrasForSection(sectionId, includeInactive);
     } else {
       extras = await extrasService.getAllExtras(includeInactive);
     }
@@ -81,7 +81,7 @@ export async function POST(request: NextRequest) {
       description: body.description,
       unit: body.unit,
       price: body.price || 0,
-      departmentId: body.departmentId,
+      departmentSectionId: body.departmentSectionId,
       isActive: body.isActive ?? true,
     });
 

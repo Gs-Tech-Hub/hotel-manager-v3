@@ -43,7 +43,7 @@ export async function POST(request: NextRequest) {
       productId: body.productId,
       unit: body.unit,
       priceOverride: body.priceOverride,
-      departmentId: body.departmentId,
+      departmentSectionId: body.departmentSectionId,
       trackInventory: body.trackInventory
     });
 

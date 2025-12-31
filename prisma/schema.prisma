@@ -810,9 +810,6 @@ model Department {
   // per-department inventory records
   departmentInventories DepartmentInventory[]
 
-  // extras available in this department
-  extras Extra[]
-
   // RBAC: Role assignments scoped to this department
   userRoles       UserRole[]
   userPermissions UserPermission[]
@@ -836,6 +833,9 @@ model DepartmentSection {
   
   // order lines routed to this section
   orderLines  OrderLine[]
+  
+  // extras available for this section
+  extras      Extra[]
 
   metadata     Json?     @default("{}")
   isActive     Boolean   @default(true)
@@ -1081,9 +1081,9 @@ model Extra {
   price        Int     // Price in cents
   isActive     Boolean @default(true)
 
-  // Link to department where this extra is available
-  departmentId String?
-  department   Department? @relation(fields: [departmentId], references: [id], onDelete: SetNull)
+  // Link to section where this extra is available
+  departmentSectionId String?
+  departmentSection   DepartmentSection? @relation(fields: [departmentSectionId], references: [id], onDelete: Cascade)
 
   // Option 3: Hybrid approach - can link to inventory item
   // If productId is set, this extra tracks inventory
@@ -1100,7 +1100,7 @@ model Extra {
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
-  @@index([departmentId])
+  @@index([departmentSectionId])
   @@index([productId])
   @@index([isActive])
   @@map("extras")

@@ -33,7 +33,7 @@ export class ExtrasService extends BaseService<any> {
     description?: string;
     unit: string; // e.g., "portion", "container", "piece", "pump"
     price: number; // In cents
-    departmentId?: string;
+    departmentSectionId?: string;
     productId?: string; // Optional: link to inventory item for tracking
     trackInventory?: boolean; // If true and productId set, deducts inventory
     isActive?: boolean;
@@ -43,13 +43,13 @@ export class ExtrasService extends BaseService<any> {
       const normalizedPrice = normalizeToCents(data.price);
       validatePrice(normalizedPrice, 'Extra price');
 
-      // If departmentId provided, verify it exists
-      if (data.departmentId) {
-        const dept = await prisma.department.findUnique({
-          where: { id: data.departmentId }
+      // If departmentSectionId provided, verify it exists
+      if (data.departmentSectionId) {
+        const section = await prisma.departmentSection.findUnique({
+          where: { id: data.departmentSectionId }
         });
-        if (!dept) {
-          return errorResponse(ErrorCodes.NOT_FOUND, 'Department not found');
+        if (!section) {
+          return errorResponse(ErrorCodes.NOT_FOUND, 'Department section not found');
         }
       }
 
@@ -69,14 +69,14 @@ export class ExtrasService extends BaseService<any> {
           description: data.description || null,
           unit: data.unit,
           price: normalizedPrice,
-          departmentId: data.departmentId || null,
+          departmentSectionId: data.departmentSectionId || null,
           productId: data.productId || null,
           trackInventory: data.trackInventory ?? false,
           isActive: data.isActive ?? true,
         },
         include: {
-          department: {
-            select: { id: true, code: true, name: true }
+          departmentSection: {
+            select: { id: true, name: true, slug: true }
           },
           product: {
             select: { id: true, name: true, sku: true, quantity: true }
@@ -98,7 +98,7 @@ export class ExtrasService extends BaseService<any> {
     productId: string;
     unit: string; // Can override product unit
     priceOverride?: number; // If not set, uses product price
-    departmentId?: string;
+    departmentSectionId?: string;
     trackInventory?: boolean;
   }, _ctx?: UserContext) {
     try {
@@ -119,7 +119,7 @@ export class ExtrasService extends BaseService<any> {
         description: product.description || undefined,
         unit: data.unit,
         price,
-        departmentId: data.departmentId,
+        departmentSectionId: data.departmentSectionId,
         productId: product.id,
         trackInventory: data.trackInventory ?? true, // Default to tracking when from product
         isActive: product.isActive
@@ -130,18 +130,18 @@ export class ExtrasService extends BaseService<any> {
   }
 
   /**
-   * Get all extras for a department
+   * Get all extras for a department section
    */
-  async getExtrasForDepartment(departmentId: string, includeInactive = false) {
+  async getExtrasForSection(sectionId: string, includeInactive = false) {
     try {
       const extras = await prisma.extra.findMany({
         where: {
-          departmentId,
+          departmentSectionId: sectionId,
           ...(includeInactive ? {} : { isActive: true })
         },
         include: {
-          department: {
-            select: { id: true, code: true, name: true }
+          departmentSection: {
+            select: { id: true, name: true, slug: true }
           }
         },
         orderBy: { name: 'asc' }
@@ -154,19 +154,19 @@ export class ExtrasService extends BaseService<any> {
   }
 
   /**
-   * Get all active extras across all departments
+   * Get all active extras across all sections
    */
   async getAllExtras(includeInactive = false) {
     try {
       const extras = await prisma.extra.findMany({
         where: includeInactive ? {} : { isActive: true },
         include: {
-          department: {
-            select: { id: true, code: true, name: true }
+          departmentSection: {
+            select: { id: true, name: true, slug: true }
           }
         },
         orderBy: [
-          { departmentId: 'asc' },
+          { departmentSectionId: 'asc' },
           { name: 'asc' }
         ]
       });
@@ -185,8 +185,8 @@ export class ExtrasService extends BaseService<any> {
       const extra = await prisma.extra.findUnique({
         where: { id: extraId },
         include: {
-          department: {
-            select: { id: true, code: true, name: true }
+          departmentSection: {
+            select: { id: true, name: true, slug: true }
           }
         }
       });
@@ -209,7 +209,7 @@ export class ExtrasService extends BaseService<any> {
     description: string;
     unit: string;
     price: number;
-    departmentId: string;
+    departmentSectionId: string;
     isActive: boolean;
   }>) {
     try {
@@ -226,13 +226,13 @@ export class ExtrasService extends BaseService<any> {
         data.price = normalizedPrice;
       }
 
-      // Validate departmentId if provided
-      if (data.departmentId) {
-        const dept = await prisma.department.findUnique({
-          where: { id: data.departmentId }
+      // Validate departmentSectionId if provided
+      if (data.departmentSectionId) {
+        const section = await prisma.departmentSection.findUnique({
+          where: { id: data.departmentSectionId }
         });
-        if (!dept) {
-          return errorResponse(ErrorCodes.NOT_FOUND, 'Department not found');
+        if (!section) {
+          return errorResponse(ErrorCodes.NOT_FOUND, 'Department section not found');
         }
       }
 
@@ -240,8 +240,8 @@ export class ExtrasService extends BaseService<any> {
         where: { id: extraId },
         data,
         include: {
-          department: {
-            select: { id: true, code: true, name: true }
+          departmentSection: {
+            select: { id: true, name: true, slug: true }
           }
         }
       });
@@ -266,8 +266,8 @@ export class ExtrasService extends BaseService<any> {
         where: { id: extraId },
         data: { isActive: false },
         include: {
-          department: {
-            select: { id: true, code: true, name: true }
+          departmentSection: {
+            select: { id: true, name: true, slug: true }
           }
         }
       });
@@ -504,13 +504,13 @@ export class ExtrasService extends BaseService<any> {
   /**
    * Get extras usage statistics
    */
-  async getExtrasStats(departmentId?: string) {
+  async getExtrasStats(departmentSectionId?: string) {
     try {
       // Total extras sold
       const totalSold = await prisma.orderExtra.aggregate({
         where: {
           status: 'fulfilled',
-          extra: departmentId ? { departmentId } : undefined
+          extra: departmentSectionId ? { departmentSectionId } : undefined
         },
         _count: { id: true },
         _sum: { quantity: true, lineTotal: true }
@@ -521,7 +521,7 @@ export class ExtrasService extends BaseService<any> {
         by: ['extraId'],
         where: {
           status: 'fulfilled',
-          extra: departmentId ? { departmentId } : undefined
+          extra: departmentSectionId ? { departmentSectionId } : undefined
         },
         _sum: { quantity: true, lineTotal: true },
         _count: { id: true },
