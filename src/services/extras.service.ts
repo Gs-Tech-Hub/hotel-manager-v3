@@ -27,6 +27,11 @@ export class ExtrasService extends BaseService<any> {
    * Create a new extra
    * Supports both standalone extras and inventory-linked extras (hybrid approach)
    * Restricted to admin/manager
+   * 
+   * AUTHORIZATION:
+   * - Requires authenticated user context
+   * - Role check (admin/manager) enforced at API route level
+   * - Service level validates context for defense in depth
    */
   async createExtra(data: {
     name: string;
@@ -37,8 +42,13 @@ export class ExtrasService extends BaseService<any> {
     productId?: string; // Optional: link to inventory item for tracking
     trackInventory?: boolean; // If true and productId set, deducts inventory
     isActive?: boolean;
-  }, _ctx?: UserContext) {
+  }, ctx?: UserContext) {
     try {
+      // AUTHENTICATION: Verify user is authenticated
+      if (!ctx || !ctx.userId) {
+        return errorResponse(ErrorCodes.UNAUTHORIZED, 'User authentication required to create extras');
+      }
+
       // Validate price
       const normalizedPrice = normalizeToCents(data.price);
       validatePrice(normalizedPrice, 'Extra price');
@@ -93,6 +103,11 @@ export class ExtrasService extends BaseService<any> {
   /**
    * Create extra from existing inventory item
    * Convenience method for creating inventory-tracked extras
+   * Restricted to admin/manager
+   * 
+   * AUTHORIZATION:
+   * - Requires authenticated user context
+   * - Authorization check delegated to createExtra()
    */
   async createExtraFromProduct(data: {
     productId: string;
@@ -100,8 +115,13 @@ export class ExtrasService extends BaseService<any> {
     priceOverride?: number; // If not set, uses product price
     departmentSectionId?: string;
     trackInventory?: boolean;
-  }, _ctx?: UserContext) {
+  }, ctx?: UserContext) {
     try {
+      // AUTHENTICATION: Verify user is authenticated
+      if (!ctx || !ctx.userId) {
+        return errorResponse(ErrorCodes.UNAUTHORIZED, 'User authentication required to create extras');
+      }
+
       const product = await prisma.inventoryItem.findUnique({
         where: { id: data.productId }
       });
@@ -123,7 +143,7 @@ export class ExtrasService extends BaseService<any> {
         productId: product.id,
         trackInventory: data.trackInventory ?? true, // Default to tracking when from product
         isActive: product.isActive
-      });
+      }, ctx); // Pass context for authorization tracking and audit
     } catch (error) {
       throw normalizeError(error);
     }
