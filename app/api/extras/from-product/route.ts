@@ -39,6 +39,14 @@ export async function POST(request: NextRequest) {
 
     const body = await request.json();
 
+    // Validate required fields
+    if (!body.productId || !body.unit) {
+      return NextResponse.json(
+        errorResponse(ErrorCodes.INVALID_INPUT, 'productId and unit are required'),
+        { status: 400 }
+      );
+    }
+
     const result = await extrasService.createExtraFromProduct({
       productId: body.productId,
       unit: body.unit,
@@ -48,9 +56,12 @@ export async function POST(request: NextRequest) {
     });
 
     // Check if result is an error response (has success: false)
-    if (result && typeof result === 'object' && 'success' in result && !result.success && 'error' in result) {
+    if (result && typeof result === 'object' && 'success' in result && !result.success) {
       // It's an error response
-      const statusCode = (result as any).error?.code === ErrorCodes.NOT_FOUND ? 404 : 400;
+      console.error('Error creating extra from product:', result);
+      const statusCode = (result as any).error?.code === ErrorCodes.NOT_FOUND ? 404 : 
+                        (result as any).error?.code === ErrorCodes.UNAUTHORIZED ? 401 :
+                        (result as any).error?.code === ErrorCodes.FORBIDDEN ? 403 : 400;
       return NextResponse.json(result, { status: statusCode });
     }
 

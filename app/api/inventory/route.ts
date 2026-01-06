@@ -66,9 +66,34 @@ export async function GET(req: NextRequest) {
 
       items = await prisma.inventoryItem.findMany({
         where,
-        include: { inventoryType: true },
+        include: { 
+          inventoryType: true,
+          usedAsExtras: {
+            select: { id: true }
+          }
+        },
         orderBy: { name: 'asc' },
       });
+    }
+
+    // For search/lowStock/expired paths, fetch usedAsExtras separately
+    if (items.length > 0 && (search || lowStock || expired)) {
+      const itemIds = items.map(i => i.id);
+      const itemsWithExtras = await prisma.inventoryItem.findMany({
+        where: { id: { in: itemIds } },
+        select: { 
+          id: true,
+          usedAsExtras: {
+            select: { id: true }
+          }
+        }
+      });
+      
+      const extrasMap = new Map(itemsWithExtras.map(i => [i.id, i.usedAsExtras]));
+      items = items.map(item => ({
+        ...item,
+        usedAsExtras: extrasMap.get(item.id) || []
+      }));
     }
 
     // Enrich items with quantities from DepartmentInventory (authoritative source)

@@ -15,7 +15,6 @@ import {
   normalizeToCents, 
   validatePrice
 } from '@/lib/price';
-import { UserContext, requireRole } from '@/lib/authorization';
 import { errorResponse, ErrorCodes } from '@/lib/api-response';
 
 export class ExtrasService extends BaseService<any> {
@@ -42,13 +41,8 @@ export class ExtrasService extends BaseService<any> {
     productId?: string; // Optional: link to inventory item for tracking
     trackInventory?: boolean; // If true and productId set, deducts inventory
     isActive?: boolean;
-  }, ctx?: UserContext) {
+  }) {
     try {
-      // AUTHENTICATION: Verify user is authenticated
-      if (!ctx || !ctx.userId) {
-        return errorResponse(ErrorCodes.UNAUTHORIZED, 'User authentication required to create extras');
-      }
-
       // Validate price
       const normalizedPrice = normalizeToCents(data.price);
       validatePrice(normalizedPrice, 'Extra price');
@@ -85,12 +79,8 @@ export class ExtrasService extends BaseService<any> {
           isActive: data.isActive ?? true,
         },
         include: {
-          departmentSection: {
-            select: { id: true, name: true, slug: true }
-          },
-          product: {
-            select: { id: true, name: true, sku: true, quantity: true }
-          }
+          departmentSection: true,
+          product: true
         }
       });
 
@@ -115,13 +105,8 @@ export class ExtrasService extends BaseService<any> {
     priceOverride?: number; // If not set, uses product price
     departmentSectionId?: string;
     trackInventory?: boolean;
-  }, ctx?: UserContext) {
+  }) {
     try {
-      // AUTHENTICATION: Verify user is authenticated
-      if (!ctx || !ctx.userId) {
-        return errorResponse(ErrorCodes.UNAUTHORIZED, 'User authentication required to create extras');
-      }
-
       const product = await prisma.inventoryItem.findUnique({
         where: { id: data.productId }
       });
@@ -143,7 +128,7 @@ export class ExtrasService extends BaseService<any> {
         productId: product.id,
         trackInventory: data.trackInventory ?? true, // Default to tracking when from product
         isActive: product.isActive
-      }, ctx); // Pass context for authorization tracking and audit
+      });
     } catch (error) {
       throw normalizeError(error);
     }
@@ -160,9 +145,8 @@ export class ExtrasService extends BaseService<any> {
           ...(includeInactive ? {} : { isActive: true })
         },
         include: {
-          departmentSection: {
-            select: { id: true, name: true, slug: true }
-          }
+          departmentSection: true,
+          product: true
         },
         orderBy: { name: 'asc' }
       });
@@ -181,9 +165,8 @@ export class ExtrasService extends BaseService<any> {
       const extras = await prisma.extra.findMany({
         where: includeInactive ? {} : { isActive: true },
         include: {
-          departmentSection: {
-            select: { id: true, name: true, slug: true }
-          }
+          departmentSection: true,
+          product: true
         },
         orderBy: [
           { departmentSectionId: 'asc' },
@@ -205,9 +188,8 @@ export class ExtrasService extends BaseService<any> {
       const extra = await prisma.extra.findUnique({
         where: { id: extraId },
         include: {
-          departmentSection: {
-            select: { id: true, name: true, slug: true }
-          }
+          departmentSection: true,
+          product: true
         }
       });
 
@@ -260,9 +242,8 @@ export class ExtrasService extends BaseService<any> {
         where: { id: extraId },
         data,
         include: {
-          departmentSection: {
-            select: { id: true, name: true, slug: true }
-          }
+          departmentSection: true,
+          product: true
         }
       });
 
@@ -286,9 +267,8 @@ export class ExtrasService extends BaseService<any> {
         where: { id: extraId },
         data: { isActive: false },
         include: {
-          departmentSection: {
-            select: { id: true, name: true, slug: true }
-          }
+          departmentSection: true,
+          product: true
         }
       });
 

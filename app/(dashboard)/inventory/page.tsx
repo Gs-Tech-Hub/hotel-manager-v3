@@ -21,6 +21,7 @@ type InventoryItem = {
   itemType?: string
   quantity: number
   unitPrice: number
+  usedAsExtras?: Array<{ id: string }> // extras linked to this inventory item
 }
 
 export default function InventoryPage() {
@@ -394,13 +395,15 @@ export default function InventoryPage() {
                       <Trash2 size={14} /> Delete
                     </button>
                   )}
-                  <button
-                    onClick={() => handleConvertToExtra(it)}
-                    className="px-2 py-1 bg-amber-600 text-white rounded text-sm inline-flex items-center gap-1 hover:bg-amber-700"
-                    title="Convert to Extra"
-                  >
-                    <Zap size={14} /> Extra
-                  </button>
+                  {it.usedAsExtras && it.usedAsExtras.length > 0 && (
+                    <button
+                      onClick={() => handleConvertToExtra(it)}
+                      className="px-2 py-1 bg-amber-600 text-white rounded text-sm inline-flex items-center gap-1 hover:bg-amber-700"
+                      title="Edit Extra"
+                    >
+                      <Zap size={14} /> Extra
+                    </button>
+                  )}
                 </td>
               </tr>
             ))}
