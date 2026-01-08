@@ -366,6 +366,7 @@ export default function InventoryPage() {
               <th className="p-2">Category</th>
               <th className="p-2">Quantity</th>
               <th className="p-2">Price</th>
+              <th className="p-2">Type</th>
               <th className="p-2">Actions</th>
             </tr>
           </thead>
@@ -384,6 +385,15 @@ export default function InventoryPage() {
                 </td>
                 <td className="p-2 font-medium">
                   <Price amount={Number(it.unitPrice)} isMinor={false} />
+                </td>
+                <td className="p-2">
+                  {it.usedAsExtras && it.usedAsExtras.length > 0 ? (
+                    <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-blue-100 text-blue-800">
+                      Extra
+                    </span>
+                  ) : (
+                    <span className="text-xs text-slate-400">Standard</span>
+                  )}
                 </td>
                 <td className="p-2 space-x-2">
                   <Link href={`/inventory/${encodeURIComponent(it.id)}`} className="px-2 py-1 bg-sky-600 text-white rounded text-sm inline-block">Open</Link>

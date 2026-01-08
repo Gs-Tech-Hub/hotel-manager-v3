@@ -810,6 +810,10 @@ model Department {
   // per-department inventory records
   departmentInventories DepartmentInventory[]
 
+  // per-department extras records
+  departmentExtras DepartmentExtra[]
+  extras Extra[]
+
   // RBAC: Role assignments scoped to this department
   userRoles       UserRole[]
   userPermissions UserPermission[]
@@ -830,6 +834,9 @@ model DepartmentSection {
 
   // per-section inventory records
   inventories DepartmentInventory[]
+  
+  // per-section extras records
+  departmentExtras DepartmentExtra[]
   
   // order lines routed to this section
   orderLines  OrderLine[]
@@ -1081,11 +1088,15 @@ model Extra {
   price        Int     // Price in cents
   isActive     Boolean @default(true)
 
-  // Link to section where this extra is available
+  // Link to department (parent level)
+  departmentId String?
+  department   Department? @relation(fields: [departmentId], references: [id], onDelete: Cascade)
+
+  // Link to section where this extra is available (optional - for section-specific extras)
   departmentSectionId String?
   departmentSection   DepartmentSection? @relation(fields: [departmentSectionId], references: [id], onDelete: Cascade)
 
-  // Option 3: Hybrid approach - can link to inventory item
+  // Hybrid approach - can link to inventory item
   // If productId is set, this extra tracks inventory
   productId    String?
   product      InventoryItem? @relation(fields: [productId], references: [id], onDelete: SetNull)
@@ -1097,13 +1108,44 @@ model Extra {
   // Reverse relation to order extras
   orderExtras  OrderExtra[]
 
+  // Department-level extra tracking
+  departmentExtras DepartmentExtra[]
+
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
+  @@index([departmentId])
   @@index([departmentSectionId])
   @@index([productId])
   @@index([isActive])
   @@map("extras")
+}
+
+/// Department-level extras management (similar to DepartmentInventory)
+model DepartmentExtra {
+  id String @id @default(cuid())
+
+  departmentId String
+  department   Department @relation(fields: [departmentId], references: [id], onDelete: Cascade)
+
+  // Optional: if this extra is scoped to a section
+  sectionId String?
+  section   DepartmentSection? @relation(fields: [sectionId], references: [id], onDelete: Cascade)
+
+  extraId String
+  extra   Extra @relation(fields: [extraId], references: [id], onDelete: Cascade)
+
+  quantity Int @default(0)
+  reserved Int @default(0)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@unique([departmentId, sectionId, extraId])
+  @@index([departmentId])
+  @@index([sectionId])
+  @@index([extraId])
+  @@map("department_extras")
 }
 
 /// Order extras: extras added to specific order lines

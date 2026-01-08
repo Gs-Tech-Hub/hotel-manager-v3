@@ -9,6 +9,17 @@ import { loadUserWithRoles, hasAnyRole } from '@/src/lib/user-context';
  * Create an extra from an existing inventory item
  * Supports inventory tracking
  */
+/**
+ * POST /api/extras/from-product
+ * Create an extra from an existing inventory item (global level only)
+ * After creation, use /api/departments/[code]/extras to allocate to departments
+ * 
+ * Body:
+ * - productId: string (required) - inventory item to link
+ * - unit: string (required) - e.g., "piece", "glass", "order"
+ * - priceOverride?: number - override inventory item price (in cents)
+ * - trackInventory?: boolean - track this extra's inventory
+ */
 export async function POST(request: NextRequest) {
   try {
     // Extract and validate user context
@@ -47,26 +58,16 @@ export async function POST(request: NextRequest) {
       );
     }
 
+    // Create extra at global level (no department/section assignment)
     const result = await extrasService.createExtraFromProduct({
       productId: body.productId,
       unit: body.unit,
       priceOverride: body.priceOverride,
-      departmentSectionId: body.departmentSectionId,
       trackInventory: body.trackInventory
     });
 
-    // Check if result is an error response (has success: false)
-    if (result && typeof result === 'object' && 'success' in result && !result.success) {
-      // It's an error response
-      console.error('Error creating extra from product:', result);
-      const statusCode = (result as any).error?.code === ErrorCodes.NOT_FOUND ? 404 : 
-                        (result as any).error?.code === ErrorCodes.UNAUTHORIZED ? 401 :
-                        (result as any).error?.code === ErrorCodes.FORBIDDEN ? 403 : 400;
-      return NextResponse.json(result, { status: statusCode });
-    }
-
     return NextResponse.json(
-      successResponse({ data: result }),
+      successResponse({ extra: result, message: 'Extra created. Use /api/departments/[code]/extras to allocate to departments.' }),
       { status: 201 }
     );
   } catch (error) {

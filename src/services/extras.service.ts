@@ -23,21 +23,19 @@ export class ExtrasService extends BaseService<any> {
   }
 
   /**
-   * Create a new extra
-   * Supports both standalone extras and inventory-linked extras (hybrid approach)
-   * Restricted to admin/manager
+   * Create a new extra (global registry)
+   * Extras are created globally, then allocated to departments, then transferred to sections
+   * This mirrors the inventory item flow
    * 
    * AUTHORIZATION:
    * - Requires authenticated user context
    * - Role check (admin/manager) enforced at API route level
-   * - Service level validates context for defense in depth
    */
   async createExtra(data: {
     name: string;
     description?: string;
     unit: string; // e.g., "portion", "container", "piece", "pump"
     price: number; // In cents
-    departmentSectionId?: string;
     productId?: string; // Optional: link to inventory item for tracking
     trackInventory?: boolean; // If true and productId set, deducts inventory
     isActive?: boolean;
@@ -46,16 +44,6 @@ export class ExtrasService extends BaseService<any> {
       // Validate price
       const normalizedPrice = normalizeToCents(data.price);
       validatePrice(normalizedPrice, 'Extra price');
-
-      // If departmentSectionId provided, verify it exists
-      if (data.departmentSectionId) {
-        const section = await prisma.departmentSection.findUnique({
-          where: { id: data.departmentSectionId }
-        });
-        if (!section) {
-          return errorResponse(ErrorCodes.NOT_FOUND, 'Department section not found');
-        }
-      }
 
       // If productId provided, verify inventory item exists
       if (data.productId) {
@@ -67,20 +55,20 @@ export class ExtrasService extends BaseService<any> {
         }
       }
 
+      // Create extra at global level (no department/section assignment yet)
       const extra = await prisma.extra.create({
         data: {
           name: data.name,
           description: data.description || null,
           unit: data.unit,
           price: normalizedPrice,
-          departmentSectionId: data.departmentSectionId || null,
           productId: data.productId || null,
           trackInventory: data.trackInventory ?? false,
           isActive: data.isActive ?? true,
         },
         include: {
-          departmentSection: true,
-          product: true
+          product: true,
+          departmentExtras: true
         }
       });
 
@@ -91,19 +79,16 @@ export class ExtrasService extends BaseService<any> {
   }
 
   /**
-   * Create extra from existing inventory item
-   * Convenience method for creating inventory-tracked extras
-   * Restricted to admin/manager
+   * Create extra from existing inventory item (global registry)
+   * After creation, use DepartmentExtrasService to allocate to departments
    * 
    * AUTHORIZATION:
    * - Requires authenticated user context
-   * - Authorization check delegated to createExtra()
    */
   async createExtraFromProduct(data: {
     productId: string;
     unit: string; // Can override product unit
     priceOverride?: number; // If not set, uses product price
-    departmentSectionId?: string;
     trackInventory?: boolean;
   }) {
     try {
@@ -124,7 +109,6 @@ export class ExtrasService extends BaseService<any> {
         description: product.description || undefined,
         unit: data.unit,
         price,
-        departmentSectionId: data.departmentSectionId,
         productId: product.id,
         trackInventory: data.trackInventory ?? true, // Default to tracking when from product
         isActive: product.isActive
@@ -135,43 +119,23 @@ export class ExtrasService extends BaseService<any> {
   }
 
   /**
-   * Get all extras for a department section
-   */
-  async getExtrasForSection(sectionId: string, includeInactive = false) {
-    try {
-      const extras = await prisma.extra.findMany({
-        where: {
-          departmentSectionId: sectionId,
-          ...(includeInactive ? {} : { isActive: true })
-        },
-        include: {
-          departmentSection: true,
-          product: true
-        },
-        orderBy: { name: 'asc' }
-      });
-
-      return extras;
-    } catch (error) {
-      throw normalizeError(error);
-    }
-  }
-
-  /**
-   * Get all active extras across all sections
+   * Get all active extras (global registry)
+   * Extras are not filtered by department/section here - use DepartmentExtrasService for that
    */
   async getAllExtras(includeInactive = false) {
     try {
       const extras = await prisma.extra.findMany({
         where: includeInactive ? {} : { isActive: true },
         include: {
-          departmentSection: true,
-          product: true
+          product: true,
+          departmentExtras: {
+            include: {
+              department: true,
+              section: true
+            }
+          }
         },
-        orderBy: [
-          { departmentSectionId: 'asc' },
-          { name: 'asc' }
-        ]
+        orderBy: { name: 'asc' }
       });
 
       return extras;

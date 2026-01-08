@@ -26,9 +26,16 @@ export function Topbar() {
 
 	const handleLogout = async () => {
 		setIsLoggingOut(true);
-		await logout();
-		router.push("/login");
-		router.refresh();
+		try {
+			// logout() now handles the redirect internally
+			await logout();
+		} catch (error) {
+			console.error('Logout failed:', error);
+			// Still redirect even if logout errors
+			if (typeof window !== 'undefined') {
+				window.location.href = '/login';
+			}
+		}
 	};
 
 	if (!isAuthenticated) return null;

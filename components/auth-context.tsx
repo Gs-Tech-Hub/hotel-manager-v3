@@ -103,19 +103,32 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   const logout = useCallback(async () => {
     try {
       setIsLoading(true);
+      // Clear user from state immediately (before API call)
+      setUser(null);
+      
+      // Call logout API to clear server-side session and cookies
       await fetch("/api/auth/logout", {
         method: "POST",
         credentials: "include",
       });
-      setUser(null);
-      // Redirect to login after logout
-      try {
-        router.replace('/login');
-      } catch (err) {
-        // ignore if router not ready
+      
+      // Clear browser cache and session storage
+      if (typeof window !== 'undefined') {
+        sessionStorage.clear();
+        localStorage.removeItem('auth_token');
+      }
+      
+      // Hard redirect to login (bypasses Next.js client-side routing)
+      // This ensures middleware checks the new (empty) cookie state
+      if (typeof window !== 'undefined') {
+        window.location.href = '/login';
       }
     } catch (error) {
       console.error("Logout error:", error);
+      // Force redirect even if logout fails
+      if (typeof window !== 'undefined') {
+        window.location.href = '/login';
+      }
     } finally {
       setIsLoading(false);
     }

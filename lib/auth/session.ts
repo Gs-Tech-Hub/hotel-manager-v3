@@ -252,6 +252,7 @@ export async function buildSession(
         const hasUserRoles = Array.isArray(hasUserRolesRow) && (hasUserRolesRow[0]?.exists || false);
 
         let rolesList: string[] = [];
+        let permissionsList: string[] = [];
 
         if (hasUserRoles) {
           const userRoles = await prisma.userRole.findMany({
@@ -261,23 +262,60 @@ export async function buildSession(
               ...(departmentId ? { departmentId } : {}),
             },
             include: {
-              role: true,
+              role: {
+                include: {
+                  rolePermissions: {
+                    include: {
+                      permission: true,
+                    },
+                  },
+                },
+              },
             },
           });
 
           rolesList = userRoles.map((ur) => ur.role.code);
+
+          // Extract permissions from all roles
+          const permissionsSet = new Set<string>();
+          userRoles.forEach((ur) => {
+            ur.role.rolePermissions.forEach((rp: any) => {
+              if (rp.permission?.action && rp.permission?.subject) {
+                permissionsSet.add(`${rp.permission.action}:${rp.permission.subject}`);
+              }
+            });
+          });
+          permissionsList = Array.from(permissionsSet);
         } else if (userType === "admin") {
           // Fallback for legacy schema: admin users fetch from AdminRole relation
           try {
             const adminWithRoles = await prisma.adminUser.findUnique({
               where: { id: userId },
-              include: { roles: true },
+              include: { 
+                roles: {
+                  include: {
+                    permissions: true,
+                  },
+                },
+              },
             });
 
             rolesList = (adminWithRoles?.roles || []).map((r: any) => r.code);
+
+            // Extract permissions from legacy admin roles
+            const permissionsSet = new Set<string>();
+            (adminWithRoles?.roles || []).forEach((role: any) => {
+              (role.permissions || []).forEach((p: any) => {
+                if (p.action && p.subject) {
+                  permissionsSet.add(`${p.action}:${p.subject}`);
+                }
+              });
+            });
+            permissionsList = Array.from(permissionsSet);
           } catch (err) {
             console.warn("[AUTH] Legacy admin roles fetch failed:", err);
             rolesList = [];
+            permissionsList = [];
           }
         }
 
@@ -289,6 +327,7 @@ export async function buildSession(
           lastName,
           departmentId,
           roles: rolesList,
+          permissions: permissionsList,
         };
       } catch (err) {
         console.error("Error fetching user roles (schema detection):", err);
@@ -300,6 +339,7 @@ export async function buildSession(
           lastName,
           departmentId,
           roles: [],
+          permissions: [],
         };
       }
   } catch (error) {

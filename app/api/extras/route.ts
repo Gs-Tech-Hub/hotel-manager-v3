@@ -12,24 +12,18 @@ import { extrasService } from '@/src/services/extras.service';
 
 /**
  * GET /api/extras
- * List all extras optionally filtered by section
+ * List all extras (global registry, not department/section filtered)
+ * For department/section-specific extras, use /api/departments/[code]/extras
  * 
  * Query parameters:
- * - sectionId: filter by department section
  * - includeInactive: include inactive extras (default: false)
  */
 export async function GET(request: NextRequest) {
   try {
     const searchParams = request.nextUrl.searchParams;
-    const sectionId = searchParams.get('sectionId') || undefined;
     const includeInactive = searchParams.get('includeInactive') === 'true';
 
-    let extras;
-    if (sectionId) {
-      extras = await extrasService.getExtrasForSection(sectionId, includeInactive);
-    } else {
-      extras = await extrasService.getAllExtras(includeInactive);
-    }
+    const extras = await extrasService.getAllExtras(includeInactive);
 
     return NextResponse.json(
       successResponse({ extras }),
@@ -46,7 +40,17 @@ export async function GET(request: NextRequest) {
 
 /**
  * POST /api/extras
- * Create a new extra (admin/manager only)
+ * Create a new extra at the global level (admin/manager only)
+ * After creation, use /api/departments/[code]/extras to allocate to departments
+ * 
+ * Body:
+ * - name: string (required)
+ * - description?: string
+ * - unit: string (required) - e.g., "piece", "glass", "order"
+ * - price?: number - price in cents
+ * - productId?: string - optional inventory item reference
+ * - trackInventory?: boolean - whether to track inventory for this extra
+ * - isActive?: boolean (default: true)
  */
 export async function POST(request: NextRequest) {
   try {
@@ -76,21 +80,19 @@ export async function POST(request: NextRequest) {
       );
     }
 
+    // Create extra at global level (no department/section assignment)
     const extra = await extrasService.createExtra({
       name: body.name,
       description: body.description,
       unit: body.unit,
       price: body.price || 0,
-      departmentSectionId: body.departmentSectionId,
+      productId: body.productId,
+      trackInventory: body.trackInventory ?? false,
       isActive: body.isActive ?? true,
     });
 
-    if ('error' in extra) {
-      return NextResponse.json(extra, { status: getStatusCode(ErrorCodes.INVALID_INPUT) });
-    }
-
     return NextResponse.json(
-      successResponse({ extra }),
+      successResponse({ extra, message: 'Extra created. Use /api/departments/[code]/extras to allocate to departments.' }),
       { status: 201 }
     );
   } catch (error) {
