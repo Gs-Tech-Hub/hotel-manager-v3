@@ -6,9 +6,9 @@ import { ProtectedRoute } from '@/components/protected-route';
 
 interface Permission {
   id: string;
-  code: string;
-  name: string;
-  description: string;
+  action: string;
+  subject?: string;
+  description?: string;
 }
 
 interface Role {
@@ -44,28 +44,40 @@ function RolesManagementContent() {
     setError('');
 
     try {
-      const [rolesRes, permsRes] = await Promise.all([
-        fetch(`/api/roles?page=${page}&limit=10`, { credentials: 'include' }),
-        fetch('/api/auth/permissions', { credentials: 'include' }),
-      ]);
+      const rolesRes = await fetch(`/api/roles?page=${page}&limit=10`, { 
+        credentials: 'include' 
+      });
 
-      if (rolesRes.status === 401 || permsRes.status === 401) {
+      if (rolesRes.status === 401) {
         router.push('/login');
         return;
       }
 
       if (!rolesRes.ok) throw new Error('Failed to fetch roles');
-      if (!permsRes.ok) throw new Error('Failed to fetch permissions');
 
       const rolesData = await rolesRes.json();
-      const permsData = await permsRes.json();
 
-      setRoles(rolesData.roles || []);
-      setPermissions(permsData.permissions || []);
+      setRoles(rolesData.data || []);
+      
+      // Extract all unique permissions from all roles
+      const allPerms = new Map<string, Permission>();
+      (rolesData.data || []).forEach((role: any) => {
+        (role.permissions || []).forEach((perm: Permission) => {
+          const key = `${perm.action}:${perm.subject || ''}`;
+          if (!allPerms.has(key)) {
+            allPerms.set(key, perm);
+          }
+        });
+      });
+      
+      const permissionsList = Array.from(allPerms.values());
+      console.log(`[Roles] Fetched ${rolesData.data?.length || 0} roles, extracted ${permissionsList.length} unique permissions`);
+      setPermissions(permissionsList);
       setCurrentPage(rolesData.pagination.page);
-      setTotalPages(rolesData.pagination.totalPages);
+      setTotalPages(rolesData.pagination.pages);
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Failed to fetch data');
+      console.error('[Roles] Fetch error:', err);
     } finally {
       setLoading(false);
     }
@@ -234,7 +246,7 @@ function RolesManagementContent() {
                         key={perm.id}
                         className="inline-block px-2 py-1 bg-blue-100 text-blue-800 rounded text-xs font-medium"
                       >
-                        {perm.code}
+                        {perm.action}{perm.subject ? `/${perm.subject}` : ''}
                       </span>
                     ))
                   )}
@@ -314,23 +326,74 @@ function RolesManagementContent() {
 
               {/* Permissions */}
               <div>
-                <label className="block text-sm font-medium text-gray-700 mb-2">Permissions</label>
-                <div className="grid grid-cols-2 gap-3 max-h-64 overflow-y-auto border border-gray-200 p-3 rounded-lg">
-                  {permissions.map((perm) => (
-                    <label key={perm.id} className="flex items-center gap-2">
-                      <input
-                        type="checkbox"
-                        checked={formData.permissionIds.includes(perm.id)}
-                        onChange={() => togglePermission(perm.id)}
-                        className="w-4 h-4 rounded"
-                      />
-                      <div>
-                        <span className="text-sm font-medium text-gray-700">{perm.code}</span>
-                        <span className="text-xs text-gray-500 block">{perm.name}</span>
-                      </div>
-                    </label>
-                  ))}
+                <div className="flex items-center justify-between mb-3">
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-1">Permissions</label>
+                    <p className="text-xs text-gray-500">Select permissions this role can perform ({formData.permissionIds.length} selected)</p>
+                  </div>
+                  <div className="text-xs bg-blue-50 text-blue-700 px-2 py-1 rounded border border-blue-200">
+                    Total: {permissions.length}
+                  </div>
                 </div>
+                
+                {permissions.length === 0 ? (
+                  <div className="p-4 bg-yellow-50 border border-yellow-200 rounded-lg">
+                    <p className="text-sm text-yellow-800">⚠️ No permissions available. Please seed permissions first.</p>
+                  </div>
+                ) : (
+                  <div className="space-y-2">
+                    {/* Selected Permissions Summary */}
+                    {formData.permissionIds.length > 0 && (
+                      <div className="p-3 bg-green-50 border border-green-200 rounded-lg">
+                        <p className="text-xs font-medium text-green-800 mb-2">Selected Permissions ({formData.permissionIds.length}):</p>
+                        <div className="flex flex-wrap gap-1">
+                          {permissions
+                            .filter(p => formData.permissionIds.includes(p.id))
+                            .map(p => (
+                              <span key={p.id} className="inline-block px-2 py-1 bg-green-200 text-green-800 rounded text-xs font-medium">
+                                {p.action}{p.subject ? `/${p.subject}` : ''}
+                              </span>
+                            ))}
+                        </div>
+                      </div>
+                    )}
+                    
+                    {/* Permissions Grid */}
+                    <div className="grid grid-cols-2 gap-3 max-h-72 overflow-y-auto border border-gray-200 p-3 rounded-lg bg-gray-50">
+                      {permissions
+                        .sort((a, b) => `${a.action}/${a.subject}`.localeCompare(`${b.action}/${b.subject}`))
+                        .map((perm) => {
+                          const isChecked = formData.permissionIds.includes(perm.id);
+                          return (
+                            <label 
+                              key={perm.id} 
+                              className={`flex items-start gap-2 p-2 rounded cursor-pointer transition ${
+                                isChecked 
+                                  ? 'bg-blue-100 border border-blue-300' 
+                                  : 'hover:bg-gray-100 border border-transparent'
+                              }`}
+                            >
+                              <input
+                                type="checkbox"
+                                checked={isChecked}
+                                onChange={() => togglePermission(perm.id)}
+                                className="w-4 h-4 rounded border-gray-300 cursor-pointer mt-0.5 flex-shrink-0"
+                              />
+                              <div className="flex-1 min-w-0">
+                                <span className={`text-sm font-medium block ${isChecked ? 'text-blue-900' : 'text-gray-700'}`}>
+                                  {perm.action}{perm.subject ? `/${perm.subject}` : ''}
+                                </span>
+                                {perm.description && (
+                                  <span className="text-xs text-gray-600 block mt-0.5">{perm.description}</span>
+                                )}
+                              </div>
+                            </label>
+                          );
+                        })
+                    }
+                    </div>
+                  </div>
+                )}
               </div>
 
               {/* Buttons */}

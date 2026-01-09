@@ -104,6 +104,7 @@ export async function middleware(req: NextRequest) {
     // Log admin access for debugging
     if (userType === "admin") {
       console.error(`[middleware] Admin user accessing: ${pathname} (userType: ${userType}, roles: ${userRoles.join(", ")})`);
+    }
 
     // Get page access rule for current pathname
     const pageRule = getPageAccessRule(pathname);

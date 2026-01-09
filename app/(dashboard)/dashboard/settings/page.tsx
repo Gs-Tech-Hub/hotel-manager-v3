@@ -4,6 +4,7 @@ import { zodResolver } from "@hookform/resolvers/zod";
 import { useForm } from "react-hook-form";
 import { z } from "zod";
 import { toast } from "sonner";
+import { useState } from "react";
 
 import { Button } from "@/components/ui/button";
 import {
@@ -21,6 +22,7 @@ import { Separator } from "@/components/ui/separator";
 import { Textarea } from "@/components/ui/textarea";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { Camera } from "lucide-react";
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 
 const profileFormSchema = z.object({
 	username: z
@@ -68,6 +70,7 @@ const defaultValues: Partial<ProfileFormValues> = {
 };
 
 export default function SettingsPage() {
+	const [activeTab, setActiveTab] = useState("profile");
 	const form = useForm<ProfileFormValues>({
 		resolver: zodResolver(profileFormSchema),
 		defaultValues,
@@ -84,12 +87,20 @@ export default function SettingsPage() {
 	return (
 		<div className="space-y-6">
 			<div>
-				<h3 className="text-lg font-medium">Profile</h3>
-				<p className="text-sm text-muted-foreground">
-					This is how others will see you on the site.
-				</p>
+				<h1 className="text-3xl font-bold">Settings</h1>
+				<p className="text-gray-600 mt-1">Manage your account, roles, and permissions</p>
 			</div>
 			<Separator />
+			
+			<Tabs value={activeTab} onValueChange={setActiveTab} className="w-full">
+				<TabsList className="grid w-full grid-cols-3">
+					<TabsTrigger value="profile">Profile</TabsTrigger>
+					<TabsTrigger value="roles">Roles</TabsTrigger>
+					<TabsTrigger value="permissions">Permissions</TabsTrigger>
+				</TabsList>
+
+				{/* Profile Tab */}
+				<TabsContent value="profile" className="space-y-6 mt-6">
 			<Form {...form}>
 				<form onSubmit={form.handleSubmit(onSubmit)} className="space-y-8">
 					<div className="flex items-center gap-6">
@@ -188,6 +199,30 @@ export default function SettingsPage() {
 					<Button type="submit">Update profile</Button>
 				</form>
 			</Form>
+				</TabsContent>
+
+				{/* Roles Tab */}
+				<TabsContent value="roles" className="space-y-6 mt-6">
+					<div>
+						<h3 className="text-lg font-medium">Your Roles</h3>
+						<p className="text-sm text-gray-600">Roles assigned to your account</p>
+					</div>
+					<Button asChild>
+						<a href="/admin/roles">Manage All Roles</a>
+					</Button>
+				</TabsContent>
+
+				{/* Permissions Tab */}
+				<TabsContent value="permissions" className="space-y-6 mt-6">
+					<div>
+						<h3 className="text-lg font-medium">Your Permissions</h3>
+						<p className="text-sm text-gray-600">Permissions associated with your roles</p>
+					</div>
+					<Button asChild>
+						<a href="/admin/roles">Configure Permissions</a>
+					</Button>
+				</TabsContent>
+			</Tabs>
 		</div>
 	);
 }
