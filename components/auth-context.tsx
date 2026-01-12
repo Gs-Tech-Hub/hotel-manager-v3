@@ -77,11 +77,24 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         });
 
         if (!res.ok) {
-          const { error } = await res.json();
-          throw new Error(error || "Login failed");
+          let errorMsg = "Login failed";
+          try {
+            const errorData = await res.json();
+            errorMsg = errorData.error || errorMsg;
+          } catch {
+            // If response is not JSON, try to get text
+            errorMsg = await res.text().catch(() => `HTTP ${res.status} error`);
+          }
+          throw new Error(errorMsg);
         }
 
-        const { user: userData } = await res.json();
+        const responseData = await res.json();
+        const userData = responseData.user || responseData.data;
+        
+        if (!userData) {
+          throw new Error("Invalid response format from server");
+        }
+
         // fetch permissions after login
         const permsRes = await fetch('/api/auth/permissions', { credentials: 'include' });
         let perms: string[] = [];
@@ -142,15 +155,21 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       });
 
       if (res.ok) {
-        const { user: userData } = await res.json();
-        // refresh permissions too
-        const permsRes = await fetch('/api/auth/permissions', { credentials: 'include' });
-        let perms: string[] = [];
-        if (permsRes.ok) {
-          const permsJson = await permsRes.json();
-          perms = permsJson.permissions || [];
+        const responseData = await res.json();
+        const userData = responseData.user || responseData.data;
+        
+        if (userData) {
+          // refresh permissions too
+          const permsRes = await fetch('/api/auth/permissions', { credentials: 'include' });
+          let perms: string[] = [];
+          if (permsRes.ok) {
+            const permsJson = await permsRes.json();
+            perms = permsJson.permissions || [];
+          }
+          setUser({ ...userData, permissions: perms });
+        } else {
+          setUser(null);
         }
-        setUser({ ...userData, permissions: perms });
       } else {
         setUser(null);
       }
