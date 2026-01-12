@@ -28,7 +28,7 @@ function PageAccessContent() {
     const fetchRoles = async () => {
       try {
         setLoading(true);
-        const res = await fetch("/api/admin/roles", { credentials: "include" });
+        const res = await fetch("/api/roles", { credentials: "include" });
 
         if (!res.ok) throw new Error("Failed to fetch roles");
 
@@ -59,7 +59,7 @@ function PageAccessContent() {
       setError("");
 
       // Send update to API
-      const response = await fetch(`/api/admin/roles/${selectedRole.id}/page-access`, {
+      const response = await fetch(`/api/roles/${selectedRole.id}/page-access`, {
         method: "PUT",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
