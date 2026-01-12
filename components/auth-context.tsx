@@ -2,6 +2,7 @@
 
 import React, { createContext, useContext, useEffect, useState, useCallback } from "react";
 import { useRouter } from 'next/navigation';
+import { pageAccessRules, type PageAccessRule } from "@/lib/auth/page-access";
 
 export interface AuthUser {
   id: string;
@@ -24,6 +25,7 @@ export interface AuthContextType {
   hasPermission: (permission: string) => boolean;
   hasRole: (role: string) => boolean;
   hasAnyRole: (roles: string[]) => boolean;
+  canAccessPage: (path: string) => boolean;
 }
 
 const AuthContext = createContext<AuthContextType | undefined>(undefined);
@@ -209,6 +211,73 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     [user]
   );
 
+  const canAccessPage = useCallback(
+    (path: string): boolean => {
+      if (!user) return false;
+
+      // Find matching rule (exact match first, then prefix patterns)
+      let matchedRule: PageAccessRule | null = null;
+      
+      // Try exact match first
+      if (pageAccessRules[path]) {
+        matchedRule = pageAccessRules[path];
+      } else {
+        // Try prefix patterns (longest match wins)
+        const patterns = Object.keys(pageAccessRules)
+          .filter(key => key.endsWith('*'))
+          .sort((a, b) => b.length - a.length); // Longest first
+        
+        for (const pattern of patterns) {
+          const prefix = pattern.slice(0, -1); // Remove the *
+          if (path.startsWith(prefix)) {
+            matchedRule = pageAccessRules[pattern];
+            break;
+          }
+        }
+      }
+
+      if (!matchedRule) {
+        // No rule found - default to authenticated users only
+        return user !== null;
+      }
+
+      // Admin bypass (if rule allows it)
+      if (matchedRule.adminBypass && user.userType === 'admin') {
+        return true;
+      }
+
+      // Authenticated only check
+      if (matchedRule.authenticatedOnly) {
+        return user !== null;
+      }
+
+      // Check required roles
+      if (matchedRule.requiredRoles && matchedRule.requiredRoles.length > 0) {
+        const hasRole = user.roles?.some(r => matchedRule!.requiredRoles!.includes(r));
+        if (!hasRole) return false;
+      }
+
+      // Check required permissions
+      if (matchedRule.requiredPermissions && matchedRule.requiredPermissions.length > 0) {
+        const hasAllPermissions = matchedRule.requiredPermissions.every(perm =>
+          user.permissions?.includes(perm)
+        );
+        if (!hasAllPermissions) return false;
+      }
+
+      // Check required any permissions
+      if (matchedRule.requiredAnyPermissions && matchedRule.requiredAnyPermissions.length > 0) {
+        const hasAnyPermission = user.permissions?.some(perm =>
+          matchedRule!.requiredAnyPermissions!.includes(perm)
+        );
+        if (!hasAnyPermission) return false;
+      }
+
+      return true;
+    },
+    [user]
+  );
+
   const value: AuthContextType = {
     user,
     isLoading,
@@ -219,6 +288,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     hasPermission,
     hasRole,
     hasAnyRole,
+    canAccessPage,
   };
 
   return (

@@ -1,5 +1,5 @@
 "use client";
-import { useState } from "react";
+import { useState, useMemo } from "react";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { cn } from "@/lib/utils";
@@ -26,6 +26,8 @@ import {
 
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
+import { useAuth } from "./../../components/auth-context";
+import { pageAccessRules, type PageAccessRule } from "@/lib/auth/page-access";
 
 const sidebarGroups = [
 	{
@@ -213,9 +215,93 @@ interface SidebarProps {
 	onMobileClose?: () => void;
 }
 
+/**
+ * Check if a user can access a given path based on page access rules
+ */
+function canAccessPath(
+	path: string,
+	user: ReturnType<typeof useAuth>["user"],
+	userType?: string
+): boolean {
+	if (!user) return false;
+
+	// Find matching rule (exact match first, then prefix patterns)
+	let matchedRule: PageAccessRule | null = null;
+	
+	// Try exact match first
+	if (pageAccessRules[path]) {
+		matchedRule = pageAccessRules[path];
+	} else {
+		// Try prefix patterns (longest match wins)
+		const patterns = Object.keys(pageAccessRules)
+			.filter(key => key.endsWith('*'))
+			.sort((a, b) => b.length - a.length); // Longest first
+		
+		for (const pattern of patterns) {
+			const prefix = pattern.slice(0, -1); // Remove the *
+			if (path.startsWith(prefix)) {
+				matchedRule = pageAccessRules[pattern];
+				break;
+			}
+		}
+	}
+
+	if (!matchedRule) {
+		// No rule found - default to authenticated users only
+		return user !== null;
+	}
+
+	// Admin bypass (if rule allows it)
+	if (matchedRule.adminBypass && user.userType === 'admin') {
+		return true;
+	}
+
+	// Authenticated only check
+	if (matchedRule.authenticatedOnly) {
+		return user !== null;
+	}
+
+	// Check required roles
+	if (matchedRule.requiredRoles && matchedRule.requiredRoles.length > 0) {
+		const hasRole = user.roles?.some(r => matchedRule!.requiredRoles!.includes(r));
+		if (!hasRole) return false;
+	}
+
+	// Check required permissions
+	if (matchedRule.requiredPermissions && matchedRule.requiredPermissions.length > 0) {
+		const hasAllPermissions = matchedRule.requiredPermissions.every(perm =>
+			user.permissions?.includes(perm)
+		);
+		if (!hasAllPermissions) return false;
+	}
+
+	// Check required any permissions
+	if (matchedRule.requiredAnyPermissions && matchedRule.requiredAnyPermissions.length > 0) {
+		const hasAnyPermission = user.permissions?.some(perm =>
+			matchedRule!.requiredAnyPermissions!.includes(perm)
+		);
+		if (!hasAnyPermission) return false;
+	}
+
+	return true;
+}
+
 export function Sidebar({ onMobileClose }: SidebarProps) {
 	const pathname = usePathname();
 	const [isCollapsed, setIsCollapsed] = useState(false);
+	const { user } = useAuth();
+
+	// Filter sidebar items based on user permissions
+	const getFilteredSidebarGroups = useMemo(() => {
+		if (!user) return [];
+
+		return sidebarGroups
+			.map(group => ({
+				...group,
+				items: group.items.filter(item => canAccessPath(item.href, user))
+			}))
+			.filter(group => group.items.length > 0);
+	}, [user]);
 
 	const handleLinkClick = () => {
 		if (onMobileClose) {
@@ -263,7 +349,7 @@ export function Sidebar({ onMobileClose }: SidebarProps) {
 
 			{/* Navigation Groups */}
 			<nav className="flex-1 space-y-8 p-6">
-				{sidebarGroups.map((group) => (
+				{getFilteredSidebarGroups.map((group) => (
 					<div key={group.title} className="space-y-3">
 						{/* Group Title */}
 						{!isCollapsed && (
