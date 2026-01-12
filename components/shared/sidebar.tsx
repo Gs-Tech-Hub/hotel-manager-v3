@@ -23,6 +23,7 @@ import {
 	DoorOpen,
 	BookMarked,
 	ShoppingCart,
+	ChevronDown,
 
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
@@ -129,6 +130,12 @@ const sidebarGroups = [
 			{
 				title: "Roles & Permissions",
 				href: "/dashboard/admin/roles",
+				icon: Shield,
+				badge: null,
+			},
+			{
+				title: "Page Access Control",
+				href: "/dashboard/admin/page-access",
 				icon: Shield,
 				badge: null,
 			},
@@ -289,6 +296,9 @@ function canAccessPath(
 export function Sidebar({ onMobileClose }: SidebarProps) {
 	const pathname = usePathname();
 	const [isCollapsed, setIsCollapsed] = useState(false);
+	const [expandedGroups, setExpandedGroups] = useState<Record<string, boolean>>(
+		Object.fromEntries(sidebarGroups.map(g => [g.title, true]))
+	);
 	const { user } = useAuth();
 
 	// Filter sidebar items based on user permissions
@@ -302,6 +312,13 @@ export function Sidebar({ onMobileClose }: SidebarProps) {
 			}))
 			.filter(group => group.items.length > 0);
 	}, [user]);
+
+	const toggleGroupExpanded = (title: string) => {
+		setExpandedGroups(prev => ({
+			...prev,
+			[title]: !prev[title]
+		}));
+	};
 
 	const handleLinkClick = () => {
 		if (onMobileClose) {
@@ -348,112 +365,130 @@ export function Sidebar({ onMobileClose }: SidebarProps) {
 			</div>
 
 			{/* Navigation Groups */}
-			<nav className="flex-1 space-y-8 p-6">
+			<nav className="flex-1 overflow-y-auto space-y-6 p-6 pr-3 scrollbar-thin scrollbar-thumb-rounded-lg scrollbar-thumb-muted scrollbar-track-transparent hover:scrollbar-thumb-muted-foreground">
 				{getFilteredSidebarGroups.map((group) => (
-					<div key={group.title} className="space-y-3">
-						{/* Group Title */}
-						{!isCollapsed && (
-							<h3 className="text-xs font-semibold text-muted-foreground uppercase tracking-wider px-3 mb-4">
-								{group.title}
-							</h3>
-						)}
-
-						{/* Group Items */}
-						<div className="space-y-2">
-							{group.items.map((item) => {
-								const Icon = item.icon;
-
-								if ('children' in item && Array.isArray((item as any).children)) {
-									const isParentActive = pathname === item.href || pathname.startsWith(item.href + "/");
-									return (
-										<div key={item.href}>
-											<Link
-												href={item.href}
-												onClick={handleLinkClick}
-												className={cn(
-													"group flex items-center gap-3 rounded-xl px-3 py-3 text-sm font-medium transition-all duration-200 hover:bg-muted",
-													isParentActive
-														? "bg-primary text-primary-foreground shadow-md hover:bg-primary/90"
-														: "text-muted-foreground hover:text-foreground",
-													isCollapsed && "justify-center px-3 py-4",
-												)}
-												title={isCollapsed ? item.title : undefined}
-											>
-												{Icon && (
-													<Icon
-														className={cn(
-															"transition-all duration-200",
-															isCollapsed ? "h-5 w-5" : "h-4 w-4",
-															isParentActive && !isCollapsed && "text-primary-foreground",
-														)}
-													/>
-												)}
-												{!isCollapsed && <span className="group-hover:translate-x-0.5 transition-transform duration-200">{item.title}</span>}
-											</Link>
-
-											{/* Children links */}
-											{!isCollapsed && (
-												<div className="mt-2 space-y-1 pl-8">
-													{(item as any).children.map((child: any) => {
-														const isActiveChild = pathname === child.href;
-														const ChildIcon = child.icon;
-														return (
-															<Link
-																key={child.href}
-																href={child.href}
-																onClick={handleLinkClick}
-																className={cn(
-																	"group flex items-center gap-2 rounded px-2 py-2 text-sm transition-all duration-150 hover:bg-muted",
-																	isActiveChild
-																		? "bg-primary/90 text-primary-foreground"
-																		: "text-muted-foreground hover:text-foreground",
-																)}
-																>
-																{ChildIcon && <ChildIcon className="h-3 w-3" />}
-																<span>{child.title}</span>
-																</Link>
-															);
-														})}
-												</div>
-											)}
-										</div>
-									);
-								}
-
-								// default single item
-								const isActive = pathname === item.href;
-								return (
-									<Link
-										key={item.href}
-										href={item.href}
-										onClick={handleLinkClick}
-										className={cn(
-											"group flex items-center gap-3 rounded-xl px-3 py-3 text-sm font-medium transition-all duration-200 hover:bg-muted",
-											isActive
-												? "bg-primary text-primary-foreground shadow-md hover:bg-primary/90"
-												: "text-muted-foreground hover:text-foreground",
-											isCollapsed && "justify-center px-3 py-4",
-										)}
-										title={isCollapsed ? item.title : undefined}
-									>
-										{Icon && (
-											<Icon
-												className={cn(
-													"transition-all duration-200",
-													isCollapsed ? "h-5 w-5" : "h-4 w-4",
-													isActive && !isCollapsed && "text-primary-foreground",
-												)}
-											/>
-										)}
-										{!isCollapsed && (
-											<span className="group-hover:translate-x-0.5 transition-transform duration-200">
-												{item.title}
-											</span>
-										)}
-									</Link>
-								);
-								})}
+					<div key={group.title} className="space-y-2">
+						{/* Group Header with Toggle */}
+						<div
+							className="flex items-center justify-between gap-2 cursor-pointer group"
+							onClick={() => !isCollapsed && toggleGroupExpanded(group.title)}
+						>
+							{!isCollapsed && (
+								<h3 className="text-xs font-semibold text-muted-foreground uppercase tracking-wider px-3 flex-1">
+									{group.title}
+								</h3>
+							)}
+							{!isCollapsed && (
+								<ChevronDown
+									className={cn(
+										"h-4 w-4 text-muted-foreground transition-transform duration-200 mx-2",
+										!expandedGroups[group.title] && "-rotate-90"
+									)}
+								/>
+							)}
 						</div>
+
+						{/* Group Items - Collapsible */}
+						{(!isCollapsed || expandedGroups[group.title]) && (
+							<div className={cn(
+								"space-y-2 overflow-hidden transition-all duration-300",
+								!expandedGroups[group.title] && !isCollapsed && "hidden"
+							)}>
+								{group.items.map((item) => {
+									const Icon = item.icon;
+
+									if ('children' in item && Array.isArray((item as any).children)) {
+										const isParentActive = pathname === item.href || pathname.startsWith(item.href + "/");
+										return (
+											<div key={item.href}>
+												<Link
+													href={item.href}
+													onClick={handleLinkClick}
+													className={cn(
+														"group flex items-center gap-3 rounded-xl px-3 py-3 text-sm font-medium transition-all duration-200 hover:bg-muted",
+														isParentActive
+															? "bg-primary text-primary-foreground shadow-md hover:bg-primary/90"
+															: "text-muted-foreground hover:text-foreground",
+														isCollapsed && "justify-center px-3 py-4",
+													)}
+													title={isCollapsed ? item.title : undefined}
+												>
+													{Icon && (
+														<Icon
+															className={cn(
+																"transition-all duration-200",
+																isCollapsed ? "h-5 w-5" : "h-4 w-4",
+																isParentActive && !isCollapsed && "text-primary-foreground",
+															)}
+														/>
+													)}
+													{!isCollapsed && <span className="group-hover:translate-x-0.5 transition-transform duration-200">{item.title}</span>}
+												</Link>
+
+												{/* Children links */}
+												{!isCollapsed && (
+													<div className="mt-2 space-y-1 pl-8">
+														{(item as any).children.map((child: any) => {
+															const isActiveChild = pathname === child.href;
+															const ChildIcon = child.icon;
+															return (
+																<Link
+																	key={child.href}
+																	href={child.href}
+																	onClick={handleLinkClick}
+																	className={cn(
+																		"group flex items-center gap-2 rounded px-2 py-2 text-sm transition-all duration-150 hover:bg-muted",
+																		isActiveChild
+																			? "bg-primary/90 text-primary-foreground"
+																			: "text-muted-foreground hover:text-foreground",
+																	)}
+																	>
+																	{ChildIcon && <ChildIcon className="h-3 w-3" />}
+																	<span>{child.title}</span>
+																	</Link>
+																);
+															})}
+													</div>
+												)}
+											</div>
+										);
+									}
+
+									// default single item
+									const isActive = pathname === item.href;
+									return (
+										<Link
+											key={item.href}
+											href={item.href}
+											onClick={handleLinkClick}
+											className={cn(
+												"group flex items-center gap-3 rounded-xl px-3 py-3 text-sm font-medium transition-all duration-200 hover:bg-muted",
+												isActive
+													? "bg-primary text-primary-foreground shadow-md hover:bg-primary/90"
+													: "text-muted-foreground hover:text-foreground",
+												isCollapsed && "justify-center px-3 py-4",
+											)}
+											title={isCollapsed ? item.title : undefined}
+										>
+											{Icon && (
+												<Icon
+													className={cn(
+														"transition-all duration-200",
+														isCollapsed ? "h-5 w-5" : "h-4 w-4",
+														isActive && !isCollapsed && "text-primary-foreground",
+													)}
+												/>
+											)}
+											{!isCollapsed && (
+												<span className="group-hover:translate-x-0.5 transition-transform duration-200">
+													{item.title}
+												</span>
+											)}
+										</Link>
+									);
+									})}
+							</div>
+						)}
 					</div>
 				))}
 			</nav>

@@ -79,45 +79,55 @@ export const pageAccessRules: Record<string, PageAccessRule> = {
     adminBypass: true,
   },
 
+  "/dashboard/admin/page-access": {
+    requiredRoles: ["admin"],
+    adminBypass: true,
+  },
+
+  "/dashboard/admin/page-access/*": {
+    requiredRoles: ["admin"],
+    adminBypass: true,
+  },
+
   // ==================== POS SYSTEM ====================
   "/pos": {
-    requiredRoles: ["pos_staff", "pos_manager", "admin"],
+    requiredRoles: ["pos_staff", "cashier", "pos_manager", "admin"],
     requiredPermissions: ["orders.read"],
     adminBypass: true,
   },
 
   "/pos/orders": {
-    requiredRoles: ["pos_staff", "pos_manager", "admin"],
+    requiredRoles: ["pos_staff", "cashier", "pos_manager", "admin"],
     requiredPermissions: ["orders.read"],
     adminBypass: true,
   },
 
   "/pos/orders/*": {
-    requiredRoles: ["pos_staff", "pos_manager", "admin"],
+    requiredRoles: ["pos_staff", "cashier", "pos_manager", "admin"],
     requiredPermissions: ["orders.read"],
     adminBypass: true,
   },
 
   "/pos/food": {
-    requiredRoles: ["pos_staff", "pos_manager", "admin"],
+    requiredRoles: ["pos_staff", "cashier", "pos_manager", "admin"],
     requiredPermissions: ["orders.read"],
     adminBypass: true,
   },
 
   "/pos/food/*": {
-    requiredRoles: ["pos_staff", "pos_manager", "admin"],
+    requiredRoles: ["pos_staff", "cashier", "pos_manager", "admin"],
     requiredPermissions: ["orders.read"],
     adminBypass: true,
   },
 
   "/pos/drinks": {
-    requiredRoles: ["pos_staff", "pos_manager", "admin"],
+    requiredRoles: ["pos_staff", "cashier", "pos_manager", "admin"],
     requiredPermissions: ["orders.read"],
     adminBypass: true,
   },
 
   "/pos/drinks/*": {
-    requiredRoles: ["pos_staff", "pos_manager", "admin"],
+    requiredRoles: ["pos_staff", "cashier", "pos_manager", "admin"],
     requiredPermissions: ["orders.read"],
     adminBypass: true,
   },
@@ -148,13 +158,13 @@ export const pageAccessRules: Record<string, PageAccessRule> = {
 
   // ==================== POS TERMINALS ====================
   "/pos-terminals": {
-    requiredRoles: ["terminal_operator", "pos_manager", "admin"],
+    requiredRoles: ["terminal_operator", "cashier", "pos_manager", "admin"],
     requiredPermissions: ["pos_terminal.access"],
     adminBypass: true,
   },
 
   "/pos-terminals/*": {
-    requiredRoles: ["terminal_operator", "pos_manager", "admin"],
+    requiredRoles: ["terminal_operator", "cashier", "pos_manager", "admin"],
     requiredPermissions: ["pos_terminal.access"],
     adminBypass: true,
   },
