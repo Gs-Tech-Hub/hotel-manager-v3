@@ -154,6 +154,89 @@ async function seedPermissions() {
         // Reports (read only)
         { action: "reports.read", subject: "reports", description: "View reports" },
       ],
+      
+      receptionist: [
+        // Bookings (full CRUD for room reservations)
+        { action: "bookings.create", subject: "bookings", description: "Create bookings" },
+        { action: "bookings.read", subject: "bookings", description: "View bookings" },
+        { action: "bookings.update", subject: "bookings", description: "Update bookings" },
+        { action: "bookings.delete", subject: "bookings", description: "Delete bookings" },
+        
+        // Customers (read + create for guest information)
+        { action: "customers.read", subject: "customers", description: "View customers" },
+        { action: "customers.create", subject: "customers", description: "Create customers" },
+        { action: "customers.update", subject: "customers", description: "Update customers" },
+        
+        // Rooms (read + view room status)
+        { action: "rooms.read", subject: "rooms", description: "View rooms" },
+        
+        // Departments (read only)
+        { action: "departments.read", subject: "departments", description: "View departments" },
+      ],
+      
+      inventory_staff: [
+        // Inventory (full management)
+        { action: "inventory.read", subject: "inventory", description: "View inventory" },
+        { action: "inventory.create", subject: "inventory", description: "Create inventory items" },
+        { action: "inventory.update", subject: "inventory", description: "Update inventory" },
+        { action: "inventory.transfer", subject: "inventory", description: "Transfer inventory between departments" },
+        
+        // Departments (read only)
+        { action: "departments.read", subject: "departments", description: "View departments" },
+      ],
+      
+      pos_staff: [
+        // Orders (read + create)
+        { action: "orders.read", subject: "orders", description: "View orders" },
+        { action: "orders.create", subject: "orders", description: "Create orders" },
+        { action: "orders.update", subject: "orders", description: "Update orders" },
+        
+        // Inventory (read only for menu display)
+        { action: "inventory.read", subject: "inventory", description: "View inventory" },
+        
+        // Departments (read only)
+        { action: "departments.read", subject: "departments", description: "View departments" },
+      ],
+      
+      pos_manager: [
+        // Orders (full CRUD + management)
+        { action: "orders.read", subject: "orders", description: "View orders" },
+        { action: "orders.create", subject: "orders", description: "Create orders" },
+        { action: "orders.update", subject: "orders", description: "Update orders" },
+        { action: "orders.delete", subject: "orders", description: "Delete orders" },
+        { action: "orders.cancel", subject: "orders", description: "Cancel orders" },
+        
+        // Payments (process and refund)
+        { action: "payments.read", subject: "payments", description: "View payments" },
+        { action: "payments.process", subject: "payments", description: "Process payments" },
+        { action: "payments.refund", subject: "payments", description: "Process refunds" },
+        
+        // Inventory (read + update)
+        { action: "inventory.read", subject: "inventory", description: "View inventory" },
+        { action: "inventory.update", subject: "inventory", description: "Update inventory" },
+        { action: "inventory.transfer", subject: "inventory", description: "Transfer inventory" },
+        
+        // Departments
+        { action: "departments.read", subject: "departments", description: "View departments" },
+        { action: "departments.update", subject: "departments", description: "Update departments" },
+        
+        // Reports
+        { action: "reports.read", subject: "reports", description: "View reports" },
+        { action: "reports.generate", subject: "reports", description: "Generate reports" },
+      ],
+      
+      terminal_operator: [
+        // POS Terminal access
+        { action: "pos_terminal.access", subject: "pos_terminal", description: "Access POS terminals" },
+        
+        // Orders (read + create)
+        { action: "orders.read", subject: "orders", description: "View orders" },
+        { action: "orders.create", subject: "orders", description: "Create orders" },
+        { action: "orders.update", subject: "orders", description: "Update orders" },
+        
+        // Inventory (read only)
+        { action: "inventory.read", subject: "inventory", description: "View inventory" },
+      ],
     };
 
     // Seed legacy admin roles schema
@@ -257,6 +340,11 @@ async function seedPermissions() {
     console.log(`  - Employee role: ${permissionSets.employee.length} permissions`);
     console.log(`  - Cashier role: ${permissionSets.cashier.length} permissions`);
     console.log(`  - Staff role: ${permissionSets.staff.length} permissions`);
+    console.log(`  - Receptionist role: ${permissionSets.receptionist.length} permissions`);
+    console.log(`  - Inventory Staff role: ${permissionSets.inventory_staff.length} permissions`);
+    console.log(`  - POS Staff role: ${permissionSets.pos_staff.length} permissions`);
+    console.log(`  - POS Manager role: ${permissionSets.pos_manager.length} permissions`);
+    console.log(`  - Terminal Operator role: ${permissionSets.terminal_operator.length} permissions`);
   } catch (error) {
     console.error("❌ Error seeding permissions:", error);
     throw error;

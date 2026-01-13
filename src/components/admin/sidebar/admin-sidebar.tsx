@@ -10,15 +10,15 @@ const SidebarContext = createContext<{ isCollapsed: boolean }>({ isCollapsed: fa
 export const useSidebar = () => useContext(SidebarContext)
 
 const menuItems = [
-  { id: 'dashboard', label: 'Dashboard', icon: '📊', href: '/admin' },
-  { id: 'departments', label: 'Departments', icon: '🏢', href: '/admin/departments' },
-  { id: 'rooms', label: 'Rooms', icon: '🏠', href: '/admin/rooms' },
-  { id: 'bookings', label: 'Bookings', icon: '📅', href: '/admin/bookings' },
-  { id: 'customers', label: 'Customers', icon: '👥', href: '/admin/customers' },
-  { id: 'orders', label: 'Orders', icon: '🛒', href: '/admin/orders' },
-  { id: 'inventory', label: 'Inventory', icon: '📦', href: '/admin/inventory' },
-  { id: 'staff', label: 'Staff', icon: '👨‍💼', href: '/admin/staff' },
-  { id: 'settings', label: 'Settings', icon: '⚙️', href: '/admin/settings' },
+  { id: 'dashboard', label: 'Dashboard', icon: '📊', href: '/' },
+  { id: 'departments', label: 'Departments', icon: '🏢', href: '/departments' },
+  { id: 'rooms', label: 'Rooms', icon: '🏠', href: '/rooms' },
+  { id: 'bookings', label: 'Bookings', icon: '📅', href: '/bookings' },
+  { id: 'customers', label: 'Customers', icon: '👥', href: '/customers' },
+  { id: 'orders', label: 'Orders', icon: '🛒', href: '/orders' },
+  { id: 'inventory', label: 'Inventory', icon: '📦', href: '/inventory' },
+  { id: 'staff', label: 'Staff', icon: '👨‍💼', href: '/staff' },
+  { id: 'settings', label: 'Settings', icon: '⚙️', href: '/settings' },
 ]
 
 export function AdminSidebar() {

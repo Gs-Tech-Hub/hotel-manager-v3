@@ -3,7 +3,7 @@
 import Link from "next/link";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
-import { ShoppingCart, Utensils, Coffee, Layers } from "lucide-react";
+import { ShoppingCart, Utensils, Coffee, Layers, BarChart3 } from "lucide-react";
 
 export default function PosIndexPage() {
     return (
@@ -13,7 +13,7 @@ export default function PosIndexPage() {
                 <p className="text-muted-foreground mt-2">POS overview and quick actions for orders, menu and departments.</p>
             </div>
 
-            <div className="grid gap-6 md:grid-cols-3">
+            <div className="grid gap-6 md:grid-cols-4">
                 <Card>
                     <CardHeader>
                         <CardTitle className="flex items-center gap-2"><ShoppingCart className="h-4 w-4" /> Orders</CardTitle>
@@ -46,6 +46,18 @@ export default function PosIndexPage() {
                         <p className="text-sm text-muted-foreground">Manage drinks, bar menus and inventory.</p>
                         <div className="mt-4">
                             <Link href="/pos/drinks"><Button>Drinks</Button></Link>
+                        </div>
+                    </CardContent>
+                </Card>
+
+                <Card>
+                    <CardHeader>
+                        <CardTitle className="flex items-center gap-2"><BarChart3 className="h-4 w-4" /> Reports</CardTitle>
+                    </CardHeader>
+                    <CardContent>
+                        <p className="text-sm text-muted-foreground">View sales, revenue, and order analytics.</p>
+                        <div className="mt-4">
+                            <Link href="/pos/reports"><Button>View Reports</Button></Link>
                         </div>
                     </CardContent>
                 </Card>
