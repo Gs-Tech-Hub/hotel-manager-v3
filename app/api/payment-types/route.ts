@@ -6,10 +6,29 @@
 
 import { NextRequest, NextResponse } from 'next/server';
 import { prisma } from '@/lib/prisma';
+import { extractUserContext, loadUserWithRoles } from '@/lib/user-context';
 import { successResponse, errorResponse, ErrorCodes, getStatusCode } from '@/lib/api-response';
 
 export async function GET(request: NextRequest) {
   try {
+    // Extract user context - payment types listing is available to authenticated users
+    const ctx = await extractUserContext(request);
+    if (!ctx.userId) {
+      return NextResponse.json(
+        errorResponse(ErrorCodes.UNAUTHORIZED, 'Not authenticated'),
+        { status: getStatusCode(ErrorCodes.UNAUTHORIZED) }
+      );
+    }
+
+    // Load user with roles for audit/logging
+    const userWithRoles = await loadUserWithRoles(ctx.userId);
+    if (!userWithRoles) {
+      return NextResponse.json(
+        errorResponse(ErrorCodes.FORBIDDEN, 'User not found'),
+        { status: getStatusCode(ErrorCodes.FORBIDDEN) }
+      );
+    }
+
     const paymentTypes = await prisma.paymentType.findMany({
       select: {
         id: true,
@@ -22,7 +41,7 @@ export async function GET(request: NextRequest) {
     });
 
     return NextResponse.json(
-      successResponse({ data: paymentTypes }),
+      successResponse(paymentTypes),
       { status: 200 }
     );
   } catch (error) {

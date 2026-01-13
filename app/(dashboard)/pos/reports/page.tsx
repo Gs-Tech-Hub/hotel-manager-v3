@@ -82,15 +82,19 @@ export default function PosReportsPage() {
 
         if (deptsRes.ok) {
           const deptsData = await deptsRes.json();
-          setDepartments(deptsData.data || []);
+          const deptsList = Array.isArray(deptsData.data) ? deptsData.data : [];
+          setDepartments(deptsList);
         }
 
         if (paymentsRes.ok) {
           const paymentsData = await paymentsRes.json();
-          setPaymentMethods(paymentsData.data || []);
+          const paymentsList = Array.isArray(paymentsData.data) ? paymentsData.data : [];
+          setPaymentMethods(paymentsList);
         }
       } catch (err) {
         console.error("Failed to fetch metadata:", err);
+        setDepartments([]);
+        setPaymentMethods([]);
       }
     };
 

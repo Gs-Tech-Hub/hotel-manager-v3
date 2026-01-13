@@ -22,13 +22,21 @@ export async function GET(request: NextRequest) {
     console.time('GET /api/departments')
     const url = new URL(request.url)
     const parentCode = url.searchParams.get('parentCode') || null
-    // Extract user context if present. Departments listing is public, so
-    // we don't require authentication here — but we still load full roles
-    // when headers are provided to allow role-aware responses elsewhere.
+    // Extract user context
     const ctx = await extractUserContext(request);
-    let userWithRoles = null as any | null
-    if (ctx?.userId) {
-      userWithRoles = await loadUserWithRoles(ctx.userId);
+    if (!ctx.userId) {
+      return NextResponse.json(
+        errorResponse(ErrorCodes.UNAUTHORIZED, 'Not authenticated'),
+        { status: getStatusCode(ErrorCodes.UNAUTHORIZED) }
+      );
+    }
+
+    const userWithRoles = await loadUserWithRoles(ctx.userId);
+    if (!userWithRoles) {
+      return NextResponse.json(
+        errorResponse(ErrorCodes.FORBIDDEN, 'User not found'),
+        { status: getStatusCode(ErrorCodes.FORBIDDEN) }
+      );
     }
 
     // If a parentCode is provided, return only child departments to avoid
