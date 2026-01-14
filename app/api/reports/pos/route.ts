@@ -34,10 +34,11 @@ export async function GET(request: NextRequest) {
     // Check permissions
     const permCtx: PermissionContext = {
       userId: ctx.userId,
-      userType: userWithRoles.isAdmin ? 'admin' : hasAnyRole(userWithRoles, ['admin', 'manager', 'staff']) ? 'employee' : 'other',
+      userType: (userWithRoles.isAdmin ? 'admin' : hasAnyRole(userWithRoles, ['admin', 'manager', 'staff']) ? 'employee' : 'other') as 'admin' | 'employee' | 'other',
     };
 
     const canViewReports = await checkPermission(permCtx, 'reports.read', 'reports');
+    
     if (!canViewReports) {
       return NextResponse.json(
         errorResponse(ErrorCodes.FORBIDDEN, 'Insufficient permissions to view reports'),

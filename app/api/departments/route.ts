@@ -185,6 +185,39 @@ async function postHandler(request: NextRequest) {
   try {
     console.time('POST /api/departments')
 
+    // Check authentication first
+    const ctx = await extractUserContext(request);
+    if (!ctx.userId) {
+      return NextResponse.json(
+        errorResponse(ErrorCodes.UNAUTHORIZED, 'Not authenticated'),
+        { status: getStatusCode(ErrorCodes.UNAUTHORIZED) }
+      );
+    }
+
+    // Load user roles
+    const userWithRoles = await loadUserWithRoles(ctx.userId);
+    if (!userWithRoles) {
+      return NextResponse.json(
+        errorResponse(ErrorCodes.FORBIDDEN, 'User not found'),
+        { status: getStatusCode(ErrorCodes.FORBIDDEN) }
+      );
+    }
+
+    // Check permission to create departments
+    const { checkPermission } = await import('@/lib/auth/rbac');
+    const permCtx = {
+      userId: ctx.userId,
+      userType: (userWithRoles.isAdmin ? 'admin' : 'other') as 'admin' | 'employee' | 'other',
+    };
+    
+    const canCreate = await checkPermission(permCtx, 'departments.create', 'departments');
+    if (!canCreate) {
+      return NextResponse.json(
+        errorResponse(ErrorCodes.FORBIDDEN, 'Insufficient permissions to create departments'),
+        { status: getStatusCode(ErrorCodes.FORBIDDEN) }
+      );
+    }
+
     const body = await request.json();
     const { code, name, description, type, icon, image } = body;
 
@@ -284,4 +317,9 @@ async function deleteHandler(request: NextRequest) {
 export const DELETE = withPermission(
   deleteHandler,
   'departments.delete'
+);
+
+export const POST = withPermission(
+  postHandler,
+  'departments.create'
 );

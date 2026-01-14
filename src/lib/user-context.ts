@@ -62,7 +62,7 @@ export async function extractUserContext(req: NextRequest): Promise<UserContext>
  * Load full user with all roles from database
  * Use this when you need complete role information
  */
-export async function loadUserWithRoles(userId: string): Promise<UserContext | null> {
+export async function loadUserWithRoles(userId: string): Promise<UserContext & { roles?: any[] } | null> {
   try {
     const user = await prisma.adminUser.findUnique({
       where: { id: userId },
@@ -75,7 +75,12 @@ export async function loadUserWithRoles(userId: string): Promise<UserContext | n
 
     if (!user) return null;
 
-    const roleCodes = user.roles.map((r: { code: string; name: string }) => r.code);
+    // Load legacy admin roles
+    let roleCodes: string[] = [];
+    if (user.roles && user.roles.length > 0) {
+      roleCodes = user.roles.map((r: any) => r.code);
+    }
+
     const primaryRole = roleCodes[0]; // Use first role as primary
 
     return {
@@ -83,6 +88,7 @@ export async function loadUserWithRoles(userId: string): Promise<UserContext | n
       userRole: primaryRole,
       userRoles: roleCodes,
       isAdmin: roleCodes.includes('admin'),
+      roles: user.roles,
     };
   } catch (error) {
     console.error('Error loading user with roles:', error);

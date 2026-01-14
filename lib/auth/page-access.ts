@@ -132,6 +132,18 @@ export const pageAccessRules: Record<string, PageAccessRule> = {
     adminBypass: true,
   },
 
+  "/pos/reports": {
+    requiredRoles: ["pos_manager", "manager", "staff", "admin"],
+    requiredPermissions: ["reports.read"],
+    adminBypass: true,
+  },
+
+  "/pos/reports/*": {
+    requiredRoles: ["pos_manager", "manager", "staff", "admin"],
+    requiredPermissions: ["reports.read"],
+    adminBypass: true,
+  },
+
   "/pos/departments": {
     requiredRoles: ["pos_manager", "admin"],
     requiredPermissions: ["departments.read"],

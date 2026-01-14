@@ -19,6 +19,8 @@ import { sendSuccess, sendError } from '@/lib/api-handler';
 import { ErrorCodes } from '@/lib/api-response';
 import { prisma } from '@/lib/prisma';
 import { StockService } from '@/services/stock.service';
+import { extractUserContext, loadUserWithRoles } from '@/lib/user-context';
+import { checkPermission } from '@/lib/auth/rbac';
 
 const stockService = new StockService();
 
@@ -81,6 +83,30 @@ export async function PUT(
 ) {
   try {
     const { id } = await params;
+    
+    // Check authentication
+    const ctx = await extractUserContext(req);
+    if (!ctx.userId) {
+      return sendError(ErrorCodes.UNAUTHORIZED, 'Not authenticated');
+    }
+
+    // Load user roles
+    const userWithRoles = await loadUserWithRoles(ctx.userId);
+    if (!userWithRoles) {
+      return sendError(ErrorCodes.FORBIDDEN, 'User not found');
+    }
+
+    // Check permission to update inventory
+    const permCtx = {
+      userId: ctx.userId,
+      userType: (userWithRoles.isAdmin ? 'admin' : 'other') as 'admin' | 'employee' | 'other',
+    };
+    
+    const canUpdate = await checkPermission(permCtx, 'inventory.update', 'inventory');
+    if (!canUpdate) {
+      return sendError(ErrorCodes.FORBIDDEN, 'Insufficient permissions to update inventory');
+    }
+
     const body = await req.json();
 
     const item = await inventoryItemService.update(id, body);
@@ -105,6 +131,30 @@ export async function DELETE(
 ) {
   try {
     const { id } = await params;
+    
+    // Check authentication
+    const ctx = await extractUserContext(req);
+    if (!ctx.userId) {
+      return sendError(ErrorCodes.UNAUTHORIZED, 'Not authenticated');
+    }
+
+    // Load user roles
+    const userWithRoles = await loadUserWithRoles(ctx.userId);
+    if (!userWithRoles) {
+      return sendError(ErrorCodes.FORBIDDEN, 'User not found');
+    }
+
+    // Check permission to delete inventory
+    const permCtx = {
+      userId: ctx.userId,
+      userType: (userWithRoles.isAdmin ? 'admin' : 'other') as 'admin' | 'employee' | 'other',
+    };
+    
+    const canDelete = await checkPermission(permCtx, 'inventory.delete', 'inventory');
+    if (!canDelete) {
+      return sendError(ErrorCodes.FORBIDDEN, 'Insufficient permissions to delete inventory');
+    }
+
     const success = await inventoryItemService.delete(id);
 
     if (!success) {

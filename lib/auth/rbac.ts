@@ -73,28 +73,44 @@ export async function checkPermission(
   try {
     await detectSchema();
 
-    // If legacy admin roles are present and this is an admin user, use legacy admin tables
-    if (!_hasUserRoles && _hasAdminRoles && ctx.userType === 'admin') {
+    // If legacy admin roles are present and this is an admin user, check legacy admin tables
+    // This runs even if unified roles exist, as admin users may only be in the legacy system
+    if (_hasAdminRoles && ctx.userType === 'admin') {
       try {
         const admin = await prisma.adminUser.findUnique({
           where: { id: ctx.userId },
           include: { roles: { include: { permissions: true } } },
         });
 
-        if (!admin) return false;
-
-        for (const r of admin.roles || []) {
-          for (const p of r.permissions || []) {
-            if (p.action === action && (p.subject || null) === (subject || null)) {
-              return true;
+        if (!admin) {
+          // Admin not found in legacy system - might have unified roles
+        } else {
+          for (const r of admin.roles || []) {
+            for (const p of r.permissions || []) {
+              // Check for exact match
+              if (p.action === action && (p.subject || null) === (subject || null)) {
+                return true;
+              }
+              // Check for wildcard permission (admin can do anything)
+              // Wildcard can be: action='*' subject='*', or action='*' subject=null
+              if (p.action === '*' && (p.subject === '*' || p.subject === null)) {
+                return true;
+              }
             }
           }
-        }
 
-        return false;
+          // No permission match found in legacy admin roles
+          // Still check unified roles if they exist
+          if (!_hasUserRoles) {
+            return false;
+          }
+        }
       } catch (err) {
         console.error('[RBAC] Legacy admin permission check failed:', err);
-        return false;
+        // Continue to unified role checks if they exist
+        if (!_hasUserRoles) {
+          return false;
+        }
       }
     }
 
