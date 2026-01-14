@@ -880,15 +880,17 @@ model DiscountRule {
   name                String
   description         String?
   type                String    @default("percentage") // percentage, fixed, tiered
-  value               Decimal   @db.Decimal(10, 2) // percentage (0-100) or fixed amount
+  value               Decimal   @db.Decimal(10, 2) // percentage (0-100) or fixed amount (in cents for fixed type)
   maxUsagePerCustomer Int?
   maxTotalUsage       Int?
   currentUsage        Int       @default(0)
-  minOrderAmount      Int? // minimum order total to apply
-  applicableDepts     String    @default("[]") // JSON array of department codes
+  minOrderAmount      Int? // minimum order total to apply (in cents)
+  applicableDepts     String    @default("[]") // JSON array of department codes (empty = all depts)
+  applicableSections  String    @default("[]") // JSON array of section IDs (empty = all sections within applicable depts)
   isActive            Boolean   @default(true)
   startDate           DateTime?
   endDate             DateTime?
+  currency            String    @default("USD") // Currency for fixed discounts
 
   orderDiscounts OrderDiscount[]
 

@@ -44,8 +44,17 @@ export default function DiscountsPage() {
       const res = await fetch('/api/discounts')
       if (!res.ok) throw new Error(`Failed to fetch discounts (${res.status})`)
       const json = await res.json()
-      const data = json.data || []
-      setDiscounts(data.filter((d: any) => d.isActive !== false))
+      // API may return either an array (legacy) or a paginated object { rules, pagination }
+      let items: any[] = []
+      if (Array.isArray(json.data)) {
+        items = json.data
+      } else if (json.data && Array.isArray(json.data.rules)) {
+        items = json.data.rules
+      } else if (json?.rules && Array.isArray(json.rules)) {
+        // In case the response wasn't wrapped in successResponse
+        items = json.rules
+      }
+      setDiscounts(items.filter((d: any) => d.isActive !== false))
     } catch (err: any) {
       console.error('Failed to load discounts', err)
       setError(err?.message || 'Failed to load discounts')

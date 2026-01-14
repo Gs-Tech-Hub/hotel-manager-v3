@@ -8,8 +8,8 @@
  */
 
 import { NextRequest, NextResponse } from 'next/server';
-import { prisma } from '@/lib/prisma';
-import { extractUserContext, loadUserWithRoles, hasAnyRole } from '@/lib/user-context';
+import { prisma } from '@/src/lib/prisma';
+import { extractUserContext, loadUserWithRoles, hasAnyRole } from '@/src/lib/user-context';
 import { successResponse, errorResponse, ErrorCodes, getStatusCode } from '@/lib/api-response';
 
 /**
@@ -21,14 +21,16 @@ import { successResponse, errorResponse, ErrorCodes, getStatusCode } from '@/lib
  *   code: string              // Unique discount code
  *   name?: string             // Discount name
  *   type: "percentage" | "fixed" | "tiered" | "employee" | "bulk"
- *   value: number             // Discount value (percentage: 0-100, fixed: amount)
+ *   value: number             // Discount value (percentage: 0-100, fixed: amount in cents)
  *   description?: string
  *   startDate: ISO string     // When discount becomes active
  *   endDate?: ISO string      // When discount expires (optional)
- *   minOrderAmount?: number   // Minimum order amount to apply
+ *   minOrderAmount?: number   // Minimum order amount to apply (in cents)
  *   maxUsageTotal?: number    // Total usage limit (optional)
  *   maxUsagePerCustomer?: number // Usage limit per customer (optional)
  *   applicableDepts?: string[] // Department codes (optional, all if not specified)
+ *   applicableSections?: string[] // Section IDs (optional, all if not specified)
+ *   currency?: string         // Currency code (default: USD)
  * }
  */
 export async function POST(request: NextRequest) {
@@ -64,6 +66,8 @@ export async function POST(request: NextRequest) {
       minOrderAmount,
       maxUsagePerCustomer,
       applicableDepts,
+      applicableSections,
+      currency,
     } = body;
 
     // Validate required fields
@@ -111,6 +115,8 @@ export async function POST(request: NextRequest) {
         minOrderAmount: minOrderAmount || 0,
         maxUsagePerCustomer,
         applicableDepts: applicableDepts ? JSON.stringify(applicableDepts) : JSON.stringify([]),
+        applicableSections: applicableSections ? JSON.stringify(applicableSections) : JSON.stringify([]),
+        currency: currency || 'USD',
         isActive: true,
       },
     });
@@ -194,10 +200,11 @@ export async function GET(request: NextRequest) {
       (prisma as any).discountRule.count({ where: filters }),
     ]);
 
-    // Parse applicableDepts JSON
-    const rulesWithDepts = rules.map((rule: any) => ({
+    // Parse applicableDepts and applicableSections JSON
+    const rulesWithMetadata = rules.map((rule: any) => ({
       ...rule,
       applicableDepts: JSON.parse(rule.applicableDepts || '[]'),
+      applicableSections: JSON.parse(rule.applicableSections || '[]'),
     }));
 
     const totalPages = Math.ceil(total / limit);
@@ -205,7 +212,7 @@ export async function GET(request: NextRequest) {
 
     return NextResponse.json(
       successResponse({
-        rules: rulesWithDepts,
+        rules: rulesWithMetadata,
         pagination: {
           page,
           limit,
