@@ -40,38 +40,27 @@ const sidebarGroups = [
 				icon: LayoutDashboard,
 				badge: null,
 			},
-			{
-				title: "Analytics",
-				href: "/dashboard/analytics",
-				icon: BarChart3,
-				badge: "New",
-			},
-			{
-				title: "Settings",
-				href: "/dashboard/settings",
-				icon: Settings,
-				badge: null,
-			},
 		],
 	},
+
 	{
 		title: "Hotel Management",
 		items: [
 			{
 				title: "Rooms",
-				href: "/dashboard/rooms",
+				href: "/rooms",
 				icon: DoorOpen,
 				badge: null,
 			},
 			{
 				title: "Bookings",
-				href: "/dashboard/bookings",
+				href: "/bookings",
 				icon: BookMarked,
 				badge: null,
 			},
 			{
 				title: "Customers",
-				href: "/dashboard/customers",
+				href: "/customers",
 				icon: Users,
 				badge: null,
 			},
@@ -95,29 +84,31 @@ const sidebarGroups = [
 			},
 		],
 	},
-				{
-					title: "POS",
-					items: [
-						{
-							title: "Orders",
-							href: "/pos/orders",
-							icon: ShoppingCart,
-							badge: null,
-						},
-						{
-							title: "POS Terminals",
-							href: "/pos-terminals",
-							icon: ShoppingCart,
-							badge: null,
-						},
-						{
-							title: "POS Reports",
-							href: "/pos/reports",
-							icon: BarChart3,
-							badge: null,
-						},
-					],
-				},
+
+	{
+		title: "POS & Operations",
+		items: [
+			{
+				title: "POS",
+				href: "/pos",
+				icon: ShoppingCart,
+				badge: null,
+			},
+			{
+				title: "POS Terminals",
+				href: "/pos-terminals",
+				icon: ShoppingCart,
+				badge: null,
+			},
+			{
+				title: "Discounts",
+				href: "/discounts",
+				icon: BarChart3,
+				badge: null,
+			},
+		],
+	},
+
 	{
 		title: "Administration",
 		items: [
@@ -145,72 +136,33 @@ const sidebarGroups = [
 				icon: LogIn,
 				badge: null,
 			},
-		],
-	},
-	{
-		title: "Pages",
-		items: [
 			{
-				title: "Documents",
-				href: "/dashboard/documents",
-				icon: FileText,
-				badge: null,
-			},
-			{
-				title: "Calendar",
-				href: "/dashboard/calendar",
-				icon: Calendar,
-				badge: "3",
-			},
-			{
-				title: "Auth Pages",
-				href: "/dashboard/auth",
-				icon: LogIn,
-				badge: null,
-			},
-			{
-				title: "Error Pages",
-				href: "/dashboard/errors",
-				icon: AlertCircle,
+				title: "Settings",
+				href: "/dashboard/settings",
+				icon: Settings,
 				badge: null,
 			},
 		],
 	},
+
 	{
-		title: "Others",
-		items: [
-			{
-				title: "Messages",
-				href: "/dashboard/messages",
-				icon: MessageSquare,
-				badge: "5",
-			},
-			{
-				title: "Database",
-				href: "/dashboard/database",
-				icon: Database,
-				badge: null,
-			},
-			{
-				title: "Security",
-				href: "/dashboard/security",
-				icon: Shield,
-				badge: "!",
-			},
-			{
-				title: "Help",
-				href: "/dashboard/help",
-				icon: HelpCircle,
-				badge: null,
-			},
-		],
-	},
-	{
-		title: "Resources",
+		title: "Documentation",
 		items: [
 			{
 				title: "Docs",
-				href: "/dashboard/docs",
+				href: "/docs",
+				icon: BookOpen,
+				badge: null,
+			},
+			{
+				title: "Quick Reference",
+				href: "/quick-reference",
+				icon: BookOpen,
+				badge: null,
+			},
+			{
+				title: "Implementation Guide",
+				href: "/implementation-guide",
 				icon: BookOpen,
 				badge: null,
 			},

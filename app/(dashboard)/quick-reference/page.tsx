@@ -54,14 +54,6 @@ interface StatCardProps {
       { title: 'Overview', href: '/dashboard', icon: LayoutDashboard },
     ]
   },
-  {
-    title: 'Operations',
-    section: 'Management',
-    items: [
-      { title: 'Rooms', href: '/dashboard/rooms', icon: Home },
-      { title: 'Bookings', href: '/dashboard/bookings', icon: Calendar },
-    ]
-  },
 ]`,
 		category: "components",
 		icon: Code2,

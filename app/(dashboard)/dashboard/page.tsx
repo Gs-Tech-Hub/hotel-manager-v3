@@ -286,15 +286,6 @@ export default function DashboardPage() {
 										<span className="text-sm font-medium">Add User</span>
 									</button>
 								</Link>
-								<Link href="/pos/orders">
-									<button
-										type="button"
-										className="w-full flex flex-col items-center justify-center gap-2 p-6 rounded-lg border hover:bg-muted transition-colors"
-									>
-										<CreditCard className="h-6 w-6" />
-										<span className="text-sm font-medium">New Sale</span>
-									</button>
-								</Link>
 								<Link href="/dashboard/analytics">
 									<button
 										type="button"
@@ -302,15 +293,6 @@ export default function DashboardPage() {
 									>
 										<Activity className="h-6 w-6" />
 										<span className="text-sm font-medium">Reports</span>
-									</button>
-								</Link>
-								<Link href="/dashboard/analytics">
-									<button
-										type="button"
-										className="w-full flex flex-col items-center justify-center gap-2 p-6 rounded-lg border hover:bg-muted transition-colors"
-									>
-										<DollarSign className="h-6 w-6" />
-										<span className="text-sm font-medium">Analytics</span>
 									</button>
 								</Link>
 							</div>

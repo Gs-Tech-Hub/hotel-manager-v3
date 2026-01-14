@@ -10,15 +10,7 @@ const SidebarContext = createContext<{ isCollapsed: boolean }>({ isCollapsed: fa
 export const useSidebar = () => useContext(SidebarContext)
 
 const menuItems = [
-  { id: 'dashboard', label: 'Dashboard', icon: '📊', href: '/' },
-  { id: 'departments', label: 'Departments', icon: '🏢', href: '/departments' },
-  { id: 'rooms', label: 'Rooms', icon: '🏠', href: '/rooms' },
-  { id: 'bookings', label: 'Bookings', icon: '📅', href: '/bookings' },
-  { id: 'customers', label: 'Customers', icon: '👥', href: '/customers' },
-  { id: 'orders', label: 'Orders', icon: '🛒', href: '/orders' },
-  { id: 'inventory', label: 'Inventory', icon: '📦', href: '/inventory' },
-  { id: 'staff', label: 'Staff', icon: '👨‍💼', href: '/staff' },
-  { id: 'settings', label: 'Settings', icon: '⚙️', href: '/settings' },
+  { id: 'dashboard', label: 'Dashboard', icon: '📊', href: '/dashboard' },
 ]
 
 export function AdminSidebar() {
