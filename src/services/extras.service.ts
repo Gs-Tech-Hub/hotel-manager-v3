@@ -9,7 +9,7 @@
  */
 
 import { BaseService } from './base.service';
-import { prisma } from '../lib/prisma';
+import { prisma } from '@/lib/auth/prisma';
 import { normalizeError } from '@/lib/errors';
 import { 
   normalizeToCents, 

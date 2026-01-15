@@ -4,7 +4,7 @@
  */
 
 import { BaseService } from './base.service';
-import { prisma } from '@/lib/prisma';
+import { prisma } from '@/lib/auth/prisma';
 import { normalizeToCents } from '@/lib/price';
 
 export class SettlementService extends BaseService<any> {

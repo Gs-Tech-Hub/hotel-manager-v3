@@ -5,7 +5,7 @@
  * Run with: npx ts-node scripts/verify-admin-endpoints.ts
  */
 
-import { prisma } from '@/lib/prisma';
+import { prisma } from '@/lib/auth/prisma';
 
 async function testDepartmentsAPI() {
   console.log('\n✓ Testing Departments API...');

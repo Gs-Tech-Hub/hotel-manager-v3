@@ -12,7 +12,7 @@
  * node scripts/migrate-prices.js
  */
 
-import { prisma } from '@/lib/prisma';
+import { prisma } from '@/lib/auth/prisma';
 
 async function migratePrice(currentValue) {
   const num = Number(currentValue || 0);

@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { extractUserContext, loadUserWithRoles, hasAnyRole } from '@/lib/user-context'
 import { successResponse, errorResponse, ErrorCodes, getStatusCode } from '@/lib/api-response'
-import { prisma } from '@/lib/prisma'
+import { prisma } from '@/lib/auth/prisma'
 import { updateDepartmentStats } from '@/scripts/update-department-stats'
 
 export async function POST(request: NextRequest, { params }: { params: Promise<{ code: string }> }) {

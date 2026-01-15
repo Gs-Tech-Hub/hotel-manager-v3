@@ -3,7 +3,7 @@
  * Tests all deferred payment functionality
  */
 
-import { prisma } from '@/lib/prisma';
+import { prisma } from '@/lib/auth/prisma';
 import { SettlementService } from '@/src/services/settlement.service';
 import { OrderService } from '@/src/services/order.service';
 

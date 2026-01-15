@@ -4,7 +4,7 @@
  */
 
 import { NextRequest } from 'next/server';
-import { prisma } from '@/lib/prisma';
+import { prisma } from '@/lib/auth/prisma';
 import { verifyToken } from '@/lib/auth/session';
 
 export type UserContext = {

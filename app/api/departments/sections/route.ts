@@ -87,3 +87,4 @@ export const DELETE = withPermission(
   },
   'department_sections.delete'
 );
+

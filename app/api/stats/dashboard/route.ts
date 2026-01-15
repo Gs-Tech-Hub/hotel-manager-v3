@@ -34,3 +34,4 @@ export async function GET(_req: NextRequest) {
     return sendError(ErrorCodes.INTERNAL_ERROR, message);
   }
 }
+

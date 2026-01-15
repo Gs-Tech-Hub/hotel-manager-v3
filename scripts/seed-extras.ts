@@ -5,7 +5,7 @@
  * Usage: npx ts-node scripts/seed-extras.ts
  */
 
-import { prisma } from '../src/lib/prisma';
+import { prisma } from '@/lib/auth/prisma';
 
 async function main() {
   console.log('Seeding extras...');

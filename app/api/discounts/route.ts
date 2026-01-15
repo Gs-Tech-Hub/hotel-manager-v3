@@ -8,7 +8,7 @@
  */
 
 import { NextRequest, NextResponse } from 'next/server';
-import { prisma } from '@/src/lib/prisma';
+import { prisma } from '@/lib/auth/prisma';
 import { extractUserContext, loadUserWithRoles, hasAnyRole } from '@/src/lib/user-context';
 import { successResponse, errorResponse, ErrorCodes, getStatusCode } from '@/lib/api-response';
 
@@ -284,4 +284,5 @@ export async function DELETE(request: NextRequest) {
 // to comply with Next.js App Router route handler conventions (each HTTP method
 // must be exported as GET/POST/etc. from the route file). Keeping the function
 // here would add non-standard exports and break Next.js type checks.
+
 

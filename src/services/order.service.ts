@@ -13,7 +13,7 @@
 
 import { BaseService } from './base.service';
 import type { IOrderHeader } from '../types/entities';
-import { prisma } from '../lib/prisma';
+import { prisma } from '@/lib/auth/prisma';
 import { normalizeError } from '@/lib/errors';
 import { 
   normalizeToCents, 
@@ -330,7 +330,7 @@ export class OrderService extends BaseService<IOrderHeader> {
         validatePrice(taxAmount, 'tax');
         validatePrice(totalAmount, 'total');
 
-        const updated = await prisma.orderHeader.update({
+        await prisma.orderHeader.update({
           where: { id: header.id },
           data: {
             discountTotal: accumulatedDiscount,
@@ -338,11 +338,23 @@ export class OrderService extends BaseService<IOrderHeader> {
             total: totalAmount,
           },
         });
-
-        return updated;
       }
 
-      return order;
+      // Return complete order with all relations (for receipt display)
+      const completeOrder = await (prisma as any).orderHeader.findUnique({
+        where: { id: header.id },
+        include: {
+          customer: true,
+          lines: true,
+          departments: { include: { department: true } },
+          discounts: { include: { discountRule: true } },
+          payments: { include: { paymentType: true } },
+          fulfillments: true,
+          reservations: true,
+        },
+      });
+
+      return completeOrder || order;
     } catch (error: unknown) {
       // Log raw error and stack to help diagnose failures during order creation
       try {

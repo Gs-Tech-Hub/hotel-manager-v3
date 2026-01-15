@@ -3,7 +3,7 @@
  * Assigns admin role to admin users for unified RBAC
  */
 
-import { prisma } from '@/lib/prisma';
+import { prisma } from '@/lib/auth/prisma';
 
 async function fixAdminPermissions() {
   console.log('🔧 Fixing admin user permissions...\n');

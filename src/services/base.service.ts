@@ -3,7 +3,7 @@
  * Provides common CRUD operations and error handling for all services
  */
 
-import { prisma } from '../lib/prisma';
+import { prisma } from '@/lib/auth/prisma';
 import type { PaginatedResponse, QueryParams } from '../types/api';
 import { errorResponse, ErrorCodes } from '../lib/api-response';
 

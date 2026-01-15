@@ -10,7 +10,7 @@
  *   const roles = await getUserRoles(ctx);
  */
 
-import { prisma } from "@/lib/prisma";
+import { prisma } from "@/lib/auth/prisma";
 
 // Cached schema detection to support both unified RBAC and legacy admin tables
 let _schemaDetected = false;

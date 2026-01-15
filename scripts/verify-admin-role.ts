@@ -2,7 +2,7 @@
  * Verify and fix admin user roles
  */
 
-import { prisma } from '@/lib/prisma';
+import { prisma } from '@/lib/auth/prisma';
 
 async function verifyAdminRole() {
   console.log('🔍 Verifying admin user roles...\n');

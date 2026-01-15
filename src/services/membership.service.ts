@@ -5,7 +5,7 @@
 
 import { BaseService } from './base.service';
 import { IGymMembership, ISportMembership, IMembershipPlan } from '../types/entities';
-import { prisma } from '../lib/prisma';
+import { prisma } from '@/lib/auth/prisma';
 
 export class GymMembershipService extends BaseService<IGymMembership> {
   constructor() {

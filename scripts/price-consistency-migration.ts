@@ -13,7 +13,7 @@
  * 6. Report any anomalies
  */
 
-import { prisma } from '@/lib/prisma';
+import { prisma } from '@/lib/auth/prisma';
 import { normalizeToCents, validatePrice, centsToDollars } from '@/lib/price';
 
 interface MigrationReport {

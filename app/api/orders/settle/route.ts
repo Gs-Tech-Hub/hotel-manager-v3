@@ -5,7 +5,7 @@
  */
 
 import { NextRequest, NextResponse } from 'next/server';
-import { prisma } from '@/lib/prisma';
+import { prisma } from '@/lib/auth/prisma';
 import { extractUserContext, loadUserWithRoles, hasAnyRole } from '@/lib/user-context';
 import { successResponse, errorResponse, ErrorCodes, getStatusCode } from '@/lib/api-response';
 import { OrderService } from '@/services/order.service';
@@ -213,3 +213,4 @@ export async function POST(request: NextRequest) {
     );
   }
 }
+

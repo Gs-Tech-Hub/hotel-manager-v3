@@ -361,7 +361,9 @@ export interface IPaymentDetail {
     maxTotalUsage?: number;
     currentUsage: number;
     minOrderAmount?: number;
-    applicableDepts: string; // JSON array
+    applicableDepts: string; // JSON array of department codes
+    applicableSections: string; // JSON array of section IDs
+    currency: string; // Currency code for fixed discounts (default: USD)
     isActive: boolean;
     startDate?: Date;
     endDate?: Date;

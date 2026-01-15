@@ -5,7 +5,7 @@
 
 import { BaseService } from './base.service';
 import { IDrink, IFoodItem } from '../types/entities';
-import { prisma } from '../lib/prisma';
+import { prisma } from '@/lib/auth/prisma';
 
 // Helper mappers: convert Prisma results (which can contain nulls and Decimal) to
 // the project's entity shapes (normalize null -> undefined, Decimal -> number/string).

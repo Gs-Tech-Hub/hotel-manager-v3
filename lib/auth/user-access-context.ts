@@ -5,7 +5,7 @@
  * user roles and permissions for access control checks.
  */
 
-import { prisma } from "@/lib/prisma";
+import { prisma } from "@/lib/auth/prisma";
 import { verifyToken } from "./session";
 import type { NextRequest } from "next/server";
 

@@ -6,7 +6,7 @@
  */
 
 import { NextRequest, NextResponse } from 'next/server';
-import { prisma } from '@/lib/prisma';
+import { prisma } from '@/lib/auth/prisma';
 import { extractUserContext, loadUserWithRoles, hasAnyRole } from '@/lib/user-context';
 import { checkPermission, type PermissionContext } from '@/lib/auth/rbac';
 import { successResponse, errorResponse, ErrorCodes, getStatusCode } from '@/lib/api-response';
@@ -363,3 +363,4 @@ export async function GET(request: NextRequest) {
     );
   }
 }
+

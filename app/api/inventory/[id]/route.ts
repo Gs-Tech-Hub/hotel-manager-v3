@@ -17,7 +17,7 @@ import { NextRequest } from 'next/server';
 import { inventoryItemService, inventoryMovementService } from '@/services/inventory.service';
 import { sendSuccess, sendError } from '@/lib/api-handler';
 import { ErrorCodes } from '@/lib/api-response';
-import { prisma } from '@/lib/prisma';
+import { prisma } from '@/lib/auth/prisma';
 import { StockService } from '@/services/stock.service';
 import { extractUserContext, loadUserWithRoles } from '@/lib/user-context';
 import { checkPermission } from '@/lib/auth/rbac';

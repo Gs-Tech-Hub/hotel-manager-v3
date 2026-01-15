@@ -3,7 +3,7 @@
  * Handles role creation, assignment, and management
  */
 
-import { prisma } from '@/lib/prisma';
+import { prisma } from '@/lib/auth/prisma';
 import { errorResponse, ErrorCodes } from '@/lib/api-response';
 
 export class RoleManagementService {

@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { prisma } from '@/src/lib/prisma';
+import { prisma } from '@/lib/auth/prisma';
 import { extractUserContext } from '@/lib/user-context';
 import { successResponse, errorResponse, ErrorCodes, getStatusCode } from '@/lib/api-response';
 
@@ -37,3 +37,4 @@ export async function GET(request: NextRequest) {
     );
   }
 }
+

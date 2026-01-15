@@ -1,4 +1,4 @@
-import { prisma } from '@/lib/prisma';
+import { prisma } from '@/lib/auth/prisma';
 import { StockService } from '@/services/stock.service';
 import { inventoryItemService, inventoryMovementService } from '@/services/inventory.service';
 

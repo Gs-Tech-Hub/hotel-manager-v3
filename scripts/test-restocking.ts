@@ -1,4 +1,4 @@
-import { prisma } from '@/lib/prisma';
+import { prisma } from '@/lib/auth/prisma';
 import { inventoryMovementService } from '@/services/inventory.service';
 
 /**

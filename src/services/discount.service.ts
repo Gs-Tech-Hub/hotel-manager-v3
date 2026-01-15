@@ -5,7 +5,7 @@
 
 import { BaseService } from './base.service';
 import { IDiscountRule } from '../types/entities';
-import { prisma } from '../lib/prisma';
+import { prisma } from '@/lib/auth/prisma';
 import { UserContext, requireRole } from '@/lib/authorization';
 import { errorResponse, ErrorCodes } from '@/lib/api-response';
 
@@ -27,6 +27,8 @@ export class DiscountService extends BaseService<IDiscountRule> {
     maxTotalUsage?: number;
     minOrderAmount?: number;
     applicableDepts?: string[];
+    applicableSections?: string[];
+    currency?: string;
     startDate?: Date;
     endDate?: Date;
   }, ctx?: UserContext) {
@@ -52,6 +54,8 @@ export class DiscountService extends BaseService<IDiscountRule> {
           currentUsage: 0,
           minOrderAmount: data.minOrderAmount,
           applicableDepts: JSON.stringify(data.applicableDepts || []),
+          applicableSections: JSON.stringify(data.applicableSections || []),
+          currency: data.currency || 'USD',
           startDate: data.startDate,
           endDate: data.endDate,
           isActive: true,

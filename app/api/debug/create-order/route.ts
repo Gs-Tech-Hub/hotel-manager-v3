@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server'
-import { prisma } from '@/lib/prisma'
+import { prisma } from '@/lib/auth/prisma'
 import { OrderService } from '@/services/order.service'
 import { successResponse, errorResponse, ErrorCodes, getStatusCode } from '@/lib/api-response'
 
@@ -28,3 +28,4 @@ export async function GET(_req: NextRequest) {
     return NextResponse.json(errorResponse(ErrorCodes.INTERNAL_ERROR, 'Debug route failed'), { status: getStatusCode(ErrorCodes.INTERNAL_ERROR) })
   }
 }
+

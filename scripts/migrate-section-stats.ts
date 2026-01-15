@@ -5,8 +5,8 @@
 */
 import dotenv from 'dotenv';
 dotenv.config();
-import { prisma } from '../src/lib/prisma';
-import { departmentService } from '../src/services/department.service';
+import { prisma } from '@/lib/auth/prisma';
+ import { departmentService } from '../src/services/department.service';
 
 async function main() {
   const args = process.argv.slice(2);

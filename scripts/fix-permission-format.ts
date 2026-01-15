@@ -4,7 +4,7 @@
  * Changes "roles.read" action to "roles" action with "read" subject
  */
 
-import { prisma } from '@/lib/prisma';
+import { prisma } from '@/lib/auth/prisma';
 
 async function fixPermissionFormat() {
   console.log('🔧 Fixing permission format...\n');

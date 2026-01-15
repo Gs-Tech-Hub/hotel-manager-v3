@@ -18,6 +18,7 @@ import {
 } from "@/components/ui/dialog";
 import { OrderExtrasDialog } from "@/components/pos/orders/OrderExtrasDialog";
 import { OrderLineExtras } from "@/components/pos/orders/OrderLineExtras";
+import { DiscountSection } from "@/components/pos/orders/DiscountSection";
 
 export default function OrderDetailPage() {
     const params = useParams();
@@ -269,29 +270,16 @@ export default function OrderDetailPage() {
                     </CardContent>
                 </Card>
 
-                <Card>
-                    <CardHeader>
-                        <CardTitle>Summary</CardTitle>
-                    </CardHeader>
-                    <CardContent>
-                        <div className="space-y-2">
-                            <div className="flex justify-between"><span className="text-sm text-muted-foreground">Subtotal</span><span>{formatPrice(order.subtotal)}</span></div>
-                            {extrasTotal > 0 && (
-                                <div className="flex justify-between"><span className="text-sm text-muted-foreground">Extras</span><span>{formatPrice(extrasTotal)}</span></div>
-                            )}
-                            {order.discountTotal > 0 && (
-                                <div className="flex justify-between text-green-600"><span className="text-sm">Discount</span><span>-{formatPrice(order.discountTotal)}</span></div>
-                            )}
-                            <div className="flex justify-between"><span className="text-sm text-muted-foreground">Tax</span><span>{formatPrice(order.tax)}</span></div>
-                            <div className="flex justify-between font-bold text-lg"><span>Total</span><span>{
-                                // Prefer showing the sum of recorded payments (transaction total) when available
-                                (order.payments && order.payments.length > 0)
-                                    ? formatPrice(order.payments.reduce((s: number, p: any) => s + (p.amount || 0), 0))
-                                    : formatPrice(order.total)
-                            }</span></div>
-                        </div>
-                    </CardContent>
-                </Card>
+            {/* Discount Section with Price Breakdown */}
+            <DiscountSection
+                orderId={order.id}
+                subtotal={order.subtotal}
+                discountTotal={order.discountTotal}
+                tax={order.tax}
+                total={order.total}
+                appliedDiscounts={order.discounts || []}
+                onDiscountApplied={refreshOrder}
+            />
 
                 <Card>
                     <CardHeader>

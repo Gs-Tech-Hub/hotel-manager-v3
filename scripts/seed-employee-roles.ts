@@ -6,7 +6,7 @@
  *   npm run seed:employee-roles
  */
 
-import { prisma } from '@/lib/prisma';
+import { prisma } from '@/lib/auth/prisma';
 
 interface PermissionData {
   action: string;

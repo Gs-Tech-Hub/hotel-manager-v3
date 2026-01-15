@@ -9,7 +9,7 @@
  *   npm run seed:roles
  */
 
-import { prisma } from '@/lib/prisma';
+import { prisma } from '@/lib/auth/prisma';
 
 const DEFAULT_ROLES = [
   {

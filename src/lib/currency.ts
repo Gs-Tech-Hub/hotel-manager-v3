@@ -37,8 +37,6 @@ export interface CurrencyContext {
 }
 
 // Lazy persistence loader (only used on server)
-import prisma from './prisma'
-import { loadAllPersistedRates } from './exchangeRateStore'
 
 // ==================== BUILT-IN CURRENCY CATALOG ====================
 

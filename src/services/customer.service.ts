@@ -5,7 +5,7 @@
 
 import { BaseService } from './base.service';
 import { ICustomer } from '../types/entities';
-import { prisma } from '../lib/prisma';
+import { prisma } from '@/lib/auth/prisma';
 
 // Helper mapper: convert Prisma results to ICustomer domain type
 function mapCustomer(c: any): ICustomer {

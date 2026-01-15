@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { successResponse, errorResponse, ErrorCodes } from '@/lib/api-response';
 import { extractUserContext } from '@/src/lib/user-context';
-import { prisma } from '@/lib/prisma';
+import { prisma } from '@/lib/auth/prisma';
 import { DepartmentExtrasService } from '@/src/services/department-extras.service';
 
 /**

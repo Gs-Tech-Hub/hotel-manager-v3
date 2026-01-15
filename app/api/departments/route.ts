@@ -8,7 +8,7 @@
  */
 
 import { NextRequest, NextResponse } from 'next/server';
-import { prisma } from '@/lib/prisma';
+import { prisma } from '@/lib/auth/prisma';
 import { extractUserContext, loadUserWithRoles } from '@/lib/user-context';
 import { successResponse, errorResponse, ErrorCodes, getStatusCode } from '@/lib/api-response';
 import { withPermission } from '@/lib/auth/middleware';
@@ -323,3 +323,4 @@ export const POST = withPermission(
   postHandler,
   'departments.create'
 );
+

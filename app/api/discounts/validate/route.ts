@@ -1,13 +1,157 @@
 /**
  * Discount Validation API
  * 
- * POST /api/discounts/validate - Validate discount code for order checkout
+ * GET /api/discounts/validate?code=X&subtotal=Y&deptCode=Z - Quick validation for checkout
+ * POST /api/discounts/validate - Full validation with order details
  */
 
 import { NextRequest, NextResponse } from 'next/server';
-import { prisma } from '@/src/lib/prisma';
+import { prisma } from '@/lib/auth/prisma';
 import { extractUserContext } from '@/src/lib/user-context';
 import { successResponse, errorResponse, ErrorCodes, getStatusCode } from '@/lib/api-response';
+
+/**
+ * GET /api/discounts/validate
+ * Quick validation of discount code during checkout
+ * 
+ * Query params:
+ * - code: string              // Discount code to validate
+ * - subtotal: number          // Order subtotal in cents
+ * - deptCode?: string         // Department code (check if applicable)
+ * 
+ * Response (on success):
+ * {
+ *   success: true
+ *   data: {
+ *     id: string
+ *     code: string
+ *     name: string
+ *     type: 'percentage' | 'fixed' | 'tiered'
+ *     value: number
+ *     description: string
+ *     minorUnit: number (e.g., 100 for USD cents)
+ *   }
+ * }
+ * 
+ * Response (on invalid):
+ * {
+ *   success: false
+ *   error: { message: string }
+ * }
+ */
+export async function GET(request: NextRequest) {
+  try {
+    const code = request.nextUrl.searchParams.get('code');
+    const subtotalStr = request.nextUrl.searchParams.get('subtotal');
+    const deptCode = request.nextUrl.searchParams.get('deptCode');
+
+    // Validate required fields
+    if (!code) {
+      return NextResponse.json(
+        errorResponse(ErrorCodes.VALIDATION_ERROR, 'code is required'),
+        { status: getStatusCode(ErrorCodes.VALIDATION_ERROR) }
+      );
+    }
+
+    const subtotal = subtotalStr ? parseInt(subtotalStr, 10) : null;
+    if (subtotal === null || subtotal < 0) {
+      return NextResponse.json(
+        errorResponse(ErrorCodes.VALIDATION_ERROR, 'subtotal must be provided and non-negative'),
+        { status: getStatusCode(ErrorCodes.VALIDATION_ERROR) }
+      );
+    }
+
+    // Find discount rule
+    const rule = await (prisma as any).discountRule.findUnique({
+      where: { code: code.toUpperCase() },
+    });
+
+    if (!rule) {
+      return NextResponse.json(
+        errorResponse(ErrorCodes.NOT_FOUND, 'Discount code not found'),
+        { status: getStatusCode(ErrorCodes.NOT_FOUND) }
+      );
+    }
+
+    // Check if active
+    if (!rule.isActive) {
+      return NextResponse.json(
+        errorResponse(ErrorCodes.VALIDATION_ERROR, 'Discount code is inactive'),
+        { status: getStatusCode(ErrorCodes.VALIDATION_ERROR) }
+      );
+    }
+
+    // Check time window
+    const now = new Date();
+    if (rule.startDate && now < rule.startDate) {
+      return NextResponse.json(
+        errorResponse(ErrorCodes.VALIDATION_ERROR, 'Discount code is not yet active'),
+        { status: getStatusCode(ErrorCodes.VALIDATION_ERROR) }
+      );
+    }
+
+    if (rule.endDate && now > rule.endDate) {
+      return NextResponse.json(
+        errorResponse(ErrorCodes.VALIDATION_ERROR, 'Discount code has expired'),
+        { status: getStatusCode(ErrorCodes.VALIDATION_ERROR) }
+      );
+    }
+
+    // Check minimum order amount
+    if (rule.minOrderAmount && subtotal < rule.minOrderAmount) {
+      return NextResponse.json(
+        errorResponse(ErrorCodes.VALIDATION_ERROR, `Minimum order amount of ${(rule.minOrderAmount / 100).toFixed(2)} required`),
+        { status: getStatusCode(ErrorCodes.VALIDATION_ERROR) }
+      );
+    }
+
+    // Check department applicability
+    if (deptCode) {
+      const applicableDepts = JSON.parse(rule.applicableDepts || '[]') as string[];
+      if (applicableDepts.length > 0 && !applicableDepts.includes(deptCode)) {
+        return NextResponse.json(
+          errorResponse(ErrorCodes.VALIDATION_ERROR, 'Discount code is not applicable to this department'),
+          { status: getStatusCode(ErrorCodes.VALIDATION_ERROR) }
+        );
+      }
+    }
+
+    // Check usage limits (basic check without customer context)
+    if (rule.maxTotalUsage) {
+      const usageCount = await (prisma as any).orderDiscount.count({
+        where: { discountRuleId: rule.id },
+      });
+
+      if (usageCount >= rule.maxTotalUsage) {
+        return NextResponse.json(
+          errorResponse(ErrorCodes.VALIDATION_ERROR, 'Discount code usage limit exceeded'),
+          { status: getStatusCode(ErrorCodes.VALIDATION_ERROR) }
+        );
+      }
+    }
+
+    // Return valid discount
+    return NextResponse.json(
+      successResponse({
+        id: rule.id,
+        code: rule.code,
+        name: rule.name,
+        description: rule.description,
+        type: rule.type,
+        value: Number(rule.value),
+        applicableDepts: JSON.parse(rule.applicableDepts || '[]'),
+        applicableSections: JSON.parse(rule.applicableSections || '[]'),
+        minorUnit: 100, // USD always uses cents
+      })
+    );
+  } catch (error) {
+    console.error('GET /api/discounts/validate error:', error);
+    return NextResponse.json(
+      errorResponse(ErrorCodes.INTERNAL_ERROR, 'Failed to validate discount'),
+      { status: getStatusCode(ErrorCodes.INTERNAL_ERROR) }
+    );
+  }
+}
 
 /**
  * POST /api/discounts/validate
@@ -213,3 +357,4 @@ export async function POST(request: NextRequest) {
     );
   }
 }
+

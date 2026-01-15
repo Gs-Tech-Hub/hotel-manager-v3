@@ -41,3 +41,4 @@ export async function GET() {
   // Simple ping endpoint
   return NextResponse.json({ success: true, message: 'Mock orders endpoint running' })
 }
+

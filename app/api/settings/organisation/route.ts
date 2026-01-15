@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server"
-import prisma from "@/lib/prisma"
+import { prisma } from "@/lib/auth/prisma"
 import { CURRENCY_CATALOG } from "@/lib/currency"
 import { extractUserContext, isAdmin } from '@/lib/user-context'
 
@@ -61,3 +61,4 @@ export async function PUT(req: Request) {
     return NextResponse.json({ error: "Failed to update organisation info" }, { status: 500 })
   }
 }
+

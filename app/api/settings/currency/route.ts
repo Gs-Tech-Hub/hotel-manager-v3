@@ -1,5 +1,5 @@
 import { NextResponse } from 'next/server'
-import prisma from '@/lib/prisma'
+import { prisma } from '@/lib/auth/prisma'
 import { getAllCurrencyCodes } from '@/lib/currency'
 
 /**
@@ -40,3 +40,4 @@ export async function PUT(req: Request) {
     return NextResponse.json({ error: 'Failed to update currency settings' }, { status: 500 })
   }
 }
+

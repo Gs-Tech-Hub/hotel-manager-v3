@@ -18,7 +18,7 @@
 import { NextRequest } from 'next/server';
 import { inventoryItemService } from '@/services/inventory.service';
 import { sendSuccess, sendError } from '@/lib/api-handler';
-import { prisma } from '@/lib/prisma';
+import { prisma } from '@/lib/auth/prisma';
 import { mapDeptCodeToCategory } from '@/lib/utils';
 import { ErrorCodes } from '@/lib/api-response';
 import { StockService } from '@/services/stock.service';
@@ -258,3 +258,4 @@ export async function DELETE(req: NextRequest) {
     return sendError(ErrorCodes.INTERNAL_ERROR, message);
   }
 }
+

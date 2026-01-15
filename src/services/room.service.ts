@@ -5,7 +5,7 @@
 
 import { BaseService } from './base.service';
 import { IRoom } from '../types/entities';
-import { prisma } from '../lib/prisma';
+import { prisma } from '@/lib/auth/prisma';
 
 export class RoomService extends BaseService<IRoom> {
   constructor() {

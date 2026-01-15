@@ -1,4 +1,4 @@
-import prisma from '@/lib/prisma';
+import {prisma} from '@/lib/auth/prisma';
 import { ExchangeRate as ExchangeRateType } from '@/lib/currency';
 
 export interface PersistedRate {

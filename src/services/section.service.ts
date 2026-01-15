@@ -1,4 +1,4 @@
-import { prisma } from '@/lib/prisma'
+import { prisma } from '@/lib/auth/prisma'
 import { prismaDecimalToCents } from '@/lib/price'
 import { stockService } from './stock.service'
 import { buildDateFilter } from '@/src/lib/date-filter'

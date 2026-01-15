@@ -1,4 +1,4 @@
-import prisma from '@/lib/prisma';
+import { prisma } from '@/lib/auth/prisma';
 import { loadAllPersistedRates } from './exchangeRateStore';
 import { exchangeRateManager, currencyContextManager } from './currency';
 

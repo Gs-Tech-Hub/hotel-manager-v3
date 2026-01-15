@@ -1,5 +1,5 @@
 import { NextResponse } from 'next/server'
-import { prisma } from '@/lib/prisma'
+import { prisma } from '@/lib/auth/prisma'
 
 /**
  * GET /api/pos/terminals
@@ -134,3 +134,4 @@ export async function DELETE(req: Request) {
     return NextResponse.json({ error: 'Failed to delete POS terminal' }, { status: 500 })
   }
 }
+

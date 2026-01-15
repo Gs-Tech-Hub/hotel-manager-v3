@@ -1,4 +1,4 @@
-import { prisma } from '@/lib/prisma';
+import { prisma } from '@/lib/auth/prisma';
 import { inventoryItemService } from '@/services/inventory.service';
 
 async function main() {

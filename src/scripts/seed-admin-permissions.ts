@@ -5,7 +5,7 @@
  *   node --loader ts-node/esm src/scripts/seed-admin-permissions.ts
  */
 
-import prisma from '@/lib/prisma';
+    import {prisma} from '@/lib/auth/prisma';
 
 const PERMISSIONS = [
   'departments.create',

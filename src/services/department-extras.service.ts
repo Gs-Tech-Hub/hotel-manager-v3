@@ -1,4 +1,4 @@
-import { prisma } from '@/lib/prisma';
+import { prisma } from '@/lib/auth/prisma';
 import { DepartmentExtra } from '@prisma/client';
 import { errorResponse, ErrorCodes } from '@/lib/api-response';
 
