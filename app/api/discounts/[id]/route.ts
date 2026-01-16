@@ -25,22 +25,9 @@ export async function GET(
 ) {
   try {
     const { id } = await params;
-    const ctx = await extractUserContext(request);
-
-    if (!ctx.userId) {
-      return NextResponse.json(
-        errorResponse(ErrorCodes.UNAUTHORIZED, 'Not authenticated'),
-        { status: getStatusCode(ErrorCodes.UNAUTHORIZED) }
-      );
-    }
-
-    const userWithRoles = await loadUserWithRoles(ctx.userId);
-    if (!userWithRoles || !hasAnyRole(userWithRoles, ['admin', 'manager', 'staff'])) {
-      return NextResponse.json(
-        errorResponse(ErrorCodes.FORBIDDEN, 'Insufficient permissions'),
-        { status: getStatusCode(ErrorCodes.FORBIDDEN) }
-      );
-    }
+    
+    // Allow unauthenticated access for discount details (customers need to view discount info)
+    // This is similar to /api/discounts/by-department which allows public discovery
 
     const rule = await (prisma as any).discountRule.findUnique({
       where: { id },

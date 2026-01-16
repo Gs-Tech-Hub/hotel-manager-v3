@@ -7,6 +7,7 @@ import { POSProductGrid, POSProduct } from "@/components/admin/pos/pos-product-g
 import { POSCart, CartLine } from "@/components/admin/pos/pos-cart"
 import { POSPayment } from "@/components/admin/pos/pos-payment"
 import { POSReceipt } from "@/components/admin/pos/pos-receipt"
+import { DiscountDropdown } from "@/components/pos/orders/DiscountDropdown"
 import { normalizeToCents, centsToDollars } from "@/lib/price"
 import Price from '@/components/ui/Price'
 import { formatPriceDisplay, formatOrderTotal } from "@/lib/formatters"
@@ -38,11 +39,9 @@ export default function POSCheckoutShell({ terminalId }: { terminalId?: string }
   const [loadingTerminal, setLoadingTerminal] = useState(false)
 
   const [departmentSection, setDepartmentSection] = useState<SelectedSection | null>(null)
-  const [discountCode, setDiscountCode] = useState<string>('')
-  const [appliedDiscountCodes, setAppliedDiscountCodes] = useState<string[]>([])
+  const [appliedDiscountIds, setAppliedDiscountIds] = useState<string[]>([])
   const [validatedDiscounts, setValidatedDiscounts] = useState<any[]>([])
-  const [preloadedDiscounts, setPreloadedDiscounts] = useState<any[]>([])
-  const [loadingDiscounts, setLoadingDiscounts] = useState(false)
+  const [discountMap, setDiscountMap] = useState<Map<string, any>>(new Map())
 
   const categories = [
     { id: 'foods', name: 'Foods' },
@@ -111,8 +110,8 @@ export default function POSCheckoutShell({ terminalId }: { terminalId?: string }
   const estimatedTax = Math.round(discountedSubtotal * 0.1) // 10% tax (on discounted amount)
   const estimatedTotal = discountedSubtotal + estimatedTax
 
-  // Check if all applied discount codes are validated
-  const hasUnvalidatedCodes = appliedDiscountCodes.length > validatedDiscounts.length
+  // Check if all applied discount IDs are validated
+  const hasUnvalidatedCodes = appliedDiscountIds.length > validatedDiscounts.length
   const canProceedToPayment = cart.length > 0 && !hasUnvalidatedCodes
 
   const handlePaymentComplete = (payment: any) => {
@@ -165,7 +164,7 @@ export default function POSCheckoutShell({ terminalId }: { terminalId?: string }
 
         const payload: any = {
           items,
-          discounts: appliedDiscountCodes,
+          discounts: appliedDiscountIds,
           notes: `POS sale - ${departmentSection.name}`,
           departmentSectionId: departmentSection.id,
         }
@@ -227,7 +226,7 @@ export default function POSCheckoutShell({ terminalId }: { terminalId?: string }
               orderTypeDisplay: 'ITEMS ADDED',
             })
             setCart([])
-            setAppliedDiscountCodes([])
+            setAppliedDiscountIds([])
           } else {
             const msg = (fetchJson && fetchJson.error && fetchJson.error.message) ? fetchJson.error.message : `Failed to fetch updated order`
             console.log('[POS] fetch order failure, msg:', msg)
@@ -296,7 +295,7 @@ export default function POSCheckoutShell({ terminalId }: { terminalId?: string }
             }
             
             setCart([])
-            setAppliedDiscountCodes([])
+            setAppliedDiscountIds([])
           } else {
             const msg = (json && json.error && json.error.message) ? json.error.message : `Order API error (${res.status})`
             console.log('[POS] api failure, msg:', msg, 'status:', res.status)
@@ -406,47 +405,6 @@ export default function POSCheckoutShell({ terminalId }: { terminalId?: string }
     }
   }, [departmentSection?.sectionCode, departmentSection?.departmentCode])
 
-  // Load active discounts for this department
-  useEffect(() => {
-    const deptCode = departmentSection?.departmentCode
-    if (!deptCode) {
-      setPreloadedDiscounts([])
-      return
-    }
-
-    let mounted = true
-    setLoadingDiscounts(true)
-
-    fetch(`/api/discounts/by-department/${encodeURIComponent(deptCode)}`, { credentials: 'include' })
-      .then((r) => r.json())
-      .then((json) => {
-        if (!mounted) return
-        
-        if (json && json.success) {
-          // Handle both array and paginated response formats
-          const discounts = Array.isArray(json.data) ? json.data : (json.data?.rules || [])
-          
-          // Filter to only active discounts
-          const activeDiscounts = discounts.filter((d: any) => d.isActive)
-          
-          console.log(`[POS] Loaded ${activeDiscounts.length} active discounts for ${deptCode}`)
-          setPreloadedDiscounts(activeDiscounts)
-        } else {
-          console.warn('[POS] Failed to load discounts:', json)
-          setPreloadedDiscounts([])
-        }
-      })
-      .catch((err) => {
-        console.error('[POS] Failed to fetch discounts:', err)
-        if (mounted) setPreloadedDiscounts([])
-      })
-      .finally(() => { if (mounted) setLoadingDiscounts(false) })
-
-    return () => {
-      mounted = false
-    }
-  }, [departmentSection?.departmentCode])
-
   // Fetch sales summary
   useEffect(() => {
     const sectionId = departmentSection?.id ?? ''
@@ -489,9 +447,9 @@ export default function POSCheckoutShell({ terminalId }: { terminalId?: string }
     }
   }, [departmentSection?.id, summaryRefreshKey])
 
-  // Validate applied discount codes
+  // Validate applied discount IDs
   useEffect(() => {
-    if (appliedDiscountCodes.length === 0) {
+    if (appliedDiscountIds.length === 0) {
       setValidatedDiscounts([])
       return
     }
@@ -502,50 +460,28 @@ export default function POSCheckoutShell({ terminalId }: { terminalId?: string }
       const validated: any[] = []
       const errors: string[] = []
       
-      for (const code of appliedDiscountCodes) {
+      for (const discountId of appliedDiscountIds) {
         try {
-          // First try to find in preloaded discounts (instant lookup)
-          const preloadedRule = preloadedDiscounts.find(
-            (d: any) => d.code.toUpperCase() === code.toUpperCase()
-          )
-          
-          if (preloadedRule) {
-            // Found in preloaded data, use it immediately
-            console.log(`[POS] Using preloaded discount: ${code}`)
-            
-            let discountAmount = 0
-            if (preloadedRule.type === 'percentage') {
-              discountAmount = Math.round((subtotal * preloadedRule.value) / 100)
-            } else {
-              discountAmount = Math.round(preloadedRule.value * (preloadedRule.minorUnit || 100))
-            }
-            
-            validated.push({
-              code,
-              type: preloadedRule.type,
-              value: preloadedRule.value,
-              description: preloadedRule.description,
-              discountAmount,
-              minorUnit: preloadedRule.minorUnit || 100
-            })
-            console.log(`[POS] Discount validated (preloaded): ${code} = ${discountAmount} cents`)
+          // Get discount details from map (already loaded)
+          const discount = discountMap.get(discountId)
+          if (!discount) {
+            errors.push(`Discount not found`)
             continue
           }
-          
-          // If not found in preloaded, call API (fallback for codes added before discounts loaded)
-          console.log(`[POS] Code not in preloaded, validating via API: ${code}`)
-          const res = await fetch(`/api/discounts/validate?code=${encodeURIComponent(code)}&subtotal=${subtotal}&deptCode=${departmentSection?.departmentCode || ''}`, {
+
+          console.log(`[POS] Validating discount ID via API: ${discountId}`)
+          const res = await fetch(`/api/discounts/${encodeURIComponent(discountId)}`, {
             credentials: 'include'
           })
           
           const json = await res.json()
-          console.log(`[POS] Discount validation for ${code}:`, { status: res.status, json })
+          console.log(`[POS] Discount validation for ${discountId}:`, { status: res.status, json })
           
           if (!res.ok) {
             // Error response
-            const errorMsg = json?.error?.message || `Discount code ${code} is invalid`
+            const errorMsg = json?.error?.message || `Discount ${discountId} is invalid`
             errors.push(errorMsg)
-            console.warn(`[POS] Discount validation failed for ${code}: ${errorMsg}`)
+            console.warn(`[POS] Discount validation failed for ${discountId}: ${errorMsg}`)
             continue
           }
 
@@ -562,22 +498,23 @@ export default function POSCheckoutShell({ terminalId }: { terminalId?: string }
             }
             
             validated.push({
-              code,
+              id: discountId,
+              code: discount.code,
               type: rule.type,
               value: rule.value,
               description: rule.description,
               discountAmount,
               minorUnit: rule.minorUnit || 100
             })
-            console.log(`[POS] Discount validated (API): ${code} = ${discountAmount} cents`)
+            console.log(`[POS] Discount validated (API): ${discountId} = ${discountAmount} cents`)
           } else {
-            errors.push(`Discount code ${code} validation returned no data`)
-            console.warn(`[POS] Discount ${code} returned no data:`, json)
+            errors.push(`Discount ${discountId} validation returned no data`)
+            console.warn(`[POS] Discount ${discountId} returned no data:`, json)
           }
         } catch (err) {
           const msg = err instanceof Error ? err.message : String(err)
-          errors.push(`Failed to validate ${code}: ${msg}`)
-          console.error(`[POS] Failed to validate discount code ${code}:`, err)
+          errors.push(`Failed to validate discount: ${msg}`)
+          console.error(`[POS] Failed to validate discount ${discountId}:`, err)
         }
       }
 
@@ -598,7 +535,7 @@ export default function POSCheckoutShell({ terminalId }: { terminalId?: string }
     return () => {
       mounted = false
     }
-  }, [appliedDiscountCodes, subtotal, departmentSection?.departmentCode, preloadedDiscounts])
+  }, [appliedDiscountIds, subtotal, discountMap])
 
 
   return (
@@ -692,21 +629,32 @@ export default function POSCheckoutShell({ terminalId }: { terminalId?: string }
                 <span className="font-semibold"><Price amount={subtotal} isMinor={true} /></span>
               </div>
               
-              {/* Applied Discounts */}
+              {/* Applied Discounts - Visual Impact */}
               {validatedDiscounts.length > 0 && (
-                <div className="space-y-1">
+                <div className="space-y-2 mt-2">
                   {validatedDiscounts.map((d) => (
-                    <div key={d.code} className="flex justify-between text-sm text-green-700">
-                      <span className="flex items-center gap-1">
-                        <span className="text-green-600">✓</span> 
-                        {d.code} ({d.type === 'percentage' ? `${d.value}%` : 'fixed'})
+                    <div key={d.code} className="flex justify-between text-sm">
+                      <span className="flex items-center gap-1 text-green-700">
+                        <span className="text-green-600 font-bold">✓</span> 
+                        {d.code}
+                        <span className="text-xs text-green-600 bg-green-100 px-1.5 py-0.5 rounded">
+                          {d.type === 'percentage' ? `${d.value}%` : 'fixed'}
+                        </span>
                       </span>
-                      <span className="font-semibold">-<Price amount={d.discountAmount} isMinor={true} /></span>
+                      <span className="font-semibold text-green-700">-<Price amount={d.discountAmount} isMinor={true} /></span>
                     </div>
                   ))}
                 </div>
               )}
             </div>
+
+            {/* Discounted Subtotal */}
+            {validatedDiscounts.length > 0 && (
+              <div className="flex justify-between text-sm mb-2 p-2 bg-green-50 rounded border border-green-200">
+                <span className="font-semibold text-green-700">After Discounts</span>
+                <span className="font-bold text-green-700"><Price amount={discountedSubtotal} isMinor={true} /></span>
+              </div>
+            )}
 
             {/* Tax & Total */}
             <div className="space-y-2">
@@ -718,103 +666,51 @@ export default function POSCheckoutShell({ terminalId }: { terminalId?: string }
                 <span>Total Due</span>
                 <span className="text-blue-600"><Price amount={estimatedTotal} isMinor={true} /></span>
               </div>
+              
+              {/* Savings Display */}
+              {totalDiscountAmount > 0 && (
+                <div className="mt-2 p-2 bg-green-100 border border-green-300 rounded text-center">
+                  <span className="text-xs text-green-800">
+                    💰 You saved <span className="font-bold"><Price amount={totalDiscountAmount} isMinor={true} /></span>
+                  </span>
+                </div>
+              )}
             </div>
           </div>
 
-          {/* Discount Code Input */}
+          {/* Discount Dropdown Component */}
           <div className="mt-3 p-3 bg-white border rounded">
-            <div className="text-sm font-medium mb-2 flex items-center justify-between">
-              <span>Apply Discount Code</span>
-              {loadingDiscounts && <span className="text-xs text-gray-500">Loading discounts...</span>}
-              {!loadingDiscounts && preloadedDiscounts.length > 0 && (
-                <span className="text-xs text-green-600">✓ {preloadedDiscounts.length} available</span>
-              )}
-            </div>
-            <div className="flex gap-2">
-              <input 
-                value={discountCode} 
-                onChange={(e) => setDiscountCode(e.target.value)} 
-                placeholder="Enter promo code" 
-                className="flex-1 border rounded px-2 py-1 text-sm"
-                onKeyPress={(e) => {
-                  if (e.key === 'Enter') {
-                    const code = (discountCode || '').trim().toUpperCase()
-                    if (!code) {
-                      console.warn('[POS] Discount code is empty')
-                      return
-                    }
-                    if (appliedDiscountCodes.includes(code)) {
-                      console.warn(`[POS] Discount code ${code} already applied`)
-                      return
-                    }
-                    console.log(`[POS] Adding discount code: ${code}`)
-                    setAppliedDiscountCodes((s) => [...s, code])
-                    setDiscountCode('')
-                  }
-                }}
-              />
-              <button
-                onClick={() => {
-                  const code = (discountCode || '').trim().toUpperCase()
-                  if (!code) {
-                    console.warn('[POS] Discount code is empty')
-                    return
-                  }
-                  if (appliedDiscountCodes.includes(code)) {
-                    console.warn(`[POS] Discount code ${code} already applied`)
-                    return
-                  }
-                  console.log(`[POS] Adding discount code: ${code}`)
-                  setAppliedDiscountCodes((s) => [...s, code])
-                  setDiscountCode('')
-                }}
-                className="px-3 py-1 bg-sky-600 text-white rounded text-sm hover:bg-sky-700"
-              >
-                Add
-              </button>
-            </div>
-            
-            {/* Applied Codes List with Status */}
-            {appliedDiscountCodes.length > 0 && (
-              <div className="mt-2 text-sm">
-                <div className="text-xs text-muted-foreground mb-1">Applied codes:</div>
-                <div className="flex gap-2 flex-wrap">
-                  {appliedDiscountCodes.map((c) => {
-                    const isValidated = validatedDiscounts.some(d => d.code === c)
-                    return (
-                      <div 
-                        key={c} 
-                        className={`px-2 py-1 rounded flex items-center gap-2 text-sm ${
-                          isValidated 
-                            ? 'bg-green-50 border border-green-300' 
-                            : 'bg-yellow-50 border border-yellow-300'
-                        }`}
-                      >
-                        <span className="font-semibold">{c}</span>
-                        {isValidated && <span className="text-green-600 text-xs">✓</span>}
-                        {!isValidated && <span className="text-yellow-600 text-xs">...</span>}
-                        <button 
-                          onClick={() => {
-                            console.log(`[POS] Removing discount code: ${c}`)
-                            setAppliedDiscountCodes((s) => s.filter((x) => x !== c))
-                            setValidatedDiscounts((s) => s.filter((d) => d.code !== c))
-                          }} 
-                          className="text-red-500 text-xs hover:text-red-700"
-                        >
-                          ✕
-                        </button>
-                      </div>
-                    )
-                  })}
-                </div>
-              </div>
-            )}
+            <DiscountDropdown
+              departmentCode={departmentSection?.departmentCode}
+              subtotal={subtotal}
+              appliedDiscounts={appliedDiscountIds}
+              onAddDiscount={(id, discount) => {
+                console.log(`[POS] Adding discount ID: ${id}`, discount)
+                setAppliedDiscountIds((s) => [...s, id])
+                // Populate the discount map for validation
+                if (discount) {
+                  setDiscountMap((map) => new Map(map).set(id, discount))
+                }
+              }}
+              onRemoveDiscount={(id) => {
+                console.log(`[POS] Removing discount ID: ${id}`)
+                setAppliedDiscountIds((s) => s.filter((x) => x !== id))
+                setValidatedDiscounts((s) => s.filter((d) => d.id !== id))
+                // Remove from map
+                setDiscountMap((map) => {
+                  const newMap = new Map(map)
+                  newMap.delete(id)
+                  return newMap
+                })
+              }}
+              disabled={false}
+            />
           </div>
 
           {/* Discount Validation Status */}
-          {appliedDiscountCodes.length > 0 && appliedDiscountCodes.length !== validatedDiscounts.length && (
+          {appliedDiscountIds.length > 0 && appliedDiscountIds.length !== validatedDiscounts.length && (
             <div className="mt-3 p-2 bg-yellow-50 border border-yellow-300 rounded text-xs text-yellow-800">
-              ⚠️ {appliedDiscountCodes.length - validatedDiscounts.length} discount code(s) pending validation...
+              ⚠️ {appliedDiscountIds.length - validatedDiscounts.length} discount(s) pending validation...
             </div>
           )}
 
@@ -839,13 +735,13 @@ export default function POSCheckoutShell({ terminalId }: { terminalId?: string }
                       ? 'bg-emerald-600 text-white hover:bg-emerald-700 cursor-pointer'
                       : 'bg-gray-300 text-gray-500 cursor-not-allowed'
                   }`}
-                  title={hasUnvalidatedCodes ? `Please wait for discount codes to validate` : cart.length === 0 ? 'Add items to proceed' : ''}
+                  title={hasUnvalidatedCodes ? `Please wait for discounts to validate` : cart.length === 0 ? 'Add items to proceed' : ''}
                 >
                   Proceed to Payment
                 </button>
                 {hasUnvalidatedCodes && (
                   <p className="text-xs text-red-600 mt-2">
-                    ✗ Cannot proceed: {appliedDiscountCodes.length - validatedDiscounts.length} discount code(s) not yet verified
+                    ✗ Cannot proceed: {appliedDiscountIds.length - validatedDiscounts.length} discount(s) not yet verified
                   </p>
                 )}
               </>

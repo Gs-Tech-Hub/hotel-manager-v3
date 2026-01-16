@@ -74,10 +74,24 @@ export async function POST(
       );
     }
 
-    // Find discount rule
-    const rule = await (prisma as any).discountRule.findUnique({
-      where: { code: code.toUpperCase() },
+    // Find discount rule - use case-insensitive search
+    let rule = await (prisma as any).discountRule.findUnique({
+      where: { code: code },
     });
+
+    // If not found, try with case-insensitive search
+    if (!rule) {
+      rule = await (prisma as any).discountRule.findMany({
+        where: {
+          code: {
+            equals: code,
+            mode: 'insensitive'
+          }
+        },
+        take: 1
+      });
+      rule = rule?.length > 0 ? rule[0] : null;
+    }
 
     if (!rule) {
       return NextResponse.json(

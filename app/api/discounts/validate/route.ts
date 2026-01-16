@@ -61,14 +61,21 @@ export async function GET(request: NextRequest) {
       );
     }
 
-    // Find discount rule
-    const rule = await (prisma as any).discountRule.findUnique({
-      where: { code: code.toUpperCase() },
+    // Find discount rule by ID first (new system), then by code (backwards compatibility)
+    let rule = await (prisma as any).discountRule.findUnique({
+      where: { id: code },
     });
 
     if (!rule) {
+      // Try to find by code
+      rule = await (prisma as any).discountRule.findUnique({
+        where: { code },
+      });
+    }
+
+    if (!rule) {
       return NextResponse.json(
-        errorResponse(ErrorCodes.NOT_FOUND, 'Discount code not found'),
+        errorResponse(ErrorCodes.NOT_FOUND, 'Discount not found'),
         { status: getStatusCode(ErrorCodes.NOT_FOUND) }
       );
     }

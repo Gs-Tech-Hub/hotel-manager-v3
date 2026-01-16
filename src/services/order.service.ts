@@ -275,22 +275,27 @@ export class OrderService extends BaseService<IOrderHeader> {
 
       // If discounts were provided at creation time, attempt to apply them now
       if (data.discounts && Array.isArray(data.discounts) && data.discounts.length > 0) {
-        // Loop through codes and attempt to create OrderDiscounts (reuse same validations as applyDiscount)
+        // Loop through discount IDs and attempt to create OrderDiscounts (reuse same validations as applyDiscount)
         let accumulatedDiscount = 0;
         
-        for (const code of data.discounts) {
-          if (!code) continue;
-          const rule = await prisma.discountRule.findUnique({ where: { code } });
+        for (const discountId of data.discounts) {
+          if (!discountId) continue;
+          // Try to fetch by ID first (new system), then by code (backwards compatibility)
+          let rule = await prisma.discountRule.findUnique({ where: { id: discountId } });
           if (!rule) {
-            return errorResponse(ErrorCodes.VALIDATION_ERROR, `Discount code not found: ${code}`);
+            // Fallback to code lookup for backwards compatibility
+            rule = await prisma.discountRule.findUnique({ where: { code: discountId } });
+          }
+          if (!rule) {
+            return errorResponse(ErrorCodes.VALIDATION_ERROR, `Discount not found: ${discountId}`);
           }
 
           if (!rule.isActive) {
-            return errorResponse(ErrorCodes.VALIDATION_ERROR, `Discount code inactive: ${code}`);
+            return errorResponse(ErrorCodes.VALIDATION_ERROR, `Discount inactive: ${rule.code}`);
           }
 
           if (rule.minOrderAmount && subtotal < rule.minOrderAmount) {
-            return errorResponse(ErrorCodes.VALIDATION_ERROR, `Minimum order amount of ${rule.minOrderAmount} required for discount ${code}`);
+            return errorResponse(ErrorCodes.VALIDATION_ERROR, `Minimum order amount of ${rule.minOrderAmount} required for discount ${rule.code}`);
           }
 
           // Calculate discount amount using utility function (handles percentage and fixed)
@@ -300,11 +305,11 @@ export class OrderService extends BaseService<IOrderHeader> {
             rule.type as 'percentage' | 'fixed'
           );
           
-          validatePrice(discountAmount, `Discount ${code}`);
+          validatePrice(discountAmount, `Discount ${rule.code}`);
 
           // Prevent discount exceeding subtotal
           if (accumulatedDiscount + discountAmount > subtotal) {
-            return errorResponse(ErrorCodes.VALIDATION_ERROR, `Discounts exceed subtotal for code: ${code}`);
+            return errorResponse(ErrorCodes.VALIDATION_ERROR, `Discounts exceed subtotal for code: ${rule.code}`);
           }
 
           // Persist order discount (all in cents)

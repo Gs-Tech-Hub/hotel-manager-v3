@@ -140,13 +140,18 @@ export function DiscountSection({
 
           {/* Applied Discounts List */}
           {appliedDiscounts.length > 0 && (
-            <div className="space-y-2">
-              <h3 className="font-semibold text-sm">Applied Discounts</h3>
+            <div className="space-y-3">
+              <div className="flex items-center justify-between">
+                <h3 className="font-semibold text-sm">Applied Discounts</h3>
+                <Badge variant="outline" className="bg-green-100">
+                  Savings: {formatCents(discountTotal)}
+                </Badge>
+              </div>
               <div className="space-y-2">
                 {appliedDiscounts.map((discount) => (
                   <div
                     key={discount.id}
-                    className="flex items-center justify-between p-3 bg-green-50 border border-green-200 rounded-lg"
+                    className="flex items-center justify-between p-3 bg-green-50 border border-green-200 rounded-lg hover:shadow-sm transition"
                   >
                     <div className="flex-1">
                       <div className="flex items-center gap-2">
@@ -157,7 +162,7 @@ export function DiscountSection({
                             ? "Fixed"
                             : discount.discountType}
                         </Badge>
-                        <span className="font-medium">{discount.code || "Manual"}</span>
+                        <span className="font-semibold text-green-700">{discount.code || "Manual"}</span>
                       </div>
                       {discount.description && (
                         <p className="text-xs text-muted-foreground mt-1">
@@ -166,9 +171,11 @@ export function DiscountSection({
                       )}
                     </div>
                     <div className="flex items-center gap-3">
-                      <span className="font-semibold text-green-600">
-                        -{formatCents(discount.discountAmount)}
-                      </span>
+                      <div className="text-right">
+                        <span className="font-semibold text-green-600">
+                          -{formatCents(discount.discountAmount)}
+                        </span>
+                      </div>
                       <Button
                         size="sm"
                         variant="ghost"

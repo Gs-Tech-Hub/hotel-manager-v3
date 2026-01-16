@@ -82,11 +82,30 @@ export async function POST(
       );
     }
 
-    // Get discount rule
+    // Get discount rule - use case-insensitive search for code
     const discountService = new DiscountService();
-    const rule = discountRuleId
-      ? await (prisma as any).discountRule.findUnique({ where: { id: discountRuleId } })
-      : await (prisma as any).discountRule.findUnique({ where: { code: discountCode } });
+    let rule;
+    
+    if (discountRuleId) {
+      rule = await (prisma as any).discountRule.findUnique({ where: { id: discountRuleId } });
+    } else {
+      // Try exact match first
+      rule = await (prisma as any).discountRule.findUnique({ where: { code: discountCode } });
+      
+      // If not found, try case-insensitive search
+      if (!rule) {
+        const results = await (prisma as any).discountRule.findMany({
+          where: {
+            code: {
+              equals: discountCode,
+              mode: 'insensitive'
+            }
+          },
+          take: 1
+        });
+        rule = results?.length > 0 ? results[0] : null;
+      }
+    }
 
     if (!rule) {
       return NextResponse.json(
