@@ -2,33 +2,57 @@ import { NextRequest, NextResponse } from 'next/server';
 import { extractUserContext } from '@/src/lib/user-context';
 import { prisma } from '@/lib/auth/prisma';
 import { hashPassword } from '@/lib/auth/credentials';
+import { errorResponse, successResponse } from '@/lib/api-response';
 
 /**
  * GET /api/employees
- * List employees with their roles
+ * List employees with their roles and employment data
  */
 export async function GET(req: NextRequest) {
   try {
     const ctx = await extractUserContext(req);
     if (!ctx.userId) {
-      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+      return NextResponse.json(errorResponse('UNAUTHORIZED', 'User not authenticated'), { status: 401 });
     }
 
-    // Fetch employees with their roles
-    const employees = await prisma.pluginUsersPermissionsUser.findMany({
-      select: {
-        id: true,
-        email: true,
-        username: true,
-        firstname: true,
-        lastname: true,
-        blocked: true,
-        createdAt: true,
-      },
-      orderBy: { createdAt: 'desc' },
-    });
+    const searchParams = req.nextUrl.searchParams;
+    const status = searchParams.get('status'); // active, inactive, on_leave, terminated
+    const department = searchParams.get('department');
+    const page = parseInt(searchParams.get('page') || '1');
+    const limit = parseInt(searchParams.get('limit') || '10');
+    const skip = (page - 1) * limit;
 
-    // Load roles for each employee
+    // Build filter
+    const where: any = {};
+    if (status) {
+      where.employmentData = { employmentStatus: status };
+    }
+    if (department) {
+      where.employmentData = { ...where.employmentData, department };
+    }
+
+    // Fetch employees
+    const [employees, total] = await Promise.all([
+      prisma.pluginUsersPermissionsUser.findMany({
+        where: where.employmentData ? { employmentData: where.employmentData } : {},
+        include: {
+          employmentData: {
+            include: {
+              leaves: { where: { status: 'approved' } },
+              charges: { where: { status: { in: ['pending', 'partially_paid'] } } },
+            },
+          },
+          employeeSummary: true,
+        },
+        orderBy: { createdAt: 'desc' },
+        skip,
+        take: limit,
+      }),
+      prisma.pluginUsersPermissionsUser.count({
+        where: where.employmentData ? { employmentData: where.employmentData } : {},
+      }),
+    ]);
+
     const employeesWithRoles = await Promise.all(
       employees.map(async (emp) => {
         const userRoles = await prisma.userRole.findMany({
@@ -37,40 +61,44 @@ export async function GET(req: NextRequest) {
             userType: 'employee',
           },
           include: {
-            role: {
-              include: {
-                rolePermissions: {
-                  include: {
-                    permission: true,
-                  },
-                },
-              },
-            },
+            role: true,
+            department: true,
           },
         });
 
         return {
-          ...emp,
+          id: emp.id,
+          email: emp.email,
+          username: emp.username,
+          firstname: emp.firstname,
+          lastname: emp.lastname,
+          blocked: emp.blocked,
+          employmentData: emp.employmentData,
+          summary: emp.employeeSummary,
           roles: userRoles.map((ur) => ({
             roleId: ur.role.id,
             roleName: ur.role.name,
             departmentId: ur.departmentId,
+            departmentName: ur.department?.name,
           })),
+          totalCharges: emp.employmentData?.charges.reduce((sum, c) => sum + Number(c.amount), 0) || 0,
+          activeLeaves: emp.employmentData?.leaves.length || 0,
+          createdAt: emp.createdAt,
         };
       })
     );
 
     return NextResponse.json(
-      {
-        success: true,
-        data: employeesWithRoles,
-      },
+      successResponse({
+        employees: employeesWithRoles,
+        pagination: { page, limit, total, pages: Math.ceil(total / limit) },
+      }),
       { status: 200 }
     );
   } catch (error) {
     console.error('[API] Failed to list employees:', error);
     return NextResponse.json(
-      { error: 'Failed to list employees' },
+      errorResponse('INTERNAL_ERROR', 'Failed to list employees'),
       { status: 500 }
     );
   }
@@ -84,7 +112,7 @@ export async function POST(req: NextRequest) {
   try {
     const ctx = await extractUserContext(req);
     if (!ctx.userId) {
-      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+      return NextResponse.json(errorResponse('UNAUTHORIZED', 'User not authenticated'), { status: 401 });
     }
 
     const body = await req.json();
@@ -95,12 +123,19 @@ export async function POST(req: NextRequest) {
       firstName,
       lastName,
       roles = [],
+      employmentDate,
+      position,
+      department,
+      salary,
+      salaryType = 'monthly',
+      salaryFrequency = 'monthly',
+      contractType,
     } = body;
 
-    // Validate input
+    // Validate required fields
     if (!email || !username || !password) {
       return NextResponse.json(
-        { error: 'Missing required fields: email, username, password' },
+        errorResponse('BAD_REQUEST', 'Missing required fields: email, username, password'),
         { status: 400 }
       );
     }
@@ -112,7 +147,7 @@ export async function POST(req: NextRequest) {
 
     if (existing) {
       return NextResponse.json(
-        { error: 'Employee with this email already exists' },
+        errorResponse('CONFLICT', 'Employee with this email already exists'),
         { status: 409 }
       );
     }
@@ -120,7 +155,7 @@ export async function POST(req: NextRequest) {
     // Hash password
     const hashedPassword = await hashPassword(password);
 
-    // Create employee
+    // Create employee with employment data
     const employee = await prisma.pluginUsersPermissionsUser.create({
       data: {
         email,
@@ -129,6 +164,20 @@ export async function POST(req: NextRequest) {
         firstname: firstName || null,
         lastname: lastName || null,
         blocked: false,
+        employmentData: employmentDate
+          ? {
+              create: {
+                employmentDate: new Date(employmentDate),
+                position: position || 'Staff',
+                department: department || null,
+                salary: salary ? parseFloat(salary.toString()) : 0,
+                salaryType,
+                salaryFrequency,
+                contractType: contractType || null,
+                employmentStatus: 'active',
+              },
+            }
+          : undefined,
       },
     });
 
@@ -153,22 +202,20 @@ export async function POST(req: NextRequest) {
     console.log(`[API] Created employee: ${email} (ID: ${employee.id})`);
 
     return NextResponse.json(
-      {
-        success: true,
-        data: {
-          id: employee.id,
-          email: employee.email,
-          username: employee.username,
-        },
-      },
+      successResponse({
+        id: employee.id,
+        email: employee.email,
+        username: employee.username,
+        firstname: employee.firstname,
+        lastname: employee.lastname,
+      }),
       { status: 201 }
     );
   } catch (error: any) {
     console.error('[API] Failed to create employee:', error);
     return NextResponse.json(
-      { error: error.message || 'Failed to create employee' },
+      errorResponse('INTERNAL_ERROR', error.message || 'Failed to create employee'),
       { status: 500 }
     );
   }
 }
-

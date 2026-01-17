@@ -1,6 +1,95 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { extractUserContext } from '@/src/lib/user-context';
 import { prisma } from '@/lib/auth/prisma';
+import { errorResponse, successResponse } from '@/lib/api-response';
+
+/**
+ * GET /api/employees/[id]
+ * Get detailed employee information including employment, leaves, charges
+ */
+export async function GET(
+  req: NextRequest,
+  { params }: { params: Promise<{ id: string }> }
+) {
+  try {
+    const ctx = await extractUserContext(req);
+    if (!ctx.userId) {
+      return NextResponse.json(errorResponse('UNAUTHORIZED', 'User not authenticated'), { status: 401 });
+    }
+
+    const { id } = await params;
+
+    const employee = await prisma.pluginUsersPermissionsUser.findUnique({
+      where: { id },
+      include: {
+        employmentData: {
+          include: {
+            leaves: { orderBy: { startDate: 'desc' } },
+            charges: { orderBy: { date: 'desc' } },
+            termination: true,
+          },
+        },
+        employeeSummary: true,
+        employeeRecords: { orderBy: { date: 'desc' }, take: 10 },
+      },
+    });
+
+    if (!employee) {
+      return NextResponse.json(
+        errorResponse('NOT_FOUND', 'Employee not found'),
+        { status: 404 }
+      );
+    }
+
+    // Get roles
+    const userRoles = await prisma.userRole.findMany({
+      where: { userId: id, userType: 'employee' },
+      include: { role: true, department: true },
+    });
+
+    // Calculate totals
+    const totalDebt = employee.employmentData?.charges
+      .filter((c) => c.status !== 'waived' && c.status !== 'cancelled')
+      .reduce((sum, c) => sum + (Number(c.amount) - Number(c.paidAmount)), 0) || 0;
+
+    const totalCharges = employee.employmentData?.charges.length || 0;
+
+    return NextResponse.json(
+      successResponse({
+        id: employee.id,
+        email: employee.email,
+        username: employee.username,
+        firstname: employee.firstname,
+        lastname: employee.lastname,
+        blocked: employee.blocked,
+        employment: employee.employmentData,
+        summary: employee.employeeSummary,
+        records: employee.employeeRecords,
+        roles: userRoles.map((ur) => ({
+          roleId: ur.role.id,
+          roleName: ur.role.name,
+          departmentId: ur.departmentId,
+          departmentName: ur.department?.name,
+        })),
+        statistics: {
+          totalDebt,
+          totalCharges,
+          approvedLeaves: employee.employmentData?.leaves.filter((l) => l.status === 'approved').length || 0,
+          totalLeaves: employee.employmentData?.leaves.length || 0,
+        },
+        createdAt: employee.createdAt,
+        updatedAt: employee.updatedAt,
+      }),
+      { status: 200 }
+    );
+  } catch (error) {
+    console.error('[API] Failed to get employee:', error);
+    return NextResponse.json(
+      errorResponse('INTERNAL_ERROR', 'Failed to get employee'),
+      { status: 500 }
+    );
+  }
+}
 
 /**
  * PUT /api/employees/[id]
@@ -13,7 +102,7 @@ export async function PUT(
   try {
     const ctx = await extractUserContext(req);
     if (!ctx.userId) {
-      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+      return NextResponse.json(errorResponse('UNAUTHORIZED', 'User not authenticated'), { status: 401 });
     }
 
     const { id } = await params;
@@ -33,9 +122,22 @@ export async function PUT(
 
     if (!employee) {
       return NextResponse.json(
-        { error: 'Employee not found' },
+        errorResponse('NOT_FOUND', 'Employee not found'),
         { status: 404 }
       );
+    }
+
+    // Check email uniqueness if being changed
+    if (email && email !== employee.email) {
+      const existing = await prisma.pluginUsersPermissionsUser.findFirst({
+        where: { email, NOT: { id } },
+      });
+      if (existing) {
+        return NextResponse.json(
+          errorResponse('CONFLICT', 'Email already in use'),
+          { status: 409 }
+        );
+      }
     }
 
     // Update employee info
@@ -43,6 +145,7 @@ export async function PUT(
       where: { id },
       data: {
         username: username || employee.username,
+        email: email || employee.email,
         firstname: firstName !== undefined ? firstName : employee.firstname,
         lastname: lastName !== undefined ? lastName : employee.lastname,
       },
@@ -80,20 +183,19 @@ export async function PUT(
     console.log(`[API] Updated employee: ${updated.email} (ID: ${id})`);
 
     return NextResponse.json(
-      {
-        success: true,
-        data: {
-          id: updated.id,
-          email: updated.email,
-          username: updated.username,
-        },
-      },
+      successResponse({
+        id: updated.id,
+        email: updated.email,
+        username: updated.username,
+        firstname: updated.firstname,
+        lastname: updated.lastname,
+      }),
       { status: 200 }
     );
   } catch (error: any) {
     console.error('[API] Failed to update employee:', error);
     return NextResponse.json(
-      { error: error.message || 'Failed to update employee' },
+      errorResponse('INTERNAL_ERROR', error.message || 'Failed to update employee'),
       { status: 500 }
     );
   }
@@ -101,7 +203,7 @@ export async function PUT(
 
 /**
  * DELETE /api/employees/[id]
- * Delete an employee
+ * Soft delete (block) an employee
  */
 export async function DELETE(
   req: NextRequest,
@@ -110,7 +212,7 @@ export async function DELETE(
   try {
     const ctx = await extractUserContext(req);
     if (!ctx.userId) {
-      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+      return NextResponse.json(errorResponse('UNAUTHORIZED', 'User not authenticated'), { status: 401 });
     }
 
     const { id } = await params;
@@ -122,37 +224,27 @@ export async function DELETE(
 
     if (!employee) {
       return NextResponse.json(
-        { error: 'Employee not found' },
+        errorResponse('NOT_FOUND', 'Employee not found'),
         { status: 404 }
       );
     }
 
-    // Delete user roles first
-    await prisma.userRole.deleteMany({
-      where: {
-        userId: id,
-        userType: 'employee',
-      },
-    });
-
-    // Delete employee
-    await prisma.pluginUsersPermissionsUser.delete({
+    // Soft delete: just block the employee
+    const blocked = await prisma.pluginUsersPermissionsUser.update({
       where: { id },
+      data: { blocked: true },
     });
 
-    console.log(`[API] Deleted employee: ${employee.email} (ID: ${id})`);
+    console.log(`[API] Deactivated employee: ${employee.email} (ID: ${id})`);
 
     return NextResponse.json(
-      {
-        success: true,
-        message: 'Employee deleted successfully',
-      },
+      successResponse({ message: 'Employee deactivated successfully' }),
       { status: 200 }
     );
   } catch (error: any) {
     console.error('[API] Failed to delete employee:', error);
     return NextResponse.json(
-      { error: error.message || 'Failed to delete employee' },
+      errorResponse('INTERNAL_ERROR', error.message || 'Failed to delete employee'),
       { status: 500 }
     );
   }

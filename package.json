@@ -9,6 +9,7 @@
 		"lint": "next lint",
 		"test:endpoints": "tsx ../hotelmanager_v2/test-endpoints.ts",
 		"seed": "tsx scripts/seed.ts",
+		"seed:core": "tsx scripts/seed-core.ts",
 		"seed:users": "tsx scripts/seed-demo-users.ts",
 		"seed:permissions": "tsx scripts/seed-permissions.ts",
 		"seed:employee-roles": "tsx scripts/seed-employee-roles.ts",

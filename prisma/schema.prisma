@@ -1389,6 +1389,7 @@ model PluginUsersPermissionsUser {
   employeeOrders  EmployeeOrder[]
   employeeRecords EmployeeRecord[]
   employeeSummary EmployeeSummary?
+  employmentData  EmploymentData? @relation("employmentData")
   expenses        Expense[]
   games           Game[]
   sessions        GymAndSportSession[]
@@ -1456,6 +1457,130 @@ model EmployeeSummary {
   updatedAt DateTime @updatedAt
 
   @@map("employee_summaries")
+}
+
+// ==================== EMPLOYMENT MANAGEMENT ====================
+
+model EmploymentData {
+  id                    String    @id @default(cuid())
+  employmentDate        DateTime  // Date employee started
+  position              String    // Job position/title
+  department            String?   // Department assigned
+  salary                Decimal   @db.Decimal(10, 2) // Monthly/base salary
+  salaryType            String    @default("monthly") // monthly, hourly, annual
+  salaryFrequency       String    @default("monthly") // payment frequency: monthly, bi-weekly, weekly
+  employmentStatus      String    @default("active") // active, inactive, on_leave, terminated
+  contractType          String?   // permanent, temporary, contract
+  reportsTo             String?   // Manager/supervisor ID
+  
+  // Termination data
+  terminationDate       DateTime?
+  terminationReason     String?
+  terminationNotes      String?
+  
+  // Deductions & debts tracking
+  totalDebts            Decimal   @db.Decimal(10, 2) @default(0)
+  totalCharges          Decimal   @db.Decimal(10, 2) @default(0)
+
+  userId String                     @unique
+  user   PluginUsersPermissionsUser @relation("employmentData", fields: [userId], references: [id], onDelete: Cascade)
+
+  leaves    EmployeeLeave[]
+  charges   EmployeeCharge[]
+  termination EmployeeTermination?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([employmentStatus])
+  @@index([department, employmentStatus])
+  @@map("employment_data")
+}
+
+model EmployeeLeave {
+  id              String    @id @default(cuid())
+  leaveType       String    // sick, vacation, personal, unpaid, etc
+  startDate       DateTime
+  endDate         DateTime
+  numberOfDays    Int
+  reason          String?
+  status          String    @default("pending") // pending, approved, rejected, cancelled
+  approvedBy      String?   // Admin/manager ID
+  approvalDate    DateTime?
+  notes           String?
+
+  employmentDataId String
+  employmentData   EmploymentData @relation(fields: [employmentDataId], references: [id], onDelete: Cascade)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([employmentDataId, status])
+  @@index([startDate, endDate])
+  @@map("employee_leaves")
+}
+
+model EmployeeCharge {
+  id              String    @id @default(cuid())
+  chargeType      String    // debt, fine, shortage, advance, loan, etc
+  amount          Decimal   @db.Decimal(10, 2)
+  description     String?
+  reason          String?
+  date            DateTime
+  dueDate         DateTime?
+  status          String    @default("pending") // pending, paid, partially_paid, waived, cancelled
+  paidAmount      Decimal   @db.Decimal(10, 2) @default(0)
+  paymentDate     DateTime?
+  paymentMethod   String?
+  notes           String?
+
+  employmentDataId String
+  employmentData   EmploymentData @relation(fields: [employmentDataId], references: [id], onDelete: Cascade)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([employmentDataId, status])
+  @@index([date])
+  @@map("employee_charges")
+}
+
+model EmployeeTermination {
+  id              String    @id @default(cuid())
+  terminationDate DateTime
+  reason          String    // resignation, dismissal, retirement, layoff, etc
+  details         String?
+  finalSettlement Decimal   @db.Decimal(10, 2) // Final amount owed/paid
+  settlementStatus String  @default("pending") // pending, completed, disputed
+  settlementDate  DateTime?
+  notes           String?
+
+  employmentDataId String          @unique
+  employmentData   EmploymentData  @relation(fields: [employmentDataId], references: [id], onDelete: Cascade)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@map("employee_terminations")
+}
+
+/// Track salary/payment history for auditing and reporting
+model SalaryPayment {
+  id              String    @id @default(cuid())
+  userId          String
+  paymentDate     DateTime
+  grossSalary     Decimal   @db.Decimal(10, 2)
+  deductions      Decimal   @db.Decimal(10, 2) @default(0)
+  netSalary       Decimal   @db.Decimal(10, 2)
+  paymentMethod   String?
+  status          String    @default("completed") // pending, completed, failed
+  notes           String?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([userId, paymentDate])
+  @@map("salary_payments")
 }
 
 // ==================== PROJECTS & EXPENSES ====================
