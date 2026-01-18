@@ -17,18 +17,22 @@ export async function GET(request: NextRequest, { params }: { params: Promise<{ 
     const pageSize = Math.min(100, Math.max(5, Number(url.searchParams.get('pageSize') || '20')))
     const search = url.searchParams.get('search') || ''
     const includeDetails = url.searchParams.get('details') === 'true'
-    const sectionFilter = url.searchParams.get('section') || null
+    const sectionFilterRaw = url.searchParams.get('section') || null
     const fromDate = url.searchParams.get('fromDate') || null
     const toDate = url.searchParams.get('toDate') || null
 
+    // Normalize codes to lowercase to match database storage
+    const normalizedCode = code.toLowerCase()
+    const normalizedSectionFilter = sectionFilterRaw ? sectionFilterRaw.toLowerCase() : null
+
     // Use sectionService for all logic
     const result = await sectionService.getProducts({
-      departmentCode: code,
+      departmentCode: normalizedCode,
       type,
       page,
       pageSize,
       search,
-      sectionFilter,
+      sectionFilter: normalizedSectionFilter,
       includeDetails,
       fromDate,
       toDate,

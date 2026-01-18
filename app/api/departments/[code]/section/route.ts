@@ -35,16 +35,16 @@ export async function GET(
   try {
     const { code } = await params
     
-    // Normalize the code
-    let lookupCode = code
+    // Normalize the code to lowercase (database storage format)
+    let lookupCode = code.toLowerCase()
     try {
       for (let i = 0; i < 3; i++) {
         const decoded = decodeURIComponent(lookupCode)
         if (decoded === lookupCode) break
-        lookupCode = decoded
+        lookupCode = decoded.toLowerCase() // Also lowercase the decoded result
       }
     } catch (e) {
-      lookupCode = code
+      lookupCode = code.toLowerCase()
     }
 
     const url = new URL(request.url)

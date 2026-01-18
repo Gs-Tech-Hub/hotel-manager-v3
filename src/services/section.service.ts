@@ -30,12 +30,15 @@ export class SectionService {
     const includeDetails = Boolean(params.includeDetails)
     const sectionFilter = params.sectionFilter || null
 
+    // Normalize department code to lowercase to match database storage
+    const normalizedDeptCode = (params.departmentCode || '').toLowerCase()
+
     // Resolve department row - handle section codes
-    let dept = await prisma.department.findUnique({ where: { code: params.departmentCode } })
+    let dept = await prisma.department.findUnique({ where: { code: normalizedDeptCode } })
     
     // If not found and code contains ':', it might be a section code
-    if (!dept && params.departmentCode.includes(':')) {
-      const parts = params.departmentCode.split(':')
+    if (!dept && normalizedDeptCode.includes(':')) {
+      const parts = normalizedDeptCode.split(':')
       const parentCode = parts[0]
       const parentDept = await prisma.department.findUnique({ where: { code: parentCode } })
       if (parentDept) {
@@ -51,7 +54,9 @@ export class SectionService {
     
     if (params.sectionFilter) {
       try {
-        const parts = params.sectionFilter.split(':')
+        // Normalize section filter to lowercase
+        const normalizedSectionFilter = params.sectionFilter.toLowerCase()
+        const parts = normalizedSectionFilter.split(':')
         if (parts.length >= 2) {
           const parentCode = parts[0]
           const sectionSlugOrId = parts.slice(1).join(':')
@@ -88,7 +93,21 @@ export class SectionService {
     if ((type === 'drink' || dept.referenceType === 'BarAndClub') && dept.referenceId) {
       // For sections, only get drinks that have been transferred to that section
       if (resolvedSectionId) {
-        // Query transferred drinks for section
+        // Get total count of transferred drinks for this section (before pagination)
+        const totalTransferred = await prisma.departmentInventory.count({
+          where: {
+            departmentId: dept.id,
+            sectionId: resolvedSectionId,
+            quantity: { gt: 0 },
+          },
+        })
+
+        if (totalTransferred === 0) {
+          // No transferred drinks for this section
+          return { items: [], total: 0, page, pageSize }
+        }
+
+        // Query paginated transferred drinks for section
         const sectionInventories = await prisma.departmentInventory.findMany({
           where: {
             departmentId: dept.id,
@@ -98,33 +117,22 @@ export class SectionService {
           select: { inventoryItemId: true },
           skip,
           take: pageSize,
+          orderBy: { createdAt: 'desc' }, // Consistent ordering
         })
 
         const drinkIds = sectionInventories.map((si) => si.inventoryItemId)
-        
-        if (drinkIds.length === 0) {
-          // No transferred drinks for this section
-          return { items: [], total: 0, page, pageSize }
-        }
 
-        // Get drinks matching the transferred IDs
+        // Get drinks matching the transferred IDs (no pagination here - IDs already paginated)
         const where: any = { 
           barAndClubId: dept.referenceId,
           id: { in: drinkIds }
         }
         if (search) where.name = { contains: search, mode: 'insensitive' }
 
-        const [items, total] = await Promise.all([
-          prisma.drink.findMany({ where, skip, take: pageSize, orderBy: { name: 'asc' } }),
-          prisma.departmentInventory.count({
-            where: {
-              departmentId: dept.id,
-              sectionId: resolvedSectionId,
-              quantity: { gt: 0 },
-              inventoryItemId: { in: drinkIds }
-            }
-          }),
-        ])
+        const items = await prisma.drink.findMany({ 
+          where,
+          orderBy: { name: 'asc' }
+        })
 
         const drinkBalances = await stockService.getBalances('drink', items.map(d => d.id), dept.id, resolvedSectionId)
         let mapped = items.map((d: any) => ({ id: d.id, name: d.name, type: 'drink', available: drinkBalances.get(d.id) ?? 0, unitPrice: prismaDecimalToCents(d.price) }))
@@ -175,7 +183,7 @@ export class SectionService {
           })
         }
 
-        return { items: mapped, total, page, pageSize }
+        return { items: mapped, total: totalTransferred, page, pageSize }
       }
 
       // For parent departments (no section filter), get all drinks
@@ -251,7 +259,21 @@ export class SectionService {
     if ((type === 'food' || dept.referenceType === 'Restaurant') && dept.referenceId) {
       // For sections, only get food items that have been transferred to that section
       if (resolvedSectionId) {
-        // Query transferred food items for section
+        // Get total count of transferred food items for this section (before pagination)
+        const totalTransferred = await prisma.departmentInventory.count({
+          where: {
+            departmentId: dept.id,
+            sectionId: resolvedSectionId,
+            quantity: { gt: 0 },
+          },
+        })
+
+        if (totalTransferred === 0) {
+          // No transferred food items for this section
+          return { items: [], total: 0, page, pageSize }
+        }
+
+        // Query paginated transferred food items for section
         const sectionInventories = await prisma.departmentInventory.findMany({
           where: {
             departmentId: dept.id,
@@ -261,33 +283,22 @@ export class SectionService {
           select: { inventoryItemId: true },
           skip,
           take: pageSize,
+          orderBy: { createdAt: 'desc' }, // Consistent ordering
         })
 
         const foodIds = sectionInventories.map((si) => si.inventoryItemId)
-        
-        if (foodIds.length === 0) {
-          // No transferred food items for this section
-          return { items: [], total: 0, page, pageSize }
-        }
 
-        // Get food items matching the transferred IDs
+        // Get food items matching the transferred IDs (no pagination here - IDs already paginated)
         const where: any = { 
           restaurantId: dept.referenceId,
           id: { in: foodIds }
         }
         if (search) where.name = { contains: search, mode: 'insensitive' }
 
-        const [items, total] = await Promise.all([
-          prisma.foodItem.findMany({ where, skip, take: pageSize, orderBy: { name: 'asc' } }),
-          prisma.departmentInventory.count({
-            where: {
-              departmentId: dept.id,
-              sectionId: resolvedSectionId,
-              quantity: { gt: 0 },
-              inventoryItemId: { in: foodIds }
-            }
-          }),
-        ])
+        const items = await prisma.foodItem.findMany({ 
+          where,
+          orderBy: { name: 'asc' }
+        })
 
         const foodBalances = await stockService.getBalances('food', items.map(f => f.id), dept.id, resolvedSectionId)
         let mapped = items.map((f: any) => ({ id: f.id, name: f.name, type: 'food', available: foodBalances.get(f.id) ?? 0 > 0 ? 1 : 0, unitPrice: prismaDecimalToCents(f.price) }))
@@ -338,7 +349,7 @@ export class SectionService {
           })
         }
 
-        return { items: mapped, total, page, pageSize }
+        return { items: mapped, total: totalTransferred, page, pageSize }
       }
 
       // For parent departments (no section filter), get all food items
@@ -442,34 +453,40 @@ export class SectionService {
       
       if (resolvedSectionId) {
         // For sections: only show items with DepartmentInventory records for this section
-        const sectionInventories = await prisma.departmentInventory.findMany({
+        // Get total count first (before pagination)
+        const totalInSection = await prisma.departmentInventory.count({
           where: {
             departmentId: dept.id,
             sectionId: resolvedSectionId,
             quantity: { gt: 0 }, // Only items with stock > 0
           },
-          select: { inventoryItemId: true },
-          skip,
-          take: pageSize,
         })
 
-        const inventoryItemIds = sectionInventories.map((si) => si.inventoryItemId)
+        if (totalInSection === 0) {
+          items = []
+          total = 0
+        } else {
+          // Get paginated inventory records for section
+          const sectionInventories = await prisma.departmentInventory.findMany({
+            where: {
+              departmentId: dept.id,
+              sectionId: resolvedSectionId,
+              quantity: { gt: 0 },
+            },
+            select: { inventoryItemId: true },
+            skip,
+            take: pageSize,
+            orderBy: { createdAt: 'desc' }, // Consistent ordering
+          })
 
-        if (inventoryItemIds.length > 0) {
-          [items, total] = await Promise.all([
-            prisma.inventoryItem.findMany({
-              where: { ...where, id: { in: inventoryItemIds } },
-              orderBy: { name: 'asc' },
-            }),
-            prisma.departmentInventory.count({
-              where: {
-                departmentId: dept.id,
-                sectionId: resolvedSectionId,
-                quantity: { gt: 0 },
-                inventoryItem: where,
-              },
-            }),
-          ])
+          const inventoryItemIds = sectionInventories.map((si) => si.inventoryItemId)
+
+          // Fetch the actual inventory items (no pagination - IDs already paginated)
+          items = await prisma.inventoryItem.findMany({
+            where: { ...where, id: { in: inventoryItemIds } },
+            orderBy: { name: 'asc' },
+          })
+          total = totalInSection
         }
       } else {
         // For parent departments: get all items in the category
@@ -563,7 +580,9 @@ export class SectionService {
     if (!departmentCode) return { success: false, message: 'Missing department code' }
     if (!Array.isArray(items) || items.length === 0) return { success: true }
 
-    const dept = await prisma.department.findUnique({ where: { code: departmentCode } })
+    // Normalize department code to lowercase
+    const normalizedCode = departmentCode.toLowerCase()
+    const dept = await prisma.department.findUnique({ where: { code: normalizedCode } })
     if (!dept) return { success: false, message: 'Department not found' }
 
     const drinkIds = Array.from(new Set(items.map((i) => i.productId)))
