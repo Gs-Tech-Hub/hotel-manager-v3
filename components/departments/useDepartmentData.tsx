@@ -244,6 +244,7 @@ export default function useDepartmentData(decodedCode: string | undefined, fromD
   useEffect(() => {
     const fetchDepartment = async () => {
       setDeptLoading(true)
+      setError(null)
       try {
         if (!decodedCode) return
         
@@ -256,8 +257,28 @@ export default function useDepartmentData(decodedCode: string | undefined, fromD
             if (toDate) params.append('toDate', toDate)
             const sectionUrl = `/api/departments/${encodeURIComponent(decodedCode)}/section${params.toString() ? '?' + params.toString() : ''}`
             const sectionRes = await fetch(sectionUrl)
-            if (!sectionRes.ok) throw new Error('Failed to fetch section')
+            
+            if (!sectionRes.ok) {
+              // Check if it's a 404 (section not found)
+              const errorJson = await sectionRes.json()
+              const errorMsg = errorJson?.error?.message || 'Section not found or is inactive'
+              setError(errorMsg)
+              setDepartment(null)
+              setSectionProducts([])
+              setSectionStock(null)
+              return
+            }
+            
             const sectionJson = await sectionRes.json()
+            if (!sectionJson?.success) {
+              const errorMsg = sectionJson?.error?.message || 'Failed to fetch section'
+              setError(errorMsg)
+              setDepartment(null)
+              setSectionProducts([])
+              setSectionStock(null)
+              return
+            }
+            
             const sectionData = sectionJson.data || {}
             
             // Map stats to metadata for UI compatibility
@@ -285,6 +306,8 @@ export default function useDepartmentData(decodedCode: string | undefined, fromD
               reservedQuantity: it.reservedQuantity || 0,
             })))
             
+            // Clear menu for sections since it's not used
+            setMenu([])
             await fetchPendingOrderLines(decodedCode)
           } finally {
             setSectionProductsLoading(false)
@@ -307,8 +330,10 @@ export default function useDepartmentData(decodedCode: string | undefined, fromD
             setChildren(found)
           }
         }
-      } catch (e) {
-        console.error(e)
+      } catch (e: any) {
+        console.error('Failed to load department:', e)
+        setError(e?.message || 'Failed to load department')
+        setDepartment(null)
       } finally {
         setDeptLoading(false)
       }
@@ -326,14 +351,34 @@ export default function useDepartmentData(decodedCode: string | undefined, fromD
       // For sections (code includes ':'), use consolidated /section endpoint
       if (useCode.includes(':')) {
         setSectionProductsLoading(true)
+        setError(null)
         try {
           const params = new URLSearchParams()
           if (fromDate) params.append('fromDate', fromDate)
           if (toDate) params.append('toDate', toDate)
           const sectionUrl = `/api/departments/${encodeURIComponent(useCode)}/section${params.toString() ? '?' + params.toString() : ''}`
           const sectionRes = await fetch(sectionUrl)
-          if (!sectionRes.ok) throw new Error('Failed to fetch section')
+          
+          if (!sectionRes.ok) {
+            const errorJson = await sectionRes.json()
+            const errorMsg = errorJson?.error?.message || 'Section not found or is inactive'
+            setError(errorMsg)
+            setDepartment(null)
+            setSectionProducts([])
+            setSectionStock(null)
+            return
+          }
+          
           const sectionJson = await sectionRes.json()
+          if (!sectionJson?.success) {
+            const errorMsg = sectionJson?.error?.message || 'Failed to fetch section'
+            setError(errorMsg)
+            setDepartment(null)
+            setSectionProducts([])
+            setSectionStock(null)
+            return
+          }
+          
           const sectionData = sectionJson.data || {}
           
           // Map stats to metadata for UI compatibility
@@ -361,6 +406,8 @@ export default function useDepartmentData(decodedCode: string | undefined, fromD
             reservedQuantity: it.reservedQuantity || 0,
           })))
           
+          // Clear menu for sections since it's not used
+          setMenu([])
           await fetchPendingOrderLines(useCode)
         } finally {
           setSectionProductsLoading(false)

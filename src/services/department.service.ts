@@ -564,8 +564,37 @@ export class DepartmentService extends BaseService<IDepartment> {
         return errorResponse(ErrorCodes.VALIDATION_ERROR, 'Department does not expose a menu')
       }
 
-      // If this is a section code, fetch section-specific inventory
+      // If this is a section code, validate the section exists before trying to fetch menu
       if (departmentCode.includes(':')) {
+        // Pre-validate section exists
+        const parts = departmentCode.split(':');
+        const parentCode = parts[0];
+        const sectionSlugOrId = parts.slice(1).join(':');
+        
+        const parentDept = await (prisma as any).department.findUnique({ 
+          where: { code: parentCode } 
+        });
+        
+        if (!parentDept) {
+          return errorResponse(ErrorCodes.NOT_FOUND, `Parent department '${parentCode}' not found`);
+        }
+        
+        const section = await (prisma as any).departmentSection.findFirst({
+          where: {
+            departmentId: parentDept.id,
+            isActive: true,
+            OR: [
+              { slug: sectionSlugOrId },
+              { id: sectionSlugOrId }
+            ]
+          }
+        });
+        
+        if (!section) {
+          return errorResponse(ErrorCodes.NOT_FOUND, `Section '${sectionSlugOrId}' not found or is inactive`);
+        }
+        
+        // Section exists, fetch its menu
         const items = await this.getSectionMenuItems(departmentCode, category);
         return items;
       }
@@ -600,20 +629,32 @@ export class DepartmentService extends BaseService<IDepartment> {
 
   private async getSectionMenuItems(sectionCode: string, category: string) {
     try {
+      // Validate section code format
+      if (!sectionCode || !sectionCode.includes(':')) {
+        return errorResponse(ErrorCodes.VALIDATION_ERROR, 'Invalid section code format');
+      }
+
       const parts = sectionCode.split(':');
       const parentCode = parts[0];
       const sectionSlugOrId = parts.slice(1).join(':');
 
+      if (!parentCode || !sectionSlugOrId) {
+        return errorResponse(ErrorCodes.VALIDATION_ERROR, 'Invalid section code format');
+      }
+
       // Find the parent department
-      const parentDept = await (prisma as any).department.findUnique({ where: { code: parentCode } });
+      const parentDept = await (prisma as any).department.findUnique({ 
+        where: { code: parentCode } 
+      });
       if (!parentDept) {
         return errorResponse(ErrorCodes.NOT_FOUND, 'Parent department not found');
       }
 
-      // Find the section
+      // Find the section - must exist and be active
       const section = await (prisma as any).departmentSection.findFirst({
         where: {
           departmentId: parentDept.id,
+          isActive: true,
           OR: [
             { slug: sectionSlugOrId },
             { id: sectionSlugOrId }
@@ -622,7 +663,7 @@ export class DepartmentService extends BaseService<IDepartment> {
       });
 
       if (!section) {
-        return errorResponse(ErrorCodes.NOT_FOUND, 'Section not found');
+        return errorResponse(ErrorCodes.NOT_FOUND, `Section '${sectionSlugOrId}' not found or is inactive`);
       }
 
       // Get section-specific inventory

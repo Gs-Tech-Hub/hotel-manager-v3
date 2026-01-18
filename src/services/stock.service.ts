@@ -43,7 +43,13 @@ export class StockService {
       // DepartmentInventory query failed, will fall back below
     }
 
-    // If no DepartmentInventory record exists, fall back to legacy tables (for backward compatibility)
+    // If section ID is provided, return 0 - sections should ONLY have transferred items
+    // Do NOT fall back to department or legacy stock for sections
+    if (sectionId) {
+      return 0
+    }
+
+    // If no DepartmentInventory record exists for DEPARTMENT level, fall back to legacy tables (for backward compatibility)
     // But initialize DepartmentInventory from legacy data on first access
     if (productType === 'drink') {
       const drink = await prisma.drink.findUnique({ where: { id: productId } })
@@ -58,7 +64,6 @@ export class StockService {
               inventoryItemId: productId,
               quantity: legacyBalance,
             }
-            if (sectionId) createData.sectionId = sectionId
             // unitPrice needs to be Decimal type
             if (drink.price) {
               createData.unitPrice = new Decimal(Math.round(Number(drink.price) * 100) / 100)
@@ -68,7 +73,7 @@ export class StockService {
             const existing = await prisma.departmentInventory.findFirst({
               where: {
                 departmentId,
-                sectionId: sectionId ?? undefined,
+                sectionId: undefined,
                 inventoryItemId: productId,
               },
             })
@@ -103,7 +108,6 @@ export class StockService {
               inventoryItemId: productId,
               quantity: legacyBalance,
             }
-            if (sectionId) createData.sectionId = sectionId
             if (inv.unitPrice) {
               createData.unitPrice = inv.unitPrice
             }
@@ -112,7 +116,7 @@ export class StockService {
             const existing = await prisma.departmentInventory.findFirst({
               where: {
                 departmentId,
-                sectionId: sectionId ?? undefined,
+                sectionId: undefined,
                 inventoryItemId: productId,
               },
             })
@@ -174,9 +178,19 @@ export class StockService {
       foundInDeptInv.add(record.inventoryItemId)
     }
 
-    // For products not found in DepartmentInventory, check legacy tables
+    // For products not found in DepartmentInventory, handle differently based on section filter
     const missingIds = productIds.filter((id) => !foundInDeptInv.has(id))
 
+    // If section ID is provided, return 0 for missing items - sections should ONLY have transferred items
+    // Do NOT fall back to department or legacy stock for sections
+    if (sectionId) {
+      for (const id of missingIds) {
+        balances.set(id, 0)
+      }
+      return balances
+    }
+
+    // For department-level queries, check legacy tables as fallback
     if (missingIds.length > 0) {
       if (productType === 'drink') {
         const drinks = await prisma.drink.findMany({
@@ -195,7 +209,6 @@ export class StockService {
                 inventoryItemId: drink.id,
                 quantity: legacyBalance,
               }
-              if (sectionId) createData.sectionId = sectionId
               if (drink.price) {
                 createData.unitPrice = new Decimal(Math.round(Number(drink.price) * 100) / 100)
               }
@@ -204,7 +217,7 @@ export class StockService {
                 where: {
                   departmentId_sectionId_inventoryItemId: {
                     departmentId,
-                    sectionId: sectionId || null,
+                    sectionId: null,
                     inventoryItemId: drink.id,
                   },
                 },
@@ -233,7 +246,6 @@ export class StockService {
                 inventoryItemId: item.id,
                 quantity: legacyBalance,
               }
-              if (sectionId) createData.sectionId = sectionId
               if (item.unitPrice) {
                 createData.unitPrice = item.unitPrice
               }
@@ -242,7 +254,7 @@ export class StockService {
                 where: {
                   departmentId_sectionId_inventoryItemId: {
                     departmentId,
-                    sectionId: sectionId || null,
+                    sectionId: null,
                     inventoryItemId: item.id,
                   },
                 },

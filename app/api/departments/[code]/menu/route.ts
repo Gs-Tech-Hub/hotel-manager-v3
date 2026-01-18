@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { departmentService } from '@/services/department.service'
+import { getStatusCode } from '@/src/lib/api-response'
 
 export async function GET(
   req: NextRequest,
@@ -25,11 +26,21 @@ export async function GET(
     }
 
     const menu = await departmentService.getDepartmentMenu(lookupCode)
-    if (!menu) return NextResponse.json({ success: false, error: 'No menu available' }, { status: 404 })
+    if (!menu) {
+      return NextResponse.json(
+        { success: false, error: 'No menu available' },
+        { status: 404 }
+      )
+    }
 
-    // If errorResponse shape returned (object with error), forward it
+    // If errorResponse shape returned (object with error), forward it with appropriate status
     if ((menu as any)?.error) {
-      return NextResponse.json({ success: false, error: (menu as any).error }, { status: 400 })
+      const errorCode = (menu as any)?.error?.code || 'INTERNAL_ERROR'
+      const statusCode = getStatusCode(errorCode)
+      return NextResponse.json(
+        { success: false, error: (menu as any).error },
+        { status: statusCode }
+      )
     }
 
     return NextResponse.json({ success: true, department: code, data: menu })

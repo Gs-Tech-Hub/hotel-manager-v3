@@ -1,58 +1,19 @@
 "use client"
 import { useRouter, useParams } from 'next/navigation'
-import { Utensils, Coffee, Activity, Gamepad, BookOpen } from 'lucide-react'
 import { useMemo, useState, useEffect } from 'react'
 import { useAuth } from '@/components/auth-context'
-import Price from '@/components/ui/Price'
 import DateRangeFilter from '../../../../components/departments/DateRangeFilter'
 import useDepartmentData from '../../../../components/departments/useDepartmentData'
-import SectionsList from '../../../../components/departments/SectionsList'
 import SectionProductsTable from '../../../../components/departments/SectionProductsTable'
-// Pending orders panel removed — counts shown on the products table instead
+import DepartmentHeader from '../../../../components/departments/DepartmentHeader'
+import StockSummaryCard from '../../../../components/departments/StockSummaryCard'
+import OrderStatsCard from '../../../../components/departments/OrderStatsCard'
+import CreateSectionModal from '../../../../components/departments/CreateSectionModal'
+import IncomingTransfersModal from '../../../../components/departments/IncomingTransfersModal'
+import UpdateStatsButton from '../../../../components/departments/UpdateStatsButton'
+import ParentDepartmentView from '../../../../components/departments/ParentDepartmentView'
+import SectionProductsView from '../../../../components/departments/SectionProductsView'
 
-type DepartmentInfo = {
-  code: string
-  name: string
-  description?: string
-  type?: string
-  icon?: string
-}
-
-const iconForType: Record<string, any> = {
-  restaurants: Utensils,
-  bars: Coffee,
-  gyms: Activity,
-  games: Gamepad,
-}
-
-type MenuItem = {
-  id: string
-  inventoryId?: string
-  name: string
-  price?: number
-  available?: boolean
-}
-
-type ProductDetail = {
-  id: string
-  name: string
-  type: string
-  available: number | boolean
-  unitPrice?: number
-  unitsSold?: number
-  amountSold?: number
-  pendingQuantity?: number
-  reservedQuantity?: number
-}
-
-type ChildDept = DepartmentInfo & {
-  totalOrders?: number
-  pendingOrders?: number
-  processingOrders?: number
-  fulfilledOrders?: number
-  stock?: { low: number; high: number; empty: number; totalProducts: number }
-  products?: ProductDetail[]
-}
 
 export default function DepartmentDetail() {
   const { code } = useParams() as { code?: string }
@@ -69,81 +30,51 @@ export default function DepartmentDetail() {
   const [sectionFromDate, setSectionFromDate] = useState<string | null>(getTodayDate())
   const [sectionToDate, setSectionToDate] = useState<string | null>(getTodayDate())
 
+  // Modal states
+  const [showCreateSection, setShowCreateSection] = useState(false)
+  const [incomingModalOpen, setIncomingModalOpen] = useState(false)
+  const [pendingTransfers, setPendingTransfers] = useState<any[] | null>(null)
+  const [loadingTransfers, setLoadingTransfers] = useState(false)
+
   const {
     menu,
     loading,
     error,
     department,
     children,
-    childrenLoading,
-    deptLoading,
     sectionStock,
     sectionProducts,
     sectionProductsLoading,
-    pendingOrderLines,
-    pendingOrderLinesLoading,
-    pendingModalOpen,
-    pendingModalProduct,
-    pendingModalItems,
-    pendingModalLoading,
-    openPendingModal,
-    refreshPendingForModal,
-    fetchPendingOrderLines,
-    setPendingModalOpen,
     refreshDepartment,
-    setPendingModalItems,
   } = useDepartmentData(decodedCode, sectionFromDate, sectionToDate)
 
   const { hasPermission } = useAuth()
 
-  // Create section modal state
-  const [showCreateSection, setShowCreateSection] = useState(false)
-  const [newSectionName, setNewSectionName] = useState('')
-  const [newSectionSlug, setNewSectionSlug] = useState('')
-  const [creatingSection, setCreatingSection] = useState(false)
-  const [createSectionError, setCreateSectionError] = useState<string | null>(null)
-
-  const handleCreateSection = async (e?: React.FormEvent) => {
-    if (e) e.preventDefault()
-    if (!newSectionName) {
-      setCreateSectionError('Please enter a name')
-      return
-    }
+  // Handle create section - extract to modal
+  const handleCreateSection = async (name: string, slug: string) => {
     if (!department?.id) {
-      setCreateSectionError('Department not loaded')
-      return
+      throw new Error('Department not loaded')
     }
 
-    setCreatingSection(true)
-    setCreateSectionError(null)
-    try {
-      const res = await fetch('/api/departments/sections', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ name: newSectionName, slug: newSectionSlug || undefined, departmentId: department.id }),
-      })
-      const j = await res.json()
-      if (!res.ok || !j?.success) {
-        throw new Error(j?.error || 'Failed to create section')
-      }
+    const res = await fetch('/api/departments/sections', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ name, slug: slug || undefined, departmentId: department.id }),
+    })
+    const j = await res.json()
+    if (!res.ok || !j?.success) {
+      throw new Error(j?.error || 'Failed to create section')
+    }
 
-      setNewSectionName('')
-      setNewSectionSlug('')
-      setShowCreateSection(false)
-      // refresh department data (children/sections)
-      try { await (refreshDepartment as any)?.(decodedCode) } catch (e) { /* ignore */ }
-    } catch (err: any) {
-      console.error('create section error', err)
-      setCreateSectionError(err?.message || 'Create failed')
-    } finally {
-      setCreatingSection(false)
+    // refresh department data (children/sections)
+    try {
+      await (refreshDepartment as any)?.(decodedCode)
+    } catch (e) {
+      /* ignore */
     }
   }
 
-  const [pendingTransfers, setPendingTransfers] = useState<any[] | null>(null)
-  const [loadingTransfers, setLoadingTransfers] = useState(false)
-  const [incomingModalOpen, setIncomingModalOpen] = useState(false)
-
+  // Handle pending transfers
   const fetchPendingTransfers = async (code: string) => {
     setLoadingTransfers(true)
     try {
@@ -172,10 +103,16 @@ export default function DepartmentDetail() {
 
   const markReceived = async (id: string) => {
     try {
-      const res = await fetch(`/api/departments/${encodeURIComponent(decodedCode)}/transfer/${encodeURIComponent(id)}/approve`, { method: 'POST' })
+      const res = await fetch(
+        `/api/departments/${encodeURIComponent(decodedCode)}/transfer/${encodeURIComponent(id)}/approve`,
+        { method: 'POST' }
+      )
       const j = await res.json()
-      if (!res.ok || !j?.success) return alert(j?.error?.message || 'Receive failed')
-      // refresh UI with consolidated endpoint
+      if (!res.ok || !j?.success) {
+        alert(j?.error?.message || 'Receive failed')
+        return
+      }
+      // refresh UI
       await refreshDepartment(decodedCode)
       await fetchPendingTransfers(decodedCode)
       alert('Transfer received')
@@ -187,17 +124,26 @@ export default function DepartmentDetail() {
 
   const resolveStoreName = (t: any) => {
     // Prefer explicit friendly name returned by the API, fall back to known fields
-    return t?.fromDepartmentName || t?.fromDepartmentCode || t?.fromDepartmentId || 'Unknown store'
+    return (
+      t?.fromDepartmentName ||
+      t?.fromDepartmentCode ||
+      t?.fromDepartmentId ||
+      'Unknown store'
+    )
   }
 
   const resolveProductName = (it: any) => {
     if (!it) return 'Unknown product'
     if (it.productName) return it.productName
     // try to find in current section products
-    const p = sectionProducts?.find((s: any) => s.id === it.productId || s.inventoryId === it.productId)
+    const p = sectionProducts?.find(
+      (s: any) => s.id === it.productId || s.inventoryId === it.productId
+    )
     if (p && (p.name || p.productName)) return p.name || p.productName
     // try to find in menu
-    const m = menu?.find((mm: any) => mm.inventoryId === it.productId || mm.id === it.productId)
+    const m = menu?.find(
+      (mm: any) => mm.inventoryId === it.productId || mm.id === it.productId
+    )
     if (m) return m.name
     return it.productId || 'Unknown product'
   }
@@ -206,90 +152,34 @@ export default function DepartmentDetail() {
 
   return (
     <div className="space-y-6">
-      <div className="flex items-center justify-between">
-        <div className="flex items-center gap-4">
-          <div className="p-2 bg-muted rounded-md">
-            {(() => {
-              const key = (department?.type || department?.code || code || '').toString().toLowerCase()
-              const Icon = iconForType[key] ?? BookOpen
-              return <Icon className="h-6 w-6" />
-            })()}
-          </div>
-          <div>
-            <h1 className="text-2xl font-bold">{department?.name || code}</h1>
-            {department?.description && <div className="text-sm text-muted-foreground">{department.description}</div>}
-            {sectionStock && (
-              <div className="mt-3 p-3 bg-blue-50 rounded border border-blue-200">
-                <div className="text-sm font-medium text-blue-900">Stock Summary</div>
-                <div className="text-sm text-blue-800 mt-1 grid grid-cols-2 gap-2">
-                  <div><span className="font-semibold">Available:</span> {sectionStock.high}</div>
-                  <div><span className="font-semibold">Low Stock:</span> {sectionStock.low}</div>
-                  <div><span className="font-semibold">Out of Stock:</span> {sectionStock.empty}</div>
-                  <div><span className="font-semibold">Total Products:</span> {sectionStock.totalProducts}</div>
-                </div>
-              </div>
-            )}
-          </div>
-        </div>
-        <div className="flex items-center gap-2">
-          {decodedCode.includes(':') && (
-            <button onClick={() => setIncomingModalOpen(true)} className="px-3 py-1 border rounded text-sm">Incoming{pendingTransfers && pendingTransfers.length > 0 ? ` (${pendingTransfers.length})` : ''}</button>
-          )}
-          {hasPermission('department_sections.create') && (
-            <button onClick={() => setShowCreateSection(true)} className="px-3 py-1 bg-green-600 text-white rounded text-sm inline-flex items-center gap-2 hover:bg-green-700">
-              Create Section
-            </button>
-          )}
-          <button onClick={() => router.back()} className="px-3 py-1 border rounded text-sm">Back</button>
-          <UpdateStatsButton code={decodedCode} refresh={() => refreshDepartment(decodedCode)} />
-        </div>
-      </div>
-                
+      {/* Header with department info */}
+      <DepartmentHeader
+        department={department}
+        sectionStock={sectionStock}
+        onBack={() => router.back()}
+      />
+
+      {/* Loading and error states */}
       {loading && <div className="text-sm text-muted-foreground">Loading ...</div>}
-      {error && <div className="text-sm text-red-600">{error}</div>}
-
-      <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-        {(!decodedCode.includes(':') && children.length === 0) && menu.map((m: MenuItem) => (
-          <div key={m.id} className="border rounded p-4 bg-white">
-            <div className="flex justify-between items-center">
-                <div>
-                  <div className="font-semibold">{m.name}</div>
-                  <div className="text-xs text-muted-foreground">{m.available ? 'Available' : 'Unavailable'}</div>
-                </div>
-                <div className="text-right">
-                  <div className="font-medium">{m.price ? <Price amount={Number(m.price)} isMinor={true} /> : '-'}</div>
-                </div>
-              </div>
-          </div>
-        ))}
-      </div>
-
-      {!decodedCode.includes(':') && children.length > 0 && (
-        <div className="mt-6">
-          <h2 className="text-xl font-semibold mb-4">Sections</h2>
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-            {children.map((c: any) => (
-              <div key={c.code} className="border rounded p-4 bg-white hover:shadow-md transition-shadow cursor-pointer" onClick={() => router.push(`/departments/${encodeURIComponent(c.code)}`)}>
-                <div className="flex items-start justify-between">
-                  <div className="flex-1">
-                    <h3 className="font-semibold text-lg">{c.name}</h3>
-                    {c.description && <p className="text-sm text-muted-foreground mt-1">{c.description}</p>}
-                    <div className="text-xs text-muted-foreground mt-2">Code: <span className="font-mono">{c.code}</span></div>
-                  </div>
-                  <div className="text-right ml-4">
-                    <div className="text-sm">
-                      <div><span className="font-medium">{c.totalOrders ?? 0}</span> orders</div>
-                      <div className="text-xs text-yellow-600 font-medium">{c.pendingOrders ?? 0} pending</div>
-                    </div>
-                  </div>
-                </div>
-              </div>
-            ))}
-          </div>
+      {error && (
+        <div className="text-sm text-red-600 p-4 bg-red-50 rounded border border-red-200">
+          ⚠️ {error}
         </div>
       )}
 
-      {decodedCode.includes(':') && (
+      {/* Parent department sections */}
+      {!decodedCode.includes(':') && !error && (
+        <ParentDepartmentView
+          loading={loading}
+          canCreateSection={hasPermission('department_sections.create')}
+          onCreateSection={() => setShowCreateSection(true)}
+        >
+          {children}
+        </ParentDepartmentView>
+      )}
+
+      {/* Section/sub-department view */}
+      {decodedCode.includes(':') && !error && (
         <>
           {/* Date Range Filter */}
           <div className="mb-4">
@@ -303,127 +193,87 @@ export default function DepartmentDetail() {
             />
           </div>
 
-          {/* Order Stats Card */}
-          {department?.metadata?.sectionStats && (
-            <div className="p-4 bg-green-50 rounded border border-green-200">
-              <div className="text-sm font-medium text-green-900">Order Fulfillment Stats</div>
-              <div className="text-sm text-green-800 mt-2 grid grid-cols-2 md:grid-cols-5 gap-3">
-                <div><span className="font-semibold">{department.metadata.sectionStats.totalOrders ?? 0}</span> <span className="block text-xs text-green-700">Total Orders</span></div>
-                <div><span className="font-semibold">{department.metadata.sectionStats.pendingOrders ?? 0}</span> <span className="block text-xs text-green-700">Pending</span></div>
-                <div><span className="font-semibold">{department.metadata.sectionStats.processingOrders ?? 0}</span> <span className="block text-xs text-green-700">Processing</span></div>
-                <div><span className="font-semibold">{department.metadata.sectionStats.fulfilledOrders ?? 0}</span> <span className="block text-xs text-green-700">Fulfilled</span></div>
-                <div><span className="font-semibold"><Price amount={department.metadata.sectionStats.totalAmount ?? 0} isMinor={true} /></span> <span className="block text-xs text-green-700">Total Revenue</span></div>
-              </div>
-            </div>
+          {/* Stock Summary Card */}
+          {sectionStock && (
+            <StockSummaryCard
+              high={sectionStock.high}
+              low={sectionStock.low}
+              empty={sectionStock.empty}
+              totalProducts={sectionStock.totalProducts}
+            />
           )}
 
-          {/* Products Table */}
-          <div className="mt-6">
-            <h2 className="text-xl font-semibold">Products</h2>
-            <div className="mt-3">
-              {sectionProductsLoading ? (
-                <div className="text-sm text-muted-foreground">Loading products...</div>
-              ) : (
-                <>
-                  <SectionProductsTable 
-                    products={sectionProducts} 
-                    departmentCode={decodedCode.split(':')[0]}
-                    sectionCode={decodedCode}
-                    onDateChange={(from, to) => {
-                      setSectionFromDate(from)
-                      setSectionToDate(to)
-                    }}
-                    dateFromFilter={sectionFromDate}
-                    dateToFilter={sectionToDate}
-                  />
+          {/* Order Stats Card */}
+          {department?.metadata?.sectionStats && (
+            <OrderStatsCard
+              totalOrders={department.metadata.sectionStats.totalOrders ?? 0}
+              pendingOrders={department.metadata.sectionStats.pendingOrders ?? 0}
+              processingOrders={
+                department.metadata.sectionStats.processingOrders ?? 0
+              }
+              fulfilledOrders={department.metadata.sectionStats.fulfilledOrders ?? 0}
+              totalAmount={department.metadata.sectionStats.totalAmount ?? 0}
+            />
+          )}
 
-                  
-                </>
-              )}
-            </div>
-          </div>
+          {/* Products Section */}
+          <SectionProductsView
+            code={decodedCode}
+            departmentCode={decodedCode.split(':')[0]}
+            defaultFromDate={sectionFromDate}
+            defaultToDate={sectionToDate}
+          >
+            {sectionProductsLoading ? (
+              <div className="text-sm text-muted-foreground">Loading products...</div>
+            ) : (
+              <SectionProductsTable
+                products={sectionProducts}
+                departmentCode={decodedCode.split(':')[0]}
+                sectionCode={decodedCode}
+                onDateChange={(from, to) => {
+                  setSectionFromDate(from)
+                  setSectionToDate(to)
+                }}
+                dateFromFilter={sectionFromDate}
+                dateToFilter={sectionToDate}
+              />
+            )}
+          </SectionProductsView>
         </>
       )}
 
-      {showCreateSection && (
-        <div className="fixed inset-0 bg-black bg-opacity-30 flex items-center justify-center z-50">
-          <form onSubmit={handleCreateSection} className="bg-white p-6 rounded shadow w-80">
-            <h3 className="text-lg font-semibold mb-2">Create Section</h3>
-            {createSectionError && <div className="text-sm text-red-600 mb-2">{createSectionError}</div>}
-            <input className="w-full mb-2 p-2 border rounded" placeholder="Name" value={newSectionName} onChange={e => setNewSectionName(e.target.value)} required />
-            <input className="w-full mb-2 p-2 border rounded" placeholder="Slug (optional)" value={newSectionSlug} onChange={e => setNewSectionSlug(e.target.value)} />
-            <div className="flex gap-2 mt-2">
-              <button type="submit" className="px-3 py-1 bg-blue-600 text-white rounded" disabled={creatingSection}>{creatingSection ? 'Creating...' : 'Create'}</button>
-              <button type="button" className="px-3 py-1 bg-gray-300 rounded" onClick={() => { setShowCreateSection(false); setCreateSectionError(null); }}>Cancel</button>
-            </div>
-          </form>
-        </div>
-      )}
+      {/* Action Buttons */}
+      <div className="flex gap-2 justify-end">
+        {decodedCode.includes(':') && (
+          <button
+            onClick={() => setIncomingModalOpen(true)}
+            className="px-3 py-1 border rounded text-sm"
+          >
+            Incoming
+            {pendingTransfers && pendingTransfers.length > 0
+              ? ` (${pendingTransfers.length})`
+              : ''}
+          </button>
+        )}
+        <UpdateStatsButton code={decodedCode} onUpdate={() => refreshDepartment(decodedCode)} />
+      </div>
 
+      {/* Modals */}
+      <CreateSectionModal
+        isOpen={showCreateSection}
+        onClose={() => setShowCreateSection(false)}
+        onSubmit={handleCreateSection}
+      />
 
-      {/* Transfer audit moved to Inventory page */}
-
-      {/* Pending orders panel removed — details available via product Pending column */}
-      {/* Incoming transfers modal */}
-      {incomingModalOpen && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center">
-          <div className="absolute inset-0 bg-black/40" onClick={() => setIncomingModalOpen(false)} />
-          <div className="relative bg-white rounded-md w-full md:w-3/4 max-h-[80vh] overflow-auto p-4 z-50">
-            <div className="flex items-center justify-between mb-4">
-              <h3 className="text-lg font-semibold">Incoming Transfers</h3>
-              <button onClick={() => setIncomingModalOpen(false)} className="px-2 py-1 border rounded">Close</button>
-            </div>
-            {loadingTransfers ? <div className="text-sm">Loading...</div> : (
-              <div className="space-y-3">
-                {(pendingTransfers && pendingTransfers.length > 0) ? pendingTransfers.map((t: any) => (
-                  <div key={t.id} className="p-3 border rounded flex items-start justify-between">
-                    <div className="flex-1">
-                      <div className="font-medium">From: {resolveStoreName(t)}</div>
-                      <div className="text-xs text-muted-foreground">{new Date(t.createdAt).toLocaleString()}</div>
-                      <div className="text-sm mt-2">{t.items?.map((it: any) => <div key={it.id}>{resolveProductName(it)} x {it.quantity}</div>)}</div>
-                    </div>
-                    <div className="ml-4">
-                      <button onClick={() => markReceived(t.id)} className="px-3 py-1 bg-green-600 text-white rounded">Accept</button>
-                    </div>
-                  </div>
-                )) : <div className="text-sm text-muted-foreground">No incoming transfers.</div>}
-              </div>
-            )}
-          </div>
-        </div>
-      )}
+      <IncomingTransfersModal
+        isOpen={incomingModalOpen}
+        onClose={() => setIncomingModalOpen(false)}
+        transfers={pendingTransfers}
+        isLoading={loadingTransfers}
+        onAcceptTransfer={markReceived}
+        resolveStoreName={resolveStoreName}
+        resolveProductName={resolveProductName}
+      />
     </div>
-  )
-}
-
-function UpdateStatsButton({ code, refresh }: { code: string; refresh: () => Promise<void> | void }) {
-  const [busy, setBusy] = useState(false)
-
-  const run = async () => {
-    if (!code) return
-    setBusy(true)
-    try {
-      const res = await fetch(`/api/departments/${encodeURIComponent(code)}/update-stats`, { method: 'POST' })
-      
-      const j = await res.json()
-      if (!res.ok || !j?.success) {
-        alert(j?.error?.message || 'Update failed')
-        return
-      }
-      // Refresh local data
-      try { await refresh() } catch (e) { console.warn('refresh after update failed', e) }
-      alert('Department stats updated')
-    } catch (e: any) {
-      console.error('Update stats error', e)
-      alert(e?.message || 'Update failed')
-    } finally {
-      setBusy(false)
-    }
-  }
-
-  return (
-    <button onClick={run} className="px-3 py-1 border rounded text-sm" disabled={busy}>
-      {busy ? 'Updating…' : 'Update Stats'}
-    </button>
   )
 }
