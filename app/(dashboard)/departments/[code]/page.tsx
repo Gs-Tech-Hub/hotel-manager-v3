@@ -10,7 +10,6 @@ import StockSummaryCard from '../../../../components/departments/StockSummaryCar
 import OrderStatsCard from '../../../../components/departments/OrderStatsCard'
 import CreateSectionModal from '../../../../components/departments/CreateSectionModal'
 import IncomingTransfersModal from '../../../../components/departments/IncomingTransfersModal'
-import UpdateStatsButton from '../../../../components/departments/UpdateStatsButton'
 import ParentDepartmentView from '../../../../components/departments/ParentDepartmentView'
 import SectionProductsView from '../../../../components/departments/SectionProductsView'
 
@@ -255,7 +254,6 @@ export default function DepartmentDetail() {
               : ''}
           </button>
         )}
-        <UpdateStatsButton code={decodedCode} onUpdate={() => refreshDepartment(decodedCode)} />
       </div>
 
       {/* Modals */}

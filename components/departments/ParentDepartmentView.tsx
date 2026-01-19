@@ -22,10 +22,6 @@ export default function ParentDepartmentView({
     return <div className="text-sm text-muted-foreground">Loading sections...</div>
   }
 
-  if (!children || children.length === 0) {
-    return <div className="text-sm text-muted-foreground">No sections available</div>
-  }
-
   return (
     <div className="mt-6">
       <div className="flex items-center justify-between mb-4">
@@ -40,37 +36,41 @@ export default function ParentDepartmentView({
         )}
       </div>
 
-      <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-        {children.map((c: any) => (
-          <div
-            key={c.code}
-            className="border rounded p-4 bg-white hover:shadow-md transition-shadow cursor-pointer"
-            onClick={() => router.push(`/departments/${encodeURIComponent(c.code)}`)}
-          >
-            <div className="flex items-start justify-between">
-              <div className="flex-1">
-                <h3 className="font-semibold text-lg">{c.name}</h3>
-                {c.description && (
-                  <p className="text-sm text-muted-foreground mt-1">{c.description}</p>
-                )}
-                <div className="text-xs text-muted-foreground mt-2">
-                  Code: <span className="font-mono">{c.code}</span>
-                </div>
-              </div>
-              <div className="text-right ml-4">
-                <div className="text-sm">
-                  <div>
-                    <span className="font-medium">{c.totalOrders ?? 0}</span> orders
+      {!children || children.length === 0 ? (
+        <div className="text-sm text-muted-foreground">No sections available</div>
+      ) : (
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+          {children.map((c: any) => (
+            <div
+              key={c.code}
+              className="border rounded p-4 bg-white hover:shadow-md transition-shadow cursor-pointer"
+              onClick={() => router.push(`/departments/${encodeURIComponent(c.code)}`)}
+            >
+              <div className="flex items-start justify-between">
+                <div className="flex-1">
+                  <h3 className="font-semibold text-lg">{c.name}</h3>
+                  {c.description && (
+                    <p className="text-sm text-muted-foreground mt-1">{c.description}</p>
+                  )}
+                  <div className="text-xs text-muted-foreground mt-2">
+                    Code: <span className="font-mono">{c.code}</span>
                   </div>
-                  <div className="text-xs text-yellow-600 font-medium">
-                    {c.pendingOrders ?? 0} pending
+                </div>
+                <div className="text-right ml-4">
+                  <div className="text-sm">
+                    <div>
+                      <span className="font-medium">{c.totalOrders ?? 0}</span> orders
+                    </div>
+                    <div className="text-xs text-yellow-600 font-medium">
+                      {c.pendingOrders ?? 0} pending
+                    </div>
                   </div>
                 </div>
               </div>
             </div>
-          </div>
-        ))}
-      </div>
+          ))}
+        </div>
+      )}
     </div>
   )
 }
