@@ -45,7 +45,7 @@ export async function GET(request: NextRequest) {
     if (parentCode) {
       const parent = await (prisma as any).department.findUnique({ where: { code: parentCode } })
       if (!parent) {
-        return NextResponse.json(successResponse([]))
+        return NextResponse.json(successResponse({ data: [] }))
       }
       // Match by code prefix (sections), or by referenceType/referenceId linkage.
       departments = await (prisma as any).department.findMany({
@@ -165,7 +165,7 @@ export async function GET(request: NextRequest) {
       });
     }
 
-    const resp = NextResponse.json(successResponse(departmentsWithStats));
+    const resp = NextResponse.json(successResponse({ data: departmentsWithStats }));
     console.timeEnd('GET /api/departments')
     return resp
   } catch (error) {

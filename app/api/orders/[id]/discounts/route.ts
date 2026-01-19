@@ -135,15 +135,15 @@ export async function POST(
     );
 
     // Check if result is error response
-    if ('error' in result) {
+    if ('error' in result && typeof result.error === 'object' && result.error !== null && 'code' in result.error) {
       return NextResponse.json(
         result,
-        { status: getStatusCode(result.error.code) }
+        { status: getStatusCode((result.error as any).code) }
       );
     }
 
     return NextResponse.json(
-      successResponse(result, 'Discount applied successfully')
+      successResponse({data : result, message : 'Discount applied successfully'})
     );
   } catch (error) {
     console.error('POST /api/orders/[id]/discounts error:', error);

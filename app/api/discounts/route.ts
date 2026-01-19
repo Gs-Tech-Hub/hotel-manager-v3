@@ -9,7 +9,7 @@
 
 import { NextRequest, NextResponse } from 'next/server';
 import { prisma } from '@/lib/auth/prisma';
-import { extractUserContext, loadUserWithRoles, hasAnyRole } from '@/src/lib/user-context';
+import { extractUserContext, loadUserWithRoles, hasAnyRole } from '@/lib/user-context';
 import { successResponse, errorResponse, ErrorCodes, getStatusCode } from '@/lib/api-response';
 
 /**
@@ -122,7 +122,7 @@ export async function POST(request: NextRequest) {
     });
 
     return NextResponse.json(
-      successResponse(rule, 'Discount rule created successfully'),
+      successResponse({ data: rule }),
       { status: 201 }
     );
   } catch (error) {
@@ -212,13 +212,15 @@ export async function GET(request: NextRequest) {
 
     return NextResponse.json(
       successResponse({
-        rules: rulesWithMetadata,
-        pagination: {
-          page,
-          limit,
-          total,
-          totalPages,
-          hasMore,
+        data: {
+          rules: rulesWithMetadata,
+          pagination: {
+            page,
+            limit,
+            total,
+            totalPages,
+            hasMore,
+          },
         },
       })
     );
@@ -270,7 +272,7 @@ export async function DELETE(request: NextRequest) {
       data: { isActive: false },
     });
 
-    return NextResponse.json(successResponse(discount));
+    return NextResponse.json(successResponse({ data: discount }));
   } catch (error) {
     console.error('DELETE /api/discounts error:', error);
     return NextResponse.json(

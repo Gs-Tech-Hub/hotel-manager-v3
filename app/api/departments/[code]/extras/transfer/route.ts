@@ -1,8 +1,8 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { successResponse, errorResponse, ErrorCodes } from '@/lib/api-response';
-import { extractUserContext } from '@/src/lib/user-context';
+import { extractUserContext } from '@/lib/user-context';
 import { prisma } from '@/lib/auth/prisma';
-import { DepartmentExtrasService } from '@/src/services/department-extras.service';
+import { DepartmentExtrasService } from '@/services/department-extras.service';
 
 /**
  * POST: Transfer extras between sections within same department
@@ -63,8 +63,8 @@ export async function POST(
 
     return NextResponse.json(
       successResponse({
+        data: { extra: result },
         message: 'Extras transferred successfully',
-        extra: result,
       }),
       { status: 200 }
     );

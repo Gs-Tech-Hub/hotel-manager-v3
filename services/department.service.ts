@@ -9,10 +9,10 @@
  */
 
 import { BaseService } from './base.service';
-import { IDepartment } from '../types/entities';
+import { IDepartment } from '@/types/entities';
 import { inventoryItemService } from './inventory.service';
 import { prisma } from '@/lib/auth/prisma';
-import { UserContext, requireRole } from '@/lib/authorization';
+import { UserContext, requireRole } from '@/lib/auth/authorization';
 import { errorResponse, ErrorCodes } from '@/lib/api-response';
 import { validatePrice } from '@/lib/price';
 

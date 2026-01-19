@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { extractUserContext } from '@/src/lib/user-context';
+import { extractUserContext } from '@/lib/user-context';
 import { prisma } from '@/lib/auth/prisma';
 import { errorResponse, successResponse } from '@/lib/api-response';
 

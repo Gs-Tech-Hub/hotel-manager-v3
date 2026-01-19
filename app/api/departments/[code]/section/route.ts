@@ -1,9 +1,9 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { prisma } from '@/lib/auth/prisma'
-import { sectionService } from '@/src/services/section.service'
+import { sectionService } from '@/services/section.service'
 import { extractUserContext, loadUserWithRoles } from '@/lib/user-context'
 import { successResponse, errorResponse, ErrorCodes, getStatusCode } from '@/lib/api-response'
-import { buildDateFilter } from '@/src/lib/date-filter'
+import { buildDateFilter } from '@/lib/date-filter'
 
 /**
  * GET /api/departments/[code]/section
@@ -213,7 +213,7 @@ export async function GET(
       },
     }
 
-    return NextResponse.json(successResponse(response))
+    return NextResponse.json(successResponse({ data: response }))
   } catch (error) {
     console.error('GET /api/departments/[code]/section error:', error)
     return NextResponse.json(

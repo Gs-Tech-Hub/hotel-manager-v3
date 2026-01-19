@@ -4,7 +4,7 @@ import Link from 'next/link'
 import { useEffect, useState } from 'react'
 import { useAuth } from '@/components/auth-context'
 import { mapDeptCodeToCategory } from '@/lib/utils'
-import { getDisplayUnit, formatQuantityWithUnit } from '@/src/lib/unit-mapper'
+import { getDisplayUnit, formatQuantityWithUnit } from '@/lib/unit-mapper'
 // avoid next/navigation useSearchParams here to prevent prerender/suspense issues
 import TransferAuditPanel from '@/components/departments/TransferAuditPanel'
 import Price from '@/components/ui/Price'

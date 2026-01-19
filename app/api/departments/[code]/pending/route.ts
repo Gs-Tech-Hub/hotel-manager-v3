@@ -113,14 +113,16 @@ export async function GET(
 
     return NextResponse.json(
       successResponse({
-        department: {
-          code: department.code,
-          name: department.name,
+        data: {
+          department: {
+            code: department.code,
+            name: department.name,
+          },
+          summary,
+          items: displayItems,
+          pending: displayItems.filter((i: any) => i.status === 'pending'),
+          processing: displayItems.filter((i: any) => i.status === 'processing'),
         },
-        summary,
-        items: displayItems,
-        pending: displayItems.filter((i: any) => i.status === 'pending'),
-        processing: displayItems.filter((i: any) => i.status === 'processing'),
       })
     );
   } catch (error) {

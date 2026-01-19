@@ -53,14 +53,14 @@ export async function POST(
     const result = await orderService.refundOrder(orderId, reason || 'Refunded via API', userWithRoles);
 
     // Check if result is error response
-    if ('error' in result) {
+    if ('error' in result && result.error && typeof result.error === 'object' && 'code' in result.error) {
       return NextResponse.json(
         result,
-        { status: getStatusCode(result.error.code) }
+        { status: getStatusCode((result.error as { code: string }).code) }
       );
     }
 
-    const payload = successResponse(result, 'Order refunded successfully');
+    const payload = successResponse({data : result, message : 'Order refunded successfully'});
     try {
       console.log('POST /api/orders/[id]/refund payload:', JSON.stringify(payload));
     } catch (logErr) {

@@ -28,7 +28,7 @@ export async function POST(request: NextRequest, { params }: { params: Promise<{
 
     await updateDepartmentStats(!noProducts, code)
 
-    return NextResponse.json(successResponse({ department: code, updated: true }))
+    return NextResponse.json(successResponse({ data: { department: code, updated: true } }))
   } catch (err: any) {
     console.error('POST /api/departments/[code]/update-stats error:', err)
     return NextResponse.json(errorResponse(ErrorCodes.INTERNAL_ERROR, err?.message || 'Failed to update department stats'), { status: getStatusCode(ErrorCodes.INTERNAL_ERROR) })

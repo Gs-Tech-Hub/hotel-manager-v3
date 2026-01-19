@@ -179,7 +179,8 @@ export async function POST(request: NextRequest) {
     // Return settlement response
     return NextResponse.json(
       successResponse(
-        {
+       { 
+        data: {
           orderId,
           orderNumber: order.orderNumber,
           paymentId: payment.id,
@@ -196,7 +197,9 @@ export async function POST(request: NextRequest) {
           orderTotal: order.total,
           timestamp: new Date().toISOString(),
         },
+        message:
         newAmountDue <= 0 ? 'Order fully paid - moving to processing' : 'Partial payment recorded'
+      }
       ),
       { status: 201 }
     );

@@ -65,9 +65,9 @@ export function apiHandler(
 export function sendSuccess<T>(
   data: T,
   message?: string,
-  status: number = StatusCodes.OK
+  status: number = StatusCodes.SUCCESS
 ) {
-  return NextResponse.json(successResponse(data, message), { status });
+  return NextResponse.json(successResponse({ data, message }), { status });
 }
 
 /**

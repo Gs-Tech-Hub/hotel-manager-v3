@@ -4,8 +4,8 @@
  */
 
 import { prisma } from '@/lib/auth/prisma';
-import type { PaginatedResponse, QueryParams } from '../types/api';
-import { errorResponse, ErrorCodes } from '../lib/api-response';
+import type { PaginatedResponse, QueryParams } from '@/types/api';
+import { errorResponse, ErrorCodes } from '@/lib/api-response';
 
 export class BaseService<T> {
   protected modelName: string;

@@ -144,7 +144,7 @@ export async function GET(request: NextRequest, { params }: { params: Promise<{ 
       fulfilledOrders,
     }
 
-    return NextResponse.json(successResponse(payload))
+    return NextResponse.json(successResponse({ data: payload }))
   } catch (error) {
     console.error('GET /api/departments/[code] error:', error)
     return NextResponse.json(errorResponse(ErrorCodes.INTERNAL_ERROR, 'Failed to fetch department'), { status: getStatusCode(ErrorCodes.INTERNAL_ERROR) })

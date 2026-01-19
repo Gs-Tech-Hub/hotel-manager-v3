@@ -8,7 +8,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { prisma } from '@/lib/auth/prisma';
 import { extractUserContext, loadUserWithRoles, hasAnyRole } from '@/lib/user-context';
 import { successResponse, errorResponse, ErrorCodes, getStatusCode } from '@/lib/api-response';
-import { extrasService } from '@/src/services/extras.service';
+import { extrasService } from '@/services/extras.service';
 
 /**
  * GET /api/extras
@@ -26,7 +26,7 @@ export async function GET(request: NextRequest) {
     const extras = await extrasService.getAllExtras(includeInactive);
 
     return NextResponse.json(
-      successResponse({ extras }),
+      successResponse({ data: { extras } }),
       { status: 200 }
     );
   } catch (error) {
@@ -92,7 +92,7 @@ export async function POST(request: NextRequest) {
     });
 
     return NextResponse.json(
-      successResponse({ extra, message: 'Extra created. Use /api/departments/[code]/extras to allocate to departments.' }),
+      successResponse({ data: { extra }, message: 'Extra created. Use /api/departments/[code]/extras to allocate to departments.' }),
       { status: 201 }
     );
   } catch (error) {

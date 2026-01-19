@@ -52,7 +52,7 @@ export async function GET(request: NextRequest, { params }: { params: Promise<{ 
       select: { id: true, name: true, slug: true, metadata: true, isActive: true },
     })
 
-    const resp = NextResponse.json(successResponse({ departments: children, sections }), { status: 200 })
+    const resp = NextResponse.json(successResponse({ data: { departments: children, sections } }), { status: 200 })
     console.timeEnd('GET /api/departments/[code]/children')
     return resp
   } catch (error) {

@@ -4,8 +4,8 @@
  */
 
 import { prisma } from '@/lib/auth/prisma';
-import { SettlementService } from '@/src/services/settlement.service';
-import { OrderService } from '@/src/services/order.service';
+import { SettlementService } from '@/services/settlement.service';
+import { OrderService } from '@/services/order.service';
 
 async function main() {
   console.log('\n===== PHASE 3: DEFERRED ORDERS VERIFICATION =====\n');

@@ -9,7 +9,7 @@
  */
 
 import { BaseService } from './base.service';
-import { IInventoryItem, IInventoryType, IInventoryMovement } from '../types/entities';
+import { IInventoryItem, IInventoryType, IInventoryMovement } from '@/types/entities';
 import { prisma } from '@/lib/auth/prisma';
 import { normalizeError } from '@/lib/errors';
 import { normalizeToCents, prismaDecimalToCents, validatePrice, centsToDollars } from '@/lib/price';

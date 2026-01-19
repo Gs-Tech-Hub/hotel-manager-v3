@@ -37,9 +37,10 @@ export async function GET(req: NextRequest) {
     }
 
     if ('error' in response) {
+      const err = response as any;
       return sendError(
-        response.error.code,
-        response.error.message
+        err.error?.code || ErrorCodes.INTERNAL_ERROR,
+        err.error?.message || 'Failed to fetch rooms'
       );
     }
 

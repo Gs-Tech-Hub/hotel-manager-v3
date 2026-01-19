@@ -1,9 +1,9 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { prisma } from '@/lib/auth/prisma';
-import { extractUserContext, loadUserWithRoles, hasAnyRole } from '@/src/lib/user-context';
+import { extractUserContext, loadUserWithRoles, hasAnyRole } from '@/lib/user-context';
 import { successResponse, errorResponse, ErrorCodes, getStatusCode } from '@/lib/api-response';
-import { calculateDiscount } from '@/src/lib/price';
-import { getMinorUnit } from '@/src/lib/currency';
+import { calculateDiscount } from '@/lib/price';
+import { getMinorUnit } from '@/lib/currency';
 
 interface Params {
   id: string;
@@ -268,6 +268,7 @@ export async function POST(
 
     return NextResponse.json(
       successResponse({
+        data: {
         message: 'Discount applied successfully',
         order: updatedOrder,
         appliedDiscount: {
@@ -281,7 +282,7 @@ export async function POST(
             currency: rule.currency || 'USD',
           },
         },
-      })
+      }})
     );
   } catch (error) {
     console.error(`POST /api/orders/[id]/apply-discount error:`, error);
@@ -342,6 +343,7 @@ export async function GET(
 
     return NextResponse.json(
       successResponse({
+        data: {
         orderId,
         discounts: discounts.map((d: any) => ({
           id: d.id,
@@ -359,7 +361,7 @@ export async function GET(
             : null,
         })),
         totalDiscountAmount: discounts.reduce((sum: any, d: any) => sum + d.discountAmount, 0),
-      })
+      }})
     );
   } catch (error) {
     console.error(`GET /api/orders/[id]/discounts error:`, error);

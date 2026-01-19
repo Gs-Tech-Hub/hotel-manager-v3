@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { extractUserContext } from '@/src/lib/user-context';
+import { extractUserContext } from '@/lib/user-context';
 import { prisma } from '@/lib/auth/prisma';
 import { hashPassword } from '@/lib/auth/credentials';
 import { errorResponse, successResponse } from '@/lib/api-response';
@@ -90,9 +90,10 @@ export async function GET(req: NextRequest) {
 
     return NextResponse.json(
       successResponse({
+        data: {
         employees: employeesWithRoles,
         pagination: { page, limit, total, pages: Math.ceil(total / limit) },
-      }),
+      }}),
       { status: 200 }
     );
   } catch (error) {
@@ -203,12 +204,13 @@ export async function POST(req: NextRequest) {
 
     return NextResponse.json(
       successResponse({
+        data:   {
         id: employee.id,
         email: employee.email,
         username: employee.username,
         firstname: employee.firstname,
         lastname: employee.lastname,
-      }),
+      }}),
       { status: 201 }
     );
   } catch (error: any) {

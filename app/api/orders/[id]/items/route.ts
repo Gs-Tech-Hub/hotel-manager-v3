@@ -129,7 +129,7 @@ export async function POST(
     });
 
     return NextResponse.json(
-      successResponse(createdLine, 'Line item added successfully')
+      successResponse({data : createdLine, message : 'Line item added successfully'})
     );
   } catch (error) {
     console.error('POST /api/orders/[id]/items error:', error);

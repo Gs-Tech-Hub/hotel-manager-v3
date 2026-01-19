@@ -182,7 +182,7 @@ export async function PUT(
       updatedOrder = await (prisma as any).orderHeader.update({ where: { id: orderId }, data: updateData, include: { customer: true, lines: true, departments: true, discounts: true, payments: true, fulfillments: true } });
     }
 
-    const payload = successResponse(updatedOrder, 'Order updated successfully');
+    const payload = successResponse({data : updatedOrder, message : 'Order updated successfully'});
     try {
       console.log('PUT /api/orders/[id] payload:', JSON.stringify(payload));
     } catch (logErr) {
@@ -247,11 +247,11 @@ export async function DELETE(
     if ('error' in result) {
       return NextResponse.json(
         result,
-        { status: getStatusCode(result.error.code) }
+        { status: getStatusCode((result as any).error.code) }
       );
     }
 
-    const payload = successResponse(result, 'Order cancelled successfully');
+    const payload = successResponse({data : result, message : 'Order cancelled successfully'});
     try {
       console.log('DELETE /api/orders/[id] payload:', JSON.stringify(payload));
     } catch (logErr) {

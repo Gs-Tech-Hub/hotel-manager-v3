@@ -10,7 +10,7 @@ import { prisma } from '@/lib/auth/prisma';
 import { extractUserContext, loadUserWithRoles, hasAnyRole } from '@/lib/user-context';
 import { checkPermission, type PermissionContext } from '@/lib/auth/rbac';
 import { successResponse, errorResponse, ErrorCodes, getStatusCode } from '@/lib/api-response';
-import { buildDateFilter } from '@/src/lib/date-filter';
+import { buildDateFilter } from '@/lib/date-filter';
 import { OrderService } from '@/services/order.service';
 
 /**
@@ -173,7 +173,7 @@ export async function POST(request: NextRequest) {
 
     // Return created order
     return NextResponse.json(
-      successResponse(order, 'Order created successfully'),
+      successResponse({data : order, message : 'Order created successfully'}),
       { status: 201 }
     );
   } catch (error) {
@@ -345,6 +345,7 @@ export async function GET(request: NextRequest) {
 
     return NextResponse.json(
       successResponse({
+        data : {
         items: filteredOrders,
         meta: {
           page,
@@ -353,7 +354,7 @@ export async function GET(request: NextRequest) {
           totalPages: Math.ceil(filteredOrders.length / limit),
           hasMore: false,
         },
-      })
+      }})
     );
   } catch (error) {
     console.error('GET /api/orders error:', error);

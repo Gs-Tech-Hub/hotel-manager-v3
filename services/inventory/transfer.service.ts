@@ -3,7 +3,7 @@
 // from '@/services/inventory/transfer.service' and keep transfer logic
 // colocated with inventory functionality.
 
-import { transferService as coreTransferService } from '@/src/services/transfer.service'
+import { transferService as coreTransferService } from '@/services/transfer.service'
 
 export const transferService = coreTransferService
 export default transferService

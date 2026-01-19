@@ -1,4 +1,4 @@
-import { departmentService } from '../src/services/department.service'
+import { departmentService } from '@/services/department.service'
 
 async function run() {
   try {

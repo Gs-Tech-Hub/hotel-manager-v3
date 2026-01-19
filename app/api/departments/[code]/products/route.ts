@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server'
-import { sectionService } from '@/src/services/section.service'
+import { sectionService } from '@/services/section.service'
 import { successResponse, errorResponse, ErrorCodes, getStatusCode } from '@/lib/api-response'
 
 /**
@@ -37,7 +37,7 @@ export async function GET(request: NextRequest, { params }: { params: Promise<{ 
       fromDate,
       toDate,
     })
-    return NextResponse.json(successResponse(result))
+    return NextResponse.json(successResponse({ data: result }))
   } catch (err: any) {
     console.error('GET /api/departments/[code]/products error', err)
     return NextResponse.json(errorResponse(ErrorCodes.INTERNAL_ERROR, 'Failed to fetch products'), { status: getStatusCode(ErrorCodes.INTERNAL_ERROR) })

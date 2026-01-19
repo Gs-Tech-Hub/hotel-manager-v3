@@ -1,8 +1,8 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { withAuth } from '@/lib/auth/middleware';
 import { hasRole, checkPermission } from '@/lib/auth/rbac';
-import { extractUserContext, loadUserWithRoles } from '@/src/lib/user-context';
-import { listSections, createSection, deleteSection } from '@/src/services/admin/departmentSections';
+import { extractUserContext, loadUserWithRoles } from '@/lib/user-context';
+import { listSections, createSection, deleteSection } from '@/services/admin/departmentSections';
 
 /**
  * GET /api/departments/sections

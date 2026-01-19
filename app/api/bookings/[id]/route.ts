@@ -10,9 +10,9 @@
  */
 
 import { NextRequest } from 'next/server';
-import { bookingService } from '../../../../src/services/booking.service';
-import { sendSuccess, sendError } from '../../../../src/lib/api-handler';
-import { ErrorCodes } from '../../../../src/lib/api-response';
+import { bookingService } from '@/services/booking.service';
+import { sendSuccess, sendError } from '@/lib/api-handler';
+import { ErrorCodes } from '@/lib/api-response';
 
 export async function GET(
   req: NextRequest,

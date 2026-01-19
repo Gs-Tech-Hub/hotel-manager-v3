@@ -8,7 +8,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { extractUserContext, loadUserWithRoles, hasAnyRole } from '@/lib/user-context';
 import { successResponse, errorResponse, ErrorCodes, getStatusCode } from '@/lib/api-response';
-import { extrasService } from '@/src/services/extras.service';
+import { extrasService } from '@/services/extras.service';
 
 /**
  * GET /api/extras/[id]
@@ -27,7 +27,7 @@ export async function GET(
     }
 
     return NextResponse.json(
-      successResponse({ extra }),
+      successResponse({ data: { extra } }),
       { status: 200 }
     );
   } catch (error) {
@@ -74,7 +74,7 @@ export async function PUT(
     }
 
     return NextResponse.json(
-      successResponse({ extra }),
+      successResponse({ data: { extra } }),
       { status: 200 }
     );
   } catch (error) {
@@ -130,7 +130,7 @@ export async function DELETE(
     }
 
     return NextResponse.json(
-      successResponse({ extra }),
+      successResponse({ data: { extra } }),
       { status: 200 }
     );
   } catch (error) {

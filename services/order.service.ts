@@ -12,7 +12,7 @@
  */
 
 import { BaseService } from './base.service';
-import type { IOrderHeader } from '../types/entities';
+import type { IOrderHeader } from '@/types/entities';
 import { prisma } from '@/lib/auth/prisma';
 import { normalizeError } from '@/lib/errors';
 import { 
@@ -23,7 +23,7 @@ import {
   validatePrice,
   sumPrices 
 } from '@/lib/price';
-import { UserContext, requireRoleOrOwner, requireRole } from '@/lib/authorization';
+import { UserContext, requireRoleOrOwner, requireRole } from '@/lib/auth/authorization';
 import { departmentService } from './department.service';
 import { StockService } from './stock.service';
 import { errorResponse, ErrorCodes } from '@/lib/api-response';
@@ -829,7 +829,7 @@ export class OrderService extends BaseService<IOrderHeader> {
       }
 
       // Check authorization (customer views own, staff views all)
-      const forbidden = requireRoleOrOwner(ctx, order.customerId, ['admin', 'manager', 'staff']);
+      const forbidden = requireRoleOrOwner(ctx, ['admin', 'manager', 'staff'], order.customerId);
       if (forbidden) return forbidden;
 
       return order;

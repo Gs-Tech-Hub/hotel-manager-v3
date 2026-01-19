@@ -1,7 +1,7 @@
 import { prisma } from '@/lib/auth/prisma'
 import { prismaDecimalToCents } from '@/lib/price'
 import { stockService } from './stock.service'
-import { buildDateFilter } from '@/src/lib/date-filter'
+import { buildDateFilter } from '@/lib/date-filter'
 
 type ProductParams = {
   departmentCode: string

@@ -7,7 +7,7 @@
 
 import { NextRequest, NextResponse } from 'next/server';
 import { prisma } from '@/lib/auth/prisma';
-import { extractUserContext } from '@/src/lib/user-context';
+import { extractUserContext } from '@/lib/user-context';
 import { successResponse, errorResponse, ErrorCodes, getStatusCode } from '@/lib/api-response';
 
 /**
@@ -140,6 +140,7 @@ export async function GET(request: NextRequest) {
     // Return valid discount
     return NextResponse.json(
       successResponse({
+        data: {
         id: rule.id,
         code: rule.code,
         name: rule.name,
@@ -149,7 +150,8 @@ export async function GET(request: NextRequest) {
         applicableDepts: JSON.parse(rule.applicableDepts || '[]'),
         applicableSections: JSON.parse(rule.applicableSections || '[]'),
         minorUnit: 100, // USD always uses cents
-      })
+      }
+    })
     );
   } catch (error) {
     console.error('GET /api/discounts/validate error:', error);
@@ -231,9 +233,10 @@ export async function POST(request: NextRequest) {
     if (!rule) {
       return NextResponse.json(
         successResponse({
+          data: {
           valid: false,
           error: 'Discount code not found',
-        })
+        }})
       );
     }
 
@@ -241,9 +244,10 @@ export async function POST(request: NextRequest) {
     if (!rule.isActive) {
       return NextResponse.json(
         successResponse({
+          data: {
           valid: false,
           error: 'Discount code is inactive',
-        })
+        }})
       );
     }
 
@@ -252,18 +256,20 @@ export async function POST(request: NextRequest) {
     if (rule.startDate && now < rule.startDate) {
       return NextResponse.json(
         successResponse({
+          data: {
           valid: false,
           error: 'Discount code is not yet active',
-        })
+        }})
       );
     }
 
     if (rule.endDate && now > rule.endDate) {
       return NextResponse.json(
         successResponse({
+          data: {
           valid: false,
           error: 'Discount code has expired',
-        })
+        }})
       );
     }
 
@@ -271,9 +277,10 @@ export async function POST(request: NextRequest) {
     if (rule.minOrderAmount && orderTotal < rule.minOrderAmount) {
       return NextResponse.json(
         successResponse({
+          data: {
           valid: false,
           error: `Minimum order amount of ${(rule.minOrderAmount / 100).toFixed(2)} required`,
-        })
+        }})
       );
     }
 
@@ -283,9 +290,10 @@ export async function POST(request: NextRequest) {
       if (applicableDepts.length > 0 && !applicableDepts.includes(departmentCode)) {
         return NextResponse.json(
           successResponse({
+            data: {
             valid: false,
             error: 'Discount code is not applicable to this department',
-          })
+          }})
         );
       }
     }
@@ -299,9 +307,11 @@ export async function POST(request: NextRequest) {
       if (usageCount >= rule.maxTotalUsage) {
         return NextResponse.json(
           successResponse({
+            data: { 
             valid: false,
             error: 'Discount code usage limit exceeded',
-          })
+          }
+        })
         );
       }
     }
@@ -320,9 +330,11 @@ export async function POST(request: NextRequest) {
       if (customerUsageCount >= rule.maxUsagePerCustomer) {
         return NextResponse.json(
           successResponse({
+            data: { 
             valid: false,
             error: 'You have reached the usage limit for this discount code',
-          })
+          }
+        })
         );
       }
     }
@@ -343,6 +355,7 @@ export async function POST(request: NextRequest) {
     // Return valid discount
     return NextResponse.json(
       successResponse({
+        data: {
         valid: true,
         rule: {
           id: rule.id,
@@ -354,7 +367,7 @@ export async function POST(request: NextRequest) {
           applicableDepts: JSON.parse(rule.applicableDepts || '[]'),
         },
         discountAmount,
-      })
+      }})
     );
   } catch (error) {
     console.error('POST /api/discounts/validate error:', error);

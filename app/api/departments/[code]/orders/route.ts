@@ -9,7 +9,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { prisma } from '@/lib/auth/prisma';
 import { extractUserContext, loadUserWithRoles, hasAnyRole } from '@/lib/user-context';
 import { successResponse, errorResponse, ErrorCodes, getStatusCode } from '@/lib/api-response';
-import { buildDateFilter } from '@/src/lib/date-filter';
+import { buildDateFilter } from '@/lib/date-filter';
 
 /**
  * GET /api/departments/[code]/orders
@@ -214,17 +214,19 @@ export async function GET(
 
     return NextResponse.json(
       successResponse({
-        department: {
-          code: department.code,
-          name: department.name,
-        },
-        orders,
-        pagination: {
-          page,
-          limit,
-          total,
-          totalPages,
-          hasMore,
+        data: {
+          department: {
+            code: department.code,
+            name: department.name,
+          },
+          orders,
+          pagination: {
+            page,
+            limit,
+            total,
+            totalPages,
+            hasMore,
+          },
         },
       })
     );

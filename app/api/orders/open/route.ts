@@ -142,13 +142,16 @@ export async function GET(request: NextRequest) {
 
     return NextResponse.json(
       successResponse(
-        {
+       { 
+        data : {
           orders: formattedOrders,
           totalCount,
           limit,
           offset,
         },
+        message :
         'Open orders retrieved successfully'
+      }
       )
     );
   } catch (error) {

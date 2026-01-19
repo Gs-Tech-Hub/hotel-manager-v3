@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { extractUserContext } from '@/src/lib/user-context';
+import { extractUserContext } from '@/lib/user-context';
 import { prisma } from '@/lib/auth/prisma';
 import { errorResponse, successResponse } from '@/lib/api-response';
 
@@ -56,6 +56,7 @@ export async function GET(
 
     return NextResponse.json(
       successResponse({
+        data:  {
         id: employee.id,
         email: employee.email,
         username: employee.username,
@@ -79,7 +80,7 @@ export async function GET(
         },
         createdAt: employee.createdAt,
         updatedAt: employee.updatedAt,
-      }),
+      }}),
       { status: 200 }
     );
   } catch (error) {
@@ -184,12 +185,13 @@ export async function PUT(
 
     return NextResponse.json(
       successResponse({
+        data:   {
         id: updated.id,
         email: updated.email,
         username: updated.username,
         firstname: updated.firstname,
         lastname: updated.lastname,
-      }),
+      }}),
       { status: 200 }
     );
   } catch (error: any) {

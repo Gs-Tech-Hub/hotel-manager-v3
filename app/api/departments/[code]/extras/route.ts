@@ -1,8 +1,8 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { successResponse, errorResponse, ErrorCodes } from '@/lib/api-response';
-import { extractUserContext } from '@/src/lib/user-context';
+import { extractUserContext } from '@/lib/user-context';
 import { prisma } from '@/lib/auth/prisma';
-import { DepartmentExtrasService } from '@/src/services/department-extras.service';
+import { DepartmentExtrasService } from '@/services/department-extras.service';
 
 /**
  * GET: Fetch department-level extras (optionally filtered by section)
@@ -43,7 +43,7 @@ export async function GET(
       sectionId || undefined
     );
 
-    return NextResponse.json(successResponse({ extras }), { status: 200 });
+    return NextResponse.json(successResponse({ data: { extras } }), { status: 200 });
   } catch (error) {
     console.error('Error fetching department extras:', error);
     return NextResponse.json(
@@ -106,8 +106,8 @@ export async function POST(
 
     return NextResponse.json(
       successResponse({
+        data: { extra: result },
         message: 'Extra allocated successfully',
-        extra: result,
       }),
       { status: 201 }
     );

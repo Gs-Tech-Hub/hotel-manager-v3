@@ -4,7 +4,7 @@
  */
 
 import { BaseService } from './base.service';
-import { IEmployeeOrder, IEmployeeRecord, IEmployeeSummary } from '../types/entities';
+import { IEmployeeOrder, IEmployeeRecord, IEmployeeSummary } from '@/types/entities';
 import { prisma } from '@/lib/auth/prisma';
 
 export class EmployeeOrderService extends BaseService<IEmployeeOrder> {

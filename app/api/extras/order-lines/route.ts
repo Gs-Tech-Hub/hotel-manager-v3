@@ -6,7 +6,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { extractUserContext, loadUserWithRoles, hasAnyRole } from '@/lib/user-context';
 import { successResponse, errorResponse, ErrorCodes, getStatusCode } from '@/lib/api-response';
-import { extrasService } from '@/src/services/extras.service';
+import { extrasService } from '@/services/extras.service';
 
 /**
  * POST /api/extras/order-lines
@@ -78,7 +78,7 @@ export async function POST(request: NextRequest) {
     }
 
     return NextResponse.json(
-      successResponse({ orderExtras }),
+      successResponse({ data: { orderExtras } }),
       { status: 201 }
     );
   } catch (error) {

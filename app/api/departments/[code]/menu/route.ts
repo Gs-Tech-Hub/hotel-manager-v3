@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { departmentService } from '@/services/department.service'
-import { getStatusCode } from '@/src/lib/api-response'
+import { getStatusCode } from '@/lib/api-response'
 
 export async function GET(
   req: NextRequest,

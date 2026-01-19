@@ -4,7 +4,7 @@
  */
 
 import { BaseService } from './base.service';
-import { IPayment } from '../types/entities';
+import { IPayment } from '@/types/entities';
 import { prisma } from '@/lib/auth/prisma';
 
 export class PaymentService extends BaseService<IPayment> {

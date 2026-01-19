@@ -41,7 +41,11 @@ export async function GET(request: NextRequest) {
     });
 
     return NextResponse.json(
-      successResponse(paymentTypes),
+      successResponse({
+        data:{
+          paymentTypes
+        }
+      }),
       { status: 200 }
     );
   } catch (error) {

@@ -128,7 +128,7 @@ async function testTransferFix() {
     console.log('\n→ Approving transfer through TransferService...');
     
     // Import and use the actual TransferService
-    const { TransferService } = await import('../src/services/transfer.service');
+    const { TransferService } = await import('@/services/transfer.service');
     const transferService = new TransferService();
     
     const approveResult = await transferService.approveTransfer(transfer.id);

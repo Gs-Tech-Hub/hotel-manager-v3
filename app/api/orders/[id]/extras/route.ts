@@ -6,7 +6,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { extractUserContext, loadUserWithRoles, hasAnyRole } from '@/lib/user-context';
 import { successResponse, errorResponse, ErrorCodes, getStatusCode } from '@/lib/api-response';
-import { extrasService } from '@/src/services/extras.service';
+import { extrasService } from '@/services/extras.service';
 
 /**
  * GET /api/orders/[id]/extras
@@ -38,7 +38,7 @@ export async function GET(
     const extras = await extrasService.getOrderExtras(orderHeaderId);
 
     return NextResponse.json(
-      successResponse({ extras }),
+      successResponse({ data: { extras } }),
       { status: 200 }
     );
   } catch (error) {

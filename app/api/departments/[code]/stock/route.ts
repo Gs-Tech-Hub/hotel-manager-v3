@@ -57,7 +57,7 @@ export async function GET(request: NextRequest, { params }: { params: Promise<{ 
       }
 
       const summary = { low, high, empty, totalProducts: inventories.length }
-      return NextResponse.json(successResponse(summary))
+      return NextResponse.json(successResponse({ data: summary }))
     }
 
     // Otherwise process as parent department
@@ -130,7 +130,7 @@ export async function GET(request: NextRequest, { params }: { params: Promise<{ 
       summary = { low, high, empty, totalProducts: total }
     }
 
-    return NextResponse.json(successResponse(summary))
+    return NextResponse.json(successResponse({ data: summary }))
   } catch (err) {
     console.error('GET /api/departments/[code]/stock error', err)
     return NextResponse.json(errorResponse(ErrorCodes.INTERNAL_ERROR, 'Failed to fetch stock summary'), { status: getStatusCode(ErrorCodes.INTERNAL_ERROR) })

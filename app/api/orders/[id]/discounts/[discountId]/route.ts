@@ -94,7 +94,7 @@ export async function DELETE(
     });
 
     return NextResponse.json(
-      successResponse(updatedOrder, 'Discount removed successfully')
+      successResponse({ data: updatedOrder, message: 'Discount removed successfully' })
     );
   } catch (error) {
     console.error('DELETE /api/orders/[id]/discounts/[discountId] error:', error);

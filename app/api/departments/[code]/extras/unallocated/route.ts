@@ -1,8 +1,8 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { successResponse, errorResponse, ErrorCodes } from '@/lib/api-response';
-import { extractUserContext } from '@/src/lib/user-context';
+import { extractUserContext } from '@/lib/user-context';
 import { prisma } from '@/lib/auth/prisma';
-import { DepartmentExtrasService } from '@/src/services/department-extras.service';
+import { DepartmentExtrasService } from '@/services/department-extras.service';
 
 /**
  * GET: Get extras not yet allocated to this department
@@ -38,7 +38,7 @@ export async function GET(
     // Get unallocated extras
     const extras = await DepartmentExtrasService.getUnallocatedExtras(dept.id);
 
-    return NextResponse.json(successResponse({ extras }), { status: 200 });
+    return NextResponse.json(successResponse({ data: { extras } }), { status: 200 });
   } catch (error) {
     console.error('Error fetching unallocated extras:', error);
     return NextResponse.json(

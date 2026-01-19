@@ -33,7 +33,7 @@ export async function GET(
         )
       }
 
-      return NextResponse.json(successResponse(result.data, 'Section inventory audit retrieved'))
+      return NextResponse.json(successResponse({ data: result.data, message: 'Section inventory audit retrieved' }))
     }
 
     if (op === 'summary') {
@@ -47,7 +47,7 @@ export async function GET(
         )
       }
 
-      return NextResponse.json(successResponse(result.data, 'Section stock summary retrieved'))
+      return NextResponse.json(successResponse({ data: result.data, message: 'Section stock summary retrieved' }))
     }
 
     // Default: get full inventory
@@ -118,7 +118,7 @@ export async function POST(
       )
     }
 
-    return NextResponse.json(successResponse(result.data, result.message ?? 'Section inventory adjusted'))
+    return NextResponse.json(successResponse({ data: result.data, message: result.message ?? 'Section inventory adjusted' }))
   } catch (error) {
     console.error('POST /api/departments/[code]/section/inventory error:', error)
     return NextResponse.json(

@@ -3,7 +3,7 @@
 import { useEffect, useState } from 'react'
 import { useRouter } from 'next/navigation'
 import Price from '@/components/ui/Price'
-import { getDisplayUnit, formatQuantityWithUnit } from '@/src/lib/unit-mapper'
+import { getDisplayUnit, formatQuantityWithUnit } from '@/lib/unit-mapper'
 
 type Movement = {
   id: string

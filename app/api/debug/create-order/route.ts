@@ -22,7 +22,7 @@ export async function GET(_req: NextRequest) {
       return NextResponse.json(result, { status: getStatusCode(result.error.code) })
     }
 
-    return NextResponse.json(successResponse(result, 'Debug order created'), { status: 201 })
+    return NextResponse.json(successResponse({ data: result, message: 'Debug order created' }), { status: 201 })
   } catch (err) {
     try { const logger = await import('@/lib/logger'); logger.error(err, { route: 'debug.create-order' }) } catch {}
     return NextResponse.json(errorResponse(ErrorCodes.INTERNAL_ERROR, 'Debug route failed'), { status: getStatusCode(ErrorCodes.INTERNAL_ERROR) })

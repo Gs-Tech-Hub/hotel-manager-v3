@@ -155,7 +155,7 @@ export async function GET(request: NextRequest, { params }: { params: Promise<{ 
       return { ...t, fromDepartmentName: fromDept?.name || null, toDepartmentName, items: itemsWithNames }
     })
 
-    return NextResponse.json(successResponse({ items: enriched, total, page, pageSize }))
+    return NextResponse.json(successResponse({ data: { items: enriched, total, page, pageSize } }))
   } catch (err: any) {
     console.error('GET /api/departments/[code]/transfer/list error', err)
     return NextResponse.json(errorResponse(ErrorCodes.INTERNAL_ERROR, 'Failed to fetch transfers'), { status: getStatusCode(ErrorCodes.INTERNAL_ERROR) })

@@ -130,7 +130,7 @@ export async function POST(
     }
 
     return NextResponse.json(
-      successResponse(result, 'Payment recorded successfully'),
+      successResponse({ data : result, message : 'Payment recorded successfully'}),
       { status: 201 }
     );
   } catch (error) {
@@ -202,6 +202,7 @@ export async function GET(
 
     return NextResponse.json(
       successResponse({
+        data: {
         payments,
         summary: {
           orderTotal: order.total,
@@ -209,7 +210,7 @@ export async function GET(
           remaining,
           paymentStatus: remaining === 0 ? 'paid' : remaining === order.total ? 'unpaid' : 'partial',
         },
-      })
+      }})
     );
   } catch (error) {
     console.error('GET /api/orders/[id]/payments error:', error);

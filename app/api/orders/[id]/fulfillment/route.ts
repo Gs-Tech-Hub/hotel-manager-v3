@@ -72,6 +72,7 @@ export async function GET(
 
     return NextResponse.json(
       successResponse({
+        data: {
         order,
         fulfillmentSummary: {
           totalLines,
@@ -80,7 +81,7 @@ export async function GET(
           pendingLines,
           fulfillmentPercentage: totalLines > 0 ? Math.round((fulfilledLines / totalLines) * 100) : 0,
         },
-      })
+      }})
     );
   } catch (error) {
     console.error('GET /api/orders/[id]/fulfillment error:', error);
@@ -321,7 +322,7 @@ export async function PUT(
       },
     });
 
-    const payload = successResponse(updatedOrder, 'Fulfillment status updated successfully');
+    const payload = successResponse({data : updatedOrder, message : 'Fulfillment status updated successfully'});
     try {
       console.log('PUT /api/orders/[id]/fulfillment payload:', JSON.stringify(payload));
     } catch (logErr) {

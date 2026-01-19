@@ -4,7 +4,7 @@
  */
 
 import { BaseService } from './base.service';
-import { IBooking } from '../types/entities';
+import { IBooking } from '@/types/entities';
 import { prisma } from '@/lib/auth/prisma';
 
 // Helper mapper: convert Prisma results to IBooking domain type

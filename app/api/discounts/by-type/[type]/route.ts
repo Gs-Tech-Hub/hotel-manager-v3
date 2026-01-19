@@ -6,7 +6,7 @@
 
 import { NextRequest, NextResponse } from 'next/server';
 import { prisma } from '@/lib/auth/prisma';
-import { extractUserContext, loadUserWithRoles, hasAnyRole } from '@/src/lib/user-context';
+import { extractUserContext, loadUserWithRoles, hasAnyRole } from '@/lib/user-context';
 import { successResponse, errorResponse, ErrorCodes, getStatusCode } from '@/lib/api-response';
 
 interface Params {
@@ -91,13 +91,15 @@ export async function GET(
 
     return NextResponse.json(
       successResponse({
-        type,
-        discounts,
-        meta: {
-          page,
-          limit,
-          total,
-          pages: Math.ceil(total / limit),
+        data: {
+          type,
+          discounts,
+          meta: {
+            page,
+            limit,
+            total,
+            pages: Math.ceil(total / limit),
+          },
         },
       })
     );

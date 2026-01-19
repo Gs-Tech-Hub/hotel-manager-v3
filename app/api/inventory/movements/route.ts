@@ -42,7 +42,8 @@ export async function GET(req: NextRequest) {
       });
 
       if ('error' in movements) {
-        return sendError(movements.error.code, movements.error.message);
+        const err = (movements as { error: { code: string; message: string } }).error;
+        return sendError(err.code, err.message);
       }
 
       return sendSuccess(movements, 'Movements fetched successfully');

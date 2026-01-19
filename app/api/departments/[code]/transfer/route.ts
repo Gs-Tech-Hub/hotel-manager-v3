@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { prisma } from '@/lib/auth/prisma'
 import { transferService } from '@/services/inventory/transfer.service'
-import { stockService } from '@/src/services/stock.service'
+import { stockService } from '@/services/stock.service'
 import { successResponse, errorResponse, ErrorCodes, getStatusCode } from '@/lib/api-response'
 
 /**
@@ -133,7 +133,7 @@ export async function POST(request: NextRequest, { params }: { params: Promise<{
     // so they can be properly resolved during approval
     const created = await transferService.createTransfer(fromDept.id, toDepartmentId, mappedItems, undefined, { from: fromCode, to: destinationCode })
 
-    const resp = NextResponse.json(successResponse({ message: 'Transfer request created', transfer: created }))
+    const resp = NextResponse.json(successResponse({ data: { transfer: created }, message: 'Transfer request created' }))
     console.timeEnd('POST /api/departments/[code]/transfer')
     return resp
   } catch (error: any) {

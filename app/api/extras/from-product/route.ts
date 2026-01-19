@@ -1,8 +1,8 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { extrasService } from '@/src/services/extras.service';
+import { extrasService } from '@/services/extras.service';
 import { errorResponse, successResponse, ErrorCodes } from '@/lib/api-response';
-import { extractUserContext } from '@/src/lib/user-context';
-import { loadUserWithRoles, hasAnyRole } from '@/src/lib/user-context';
+import { extractUserContext } from '@/lib/user-context';
+import { loadUserWithRoles, hasAnyRole } from '@/lib/user-context';
 
 /**
  * POST /api/extras/from-product
@@ -67,7 +67,7 @@ export async function POST(request: NextRequest) {
     });
 
     return NextResponse.json(
-      successResponse({ extra: result, message: 'Extra created. Use /api/departments/[code]/extras to allocate to departments.' }),
+      successResponse({ data: { extra: result }, message: 'Extra created. Use /api/departments/[code]/extras to allocate to departments.' }),
       { status: 201 }
     );
   } catch (error) {

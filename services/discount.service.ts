@@ -4,9 +4,9 @@
  */
 
 import { BaseService } from './base.service';
-import { IDiscountRule } from '../types/entities';
+import { IDiscountRule } from '@/types/entities';
 import { prisma } from '@/lib/auth/prisma';
-import { UserContext, requireRole } from '@/lib/authorization';
+import { UserContext, requireRole } from '@/lib/auth/authorization';
 import { errorResponse, ErrorCodes } from '@/lib/api-response';
 
 export class DiscountService extends BaseService<IDiscountRule> {

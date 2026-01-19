@@ -99,7 +99,7 @@ export async function PUT(
     });
 
     return NextResponse.json(
-      successResponse(result, 'Line item updated successfully')
+      successResponse({data : result, message : 'Line item updated successfully'})
     );
   } catch (error) {
     console.error('PUT /api/orders/[id]/items/[lineId] error:', error);
@@ -182,7 +182,7 @@ export async function DELETE(
     });
 
     return NextResponse.json(
-      successResponse(null, 'Line item removed')
+      successResponse({data : null, message : 'Line item removed'})
     );
   } catch (error) {
     console.error('DELETE /api/orders/[id]/items/[lineId] error:', error);

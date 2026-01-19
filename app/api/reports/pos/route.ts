@@ -9,7 +9,7 @@ import { prisma } from '@/lib/auth/prisma';
 import { extractUserContext, loadUserWithRoles, hasAnyRole } from '@/lib/user-context';
 import { checkPermission, type PermissionContext } from '@/lib/auth/rbac';
 import { successResponse, errorResponse, ErrorCodes, getStatusCode } from '@/lib/api-response';
-import { buildDateFilter } from '@/src/lib/date-filter';
+import { buildDateFilter } from '@/lib/date-filter';
 
 export async function GET(request: NextRequest) {
   try {
@@ -174,6 +174,7 @@ export async function GET(request: NextRequest) {
 
     return NextResponse.json(
       successResponse({
+        data: {
         metrics: {
           totalOrders,
           totalRevenue,
@@ -194,7 +195,7 @@ export async function GET(request: NextRequest) {
           paymentMethod,
           orderStatus,
         },
-      }),
+      }}),
       { status: 200 }
     );
   } catch (error) {

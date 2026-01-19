@@ -6,7 +6,7 @@
 
 import { NextRequest, NextResponse } from 'next/server';
 import { prisma } from '@/lib/auth/prisma';
-import { extractUserContext } from '@/src/lib/user-context';
+import { extractUserContext } from '@/lib/user-context';
 import { successResponse, errorResponse, ErrorCodes, getStatusCode } from '@/lib/api-response';
 
 /**
@@ -93,6 +93,7 @@ export async function GET(request: NextRequest) {
 
     return NextResponse.json(
       successResponse({
+        data: {
         active: active.map(formatDiscount),
         upcoming: upcoming.map(formatDiscount),
         metadata: {
@@ -103,7 +104,7 @@ export async function GET(request: NextRequest) {
           totalUpcoming: upcoming.length,
           asOf: now.toISOString(),
         },
-      })
+      }})
     );
   } catch (error) {
     console.error('GET /api/discounts/upcoming error:', error);

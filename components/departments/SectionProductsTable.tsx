@@ -2,7 +2,7 @@
 
 import Link from 'next/link'
 import Price from '@/components/ui/Price'
-import { getDisplayUnit, formatQuantityWithUnit } from '@/src/lib/unit-mapper'
+import { getDisplayUnit, formatQuantityWithUnit } from '@/lib/unit-mapper'
 import { useEffect, useState } from 'react'
 
 type Props = {
