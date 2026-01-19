@@ -36,6 +36,7 @@ export default function DepartmentsPage() {
   const [deletingId, setDeletingId] = useState<string | null>(null)
   const [formData, setFormData] = useState({ code: '', name: '', description: '', type: '' })
   const [formLoading, setFormLoading] = useState(false)
+  const [editingDept, setEditingDept] = useState<Department | null>(null)
 
   const fetchDepartments = async () => {
     setLoading(true)
@@ -86,15 +87,22 @@ export default function DepartmentsPage() {
   }
 
   const handleDeleteDepartment = async (id: string) => {
-    if (!confirm('Are you sure you want to delete this department?')) return
+    if (!confirm('Are you sure you want to delete this department? This action cannot be undone.')) return
+    setDeletingId(id)
     try {
       const res = await fetch(`/api/departments/${id}`, { method: 'DELETE' })
-      if (!res.ok) throw new Error('Failed to delete department')
+      const json = await res.json()
+      if (!res.ok) {
+        alert(json?.error?.message || 'Failed to delete department')
+        return
+      }
       setDepartments(departments.filter(d => d.id !== id))
-      setDeletingId(null)
+      setEditingDept(null)
     } catch (err: any) {
       console.error(err)
       alert(err.message || 'Failed to delete department')
+    } finally {
+      setDeletingId(null)
     }
   }
 
@@ -199,15 +207,14 @@ export default function DepartmentsPage() {
                 </div>
               </Link>
 
-              {/* Delete Button */}
+              {/* Edit Button */}
               {canManage && (
-                <div className="mt-3 flex gap-2">
+                <div className="mt-3">
                   <button
-                    onClick={() => handleDeleteDepartment(d.id)}
-                    className="flex-1 px-2 py-1 bg-red-100 text-red-700 text-sm rounded hover:bg-red-200 flex items-center justify-center gap-1"
+                    onClick={() => setEditingDept(d)}
+                    className="w-full px-2 py-1 bg-blue-100 text-blue-700 text-sm rounded hover:bg-blue-200"
                   >
-                    <Trash2 className="h-3 w-3" />
-                    Delete
+                    Edit
                   </button>
                 </div>
               )}
@@ -215,6 +222,36 @@ export default function DepartmentsPage() {
           )
         })}
       </div>
+
+      {/* Edit Department Modal */}
+      {editingDept && (
+        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
+          <div className="bg-white rounded-lg p-6 max-w-md w-full mx-4 shadow-lg">
+            <h2 className="text-xl font-bold mb-4">Manage Department</h2>
+            <div className="space-y-2 mb-6">
+              <p><strong>Name:</strong> {editingDept.name}</p>
+              <p><strong>Code:</strong> <span className="font-mono">{editingDept.code}</span></p>
+              {editingDept.description && <p><strong>Description:</strong> {editingDept.description}</p>}
+            </div>
+
+            <div className="flex gap-2">
+              <button
+                onClick={() => handleDeleteDepartment(editingDept.id)}
+                disabled={deletingId === editingDept.id}
+                className="flex-1 px-3 py-2 bg-red-600 text-white text-sm rounded hover:bg-red-700 disabled:opacity-50"
+              >
+                {deletingId === editingDept.id ? 'Deleting...' : 'Delete'}
+              </button>
+              <button
+                onClick={() => setEditingDept(null)}
+                className="flex-1 px-3 py-2 border rounded text-sm hover:bg-muted"
+              >
+                Close
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   )
 }

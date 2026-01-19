@@ -150,3 +150,68 @@ export async function GET(request: NextRequest, { params }: { params: Promise<{ 
     return NextResponse.json(errorResponse(ErrorCodes.INTERNAL_ERROR, 'Failed to fetch department'), { status: getStatusCode(ErrorCodes.INTERNAL_ERROR) })
   }
 }
+
+export async function DELETE(request: NextRequest, { params }: { params: Promise<{ code: string }> }) {
+  try {
+    const { code: departmentCode } = await params
+
+    // Check authentication
+    const ctx = await extractUserContext(request)
+    if (!ctx.userId) {
+      return NextResponse.json(
+        errorResponse(ErrorCodes.UNAUTHORIZED, 'Not authenticated'),
+        { status: getStatusCode(ErrorCodes.UNAUTHORIZED) }
+      )
+    }
+
+    // Load user with roles
+    const userWithRoles = await loadUserWithRoles(ctx.userId)
+    if (!userWithRoles) {
+      return NextResponse.json(
+        errorResponse(ErrorCodes.FORBIDDEN, 'User not found'),
+        { status: getStatusCode(ErrorCodes.FORBIDDEN) }
+      )
+    }
+
+    // Check if user has delete permission
+    if (!userWithRoles.isAdmin) {
+      return NextResponse.json(
+        errorResponse(ErrorCodes.FORBIDDEN, 'Only admins can delete departments'),
+        { status: getStatusCode(ErrorCodes.FORBIDDEN) }
+      )
+    }
+
+    // Find department by code or ID
+    let department = await (prisma as any).department.findUnique({
+      where: { code: departmentCode }
+    })
+
+    // If not found by code, try by ID
+    if (!department) {
+      department = await (prisma as any).department.findUnique({
+        where: { id: departmentCode }
+      })
+    }
+
+    if (!department) {
+      return NextResponse.json(
+        errorResponse(ErrorCodes.NOT_FOUND, 'Department not found'),
+        { status: getStatusCode(ErrorCodes.NOT_FOUND) }
+      )
+    }
+
+    // Soft delete by marking as inactive
+    const updated = await (prisma as any).department.update({
+      where: { id: department.id },
+      data: { isActive: false }
+    })
+
+    return NextResponse.json(successResponse({ data: updated }))
+  } catch (error) {
+    console.error('DELETE /api/departments/[code] error:', error)
+    return NextResponse.json(
+      errorResponse(ErrorCodes.INTERNAL_ERROR, 'Failed to delete department'),
+      { status: getStatusCode(ErrorCodes.INTERNAL_ERROR) }
+    )
+  }
+}
