@@ -39,10 +39,12 @@ export function EmployeeList() {
   const [search, setSearch] = useState('');
   const [status, setStatus] = useState('');
   const [page, setPage] = useState(1);
+  const [error, setError] = useState<string | null>(null);
 
   const loadEmployees = async () => {
     try {
       setLoading(true);
+      setError(null);
       const params = new URLSearchParams();
       if (status) params.append('status', status);
       params.append('page', page.toString());
@@ -50,11 +52,27 @@ export function EmployeeList() {
       const response = await fetch(`/api/employees?${params}`);
       const data = await response.json();
 
-      if (data.success) {
-        setEmployees(data.data.employees || []);
+      // console.log('[EmployeeList] API Response:', data);
+
+      // Ensure we set employees to an array
+      if (data.success && data.data) {
+        const employeesList = data.data.employees;
+        if (Array.isArray(employeesList)) {
+          setEmployees(employeesList);
+        } else {
+          console.error('[EmployeeList] employees is not an array:', employeesList);
+          setEmployees([]);
+          setError('Invalid employee data format received');
+        }
+      } else {
+        console.error('[EmployeeList] Response not successful:', data);
+        setEmployees([]);
+        setError(data.message || 'Failed to load employees');
       }
     } catch (error) {
-      console.error('Failed to load employees:', error);
+      console.error('[EmployeeList] Failed to load employees:', error);
+      setEmployees([]);
+      setError(error instanceof Error ? error.message : 'An error occurred');
     } finally {
       setLoading(false);
     }
@@ -64,9 +82,11 @@ export function EmployeeList() {
     loadEmployees();
   }, [status, page]);
 
-  const filteredEmployees = employees.filter((emp) =>
-    `${emp.firstname} ${emp.lastname} ${emp.email}`.toLowerCase().includes(search.toLowerCase())
-  );
+  const filteredEmployees = Array.isArray(employees)
+    ? employees.filter((emp) =>
+        `${emp.firstname} ${emp.lastname} ${emp.email}`.toLowerCase().includes(search.toLowerCase())
+      )
+    : [];
 
   const getStatusBadge = (status: string) => {
     const variants: Record<string, 'default' | 'secondary' | 'destructive' | 'outline'> = {
@@ -124,7 +144,9 @@ export function EmployeeList() {
             <div className="flex justify-center py-8">
               <Loader2 className="h-6 w-6 animate-spin" />
             </div>
-          ) : filteredEmployees.length === 0 ? (
+          ) : error ? (
+            <div className="text-center py-8 text-red-500">{error}</div>
+          ) : !Array.isArray(filteredEmployees) || filteredEmployees.length === 0 ? (
             <div className="text-center py-8 text-muted-foreground">No employees found</div>
           ) : (
             <Table>

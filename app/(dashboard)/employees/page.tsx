@@ -34,10 +34,19 @@ export default function EmployeesPage() {
       if (!res.ok) throw new Error(`Failed to fetch employees (${res.status})`)
       const json = await res.json()
       if (!json?.success) throw new Error(json?.error || 'Invalid response')
-      setEmployees(json.data || [])
+      
+      // Handle the nested data structure: data.data.employees
+      const employeeList = json.data?.employees || json.data || []
+      if (!Array.isArray(employeeList)) {
+        console.error('[EmployeesPage] employeeList is not an array:', employeeList)
+        setEmployees([])
+      } else {
+        setEmployees(employeeList)
+      }
     } catch (err: any) {
       console.error('Failed to load employees', err)
       setError(err?.message || 'Failed to load employees')
+      setEmployees([])
     } finally {
       setLoading(false)
     }
@@ -147,7 +156,7 @@ export default function EmployeesPage() {
       {/* Employee Table */}
       {!loading && (
         <div className="bg-white rounded-lg border border-gray-200 overflow-hidden">
-          {employees.length === 0 ? (
+          {!Array.isArray(employees) || employees.length === 0 ? (
             <div className="text-center py-12">
               <p className="text-gray-600">
                 {hasPermission('employees.create')

@@ -54,7 +54,7 @@ export async function GET(req: NextRequest) {
     ]);
 
     const employeesWithRoles = await Promise.all(
-      employees.map(async (emp) => {
+      (employees || []).map(async (emp) => {
         const userRoles = await prisma.userRole.findMany({
           where: {
             userId: emp.id,
@@ -86,14 +86,15 @@ export async function GET(req: NextRequest) {
           createdAt: emp.createdAt,
         };
       })
-    );
+    ) || [];
 
     return NextResponse.json(
       successResponse({
         data: {
-        employees: employeesWithRoles,
-        pagination: { page, limit, total, pages: Math.ceil(total / limit) },
-      }}),
+          employees: Array.isArray(employeesWithRoles) ? employeesWithRoles : [],
+          pagination: { page, limit, total, pages: Math.ceil(total / limit) },
+        },
+      }),
       { status: 200 }
     );
   } catch (error) {
