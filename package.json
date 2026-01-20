@@ -17,7 +17,8 @@
 		"seed:dept-inv-fast": "tsx scripts/seed-department-inventories-fast.ts",
 		"reconcile:dept-inv": "tsx scripts/reconcile-department-inventories.ts",
 		"cleanup:depts": "tsx scripts/cleanup-departments.ts",
-		"consolidate:inventory": "tsx scripts/consolidate-inventory.ts"
+		"consolidate:inventory": "tsx scripts/consolidate-inventory.ts",
+		"verify:rbac": "tsx scripts/verify-rbac.ts"
 		,"db:migrate": "prisma migrate dev --name add-organisation-currency"
 		,"db:seed-org": "tsx scripts/seed-organisation-info.ts"
 		,"db:setup": "npm run db:migrate && npm run db:seed-org"

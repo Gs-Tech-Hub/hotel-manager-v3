@@ -186,12 +186,26 @@ async function seedPermissions(roles: Record<string, any>) {
       // Wildcard - full access
       { action: '*', subject: '*' },
       
-      // Admin
+      // Admin & Users
       { action: 'admin', subject: 'view' },
       { action: 'admin', subject: 'create' },
       { action: 'admin', subject: 'edit' },
       { action: 'admin', subject: 'delete' },
       { action: 'admin', subject: 'manage' },
+      { action: 'users', subject: 'create' },
+      { action: 'users', subject: 'read' },
+      { action: 'users', subject: 'update' },
+      { action: 'users', subject: 'delete' },
+      
+      // Roles & Permissions
+      { action: 'roles', subject: 'create' },
+      { action: 'roles', subject: 'read' },
+      { action: 'roles', subject: 'update' },
+      { action: 'roles', subject: 'delete' },
+      { action: 'permissions', subject: 'create' },
+      { action: 'permissions', subject: 'read' },
+      { action: 'permissions', subject: 'update' },
+      { action: 'permissions', subject: 'delete' },
       
       // Orders
       { action: 'orders', subject: 'create' },
@@ -211,10 +225,9 @@ async function seedPermissions(roles: Record<string, any>) {
       { action: 'inventory', subject: 'update' },
       { action: 'inventory', subject: 'delete' },
       { action: 'inventory', subject: 'transfer' },
-      
-      // Inventory Items
       { action: 'inventory_items', subject: 'create' },
       { action: 'inventory_items', subject: 'read' },
+      { action: 'inventory_items', subject: 'update' },
       { action: 'inventory_items', subject: 'delete' },
       
       // Bookings
@@ -225,37 +238,44 @@ async function seedPermissions(roles: Record<string, any>) {
       { action: 'bookings', subject: 'checkin' },
       { action: 'bookings', subject: 'checkout' },
       
-      // Departments
+      // Departments & Sections
       { action: 'departments', subject: 'read' },
       { action: 'departments', subject: 'create' },
       { action: 'departments', subject: 'update' },
       { action: 'departments', subject: 'delete' },
-      
-      // Department Sections
       { action: 'department_sections', subject: 'create' },
       { action: 'department_sections', subject: 'read' },
+      { action: 'department_sections', subject: 'update' },
       { action: 'department_sections', subject: 'delete' },
       
-      // Discounts
+      // Discounts & Extras
       { action: 'discounts', subject: 'create' },
       { action: 'discounts', subject: 'read' },
+      { action: 'discounts', subject: 'update' },
       { action: 'discounts', subject: 'delete' },
+      { action: 'extras', subject: 'create' },
+      { action: 'extras', subject: 'read' },
+      { action: 'extras', subject: 'update' },
+      { action: 'extras', subject: 'delete' },
       
       // Employees
       { action: 'employees', subject: 'create' },
       { action: 'employees', subject: 'read' },
+      { action: 'employees', subject: 'update' },
       { action: 'employees', subject: 'delete' },
       
-      // Reports
+      // Reports & Analytics
       { action: 'reports', subject: 'read' },
       { action: 'reports', subject: 'generate' },
       { action: 'reports', subject: 'export' },
+      { action: 'analytics', subject: 'read' },
     ],
     manager: [
       // Orders
       { action: 'orders', subject: 'read' },
       { action: 'orders', subject: 'create' },
       { action: 'orders', subject: 'update' },
+      { action: 'orders', subject: 'cancel' },
       
       // Payments
       { action: 'payments', subject: 'read' },
@@ -267,10 +287,15 @@ async function seedPermissions(roles: Record<string, any>) {
       { action: 'inventory', subject: 'update' },
       { action: 'inventory', subject: 'transfer' },
       
+      // Inventory Items
+      { action: 'inventory_items', subject: 'read' },
+      
       // Bookings
       { action: 'bookings', subject: 'read' },
       { action: 'bookings', subject: 'create' },
       { action: 'bookings', subject: 'update' },
+      { action: 'bookings', subject: 'checkin' },
+      { action: 'bookings', subject: 'checkout' },
       
       // Departments
       { action: 'departments', subject: 'read' },
@@ -278,12 +303,17 @@ async function seedPermissions(roles: Record<string, any>) {
       // Department Sections
       { action: 'department_sections', subject: 'read' },
       
+      // Discounts
+      { action: 'discounts', subject: 'read' },
+      
       // Employees
       { action: 'employees', subject: 'read' },
+      { action: 'employees', subject: 'update' },
       
       // Reports
       { action: 'reports', subject: 'read' },
       { action: 'reports', subject: 'generate' },
+      { action: 'reports', subject: 'export' },
     ],
     staff: [
       // Orders
@@ -291,12 +321,15 @@ async function seedPermissions(roles: Record<string, any>) {
       { action: 'orders', subject: 'create' },
       { action: 'orders', subject: 'update' },
       
-      // Inventory
-      { action: 'inventory', subject: 'read' },
-      
       // Payments
       { action: 'payments', subject: 'read' },
       { action: 'payments', subject: 'process' },
+      
+      // Inventory
+      { action: 'inventory', subject: 'read' },
+      
+      // Inventory Items
+      { action: 'inventory_items', subject: 'read' },
       
       // Bookings
       { action: 'bookings', subject: 'read' },
@@ -317,6 +350,9 @@ async function seedPermissions(roles: Record<string, any>) {
       // Inventory
       { action: 'inventory', subject: 'read' },
       
+      // Inventory Items
+      { action: 'inventory_items', subject: 'read' },
+      
       // Bookings
       { action: 'bookings', subject: 'read' },
       
@@ -328,6 +364,9 @@ async function seedPermissions(roles: Record<string, any>) {
       
       // Reports
       { action: 'reports', subject: 'read' },
+      
+      // Employees (own profile)
+      { action: 'employees', subject: 'read' },
     ],
     cashier: [
       // Orders
@@ -335,16 +374,25 @@ async function seedPermissions(roles: Record<string, any>) {
       { action: 'orders', subject: 'create' },
       { action: 'orders', subject: 'update' },
       
-      // Inventory
-      { action: 'inventory', subject: 'read' },
-      
-      // Payments
+      // Payments (cashier focused)
       { action: 'payments', subject: 'read' },
       { action: 'payments', subject: 'process' },
       { action: 'payments', subject: 'refund' },
       
+      // Inventory (read-only for reference)
+      { action: 'inventory', subject: 'read' },
+      
+      // Inventory Items
+      { action: 'inventory_items', subject: 'read' },
+      
       // Departments
       { action: 'departments', subject: 'read' },
+      
+      // Department Sections
+      { action: 'department_sections', subject: 'read' },
+      
+      // Reports (transactions)
+      { action: 'reports', subject: 'read' },
     ],
   };
 
@@ -403,6 +451,7 @@ async function seedPermissions(roles: Record<string, any>) {
 
 async function ensureAdminUserWithRole(
   adminRoles: Record<string, any>,
+  roles: Record<string, any>,
   email = process.env.SEED_ADMIN_EMAIL || 'admin@hotel.test',
   password = process.env.SEED_ADMIN_PASSWORD || 'admin123'
 ) {
@@ -454,6 +503,35 @@ async function ensureAdminUserWithRole(
   );
 
   console.log(`✓ Admin user created and assigned admin role: ${email}`);
+
+  // Also assign to unified RBAC system
+  if (roles.admin) {
+    const existingUserRole = await withRetries(() =>
+      prisma.userRole.findFirst({
+        where: {
+          userId: user.id,
+          userType: 'admin',
+          roleId: roles.admin.id,
+        },
+      })
+    );
+
+    if (!existingUserRole) {
+      await withRetries(() =>
+        prisma.userRole.create({
+          data: {
+            userId: user.id,
+            userType: 'admin',
+            roleId: roles.admin.id,
+            grantedAt: new Date(),
+            grantedBy: user.id,
+          },
+        })
+      );
+      console.log(`✓ Admin user also assigned to unified admin role`);
+    }
+  }
+
   return user;
 }
 
@@ -463,7 +541,7 @@ async function seedCanonicalDepartments() {
   const departments = [
     { code: 'restaurant', name: 'Restaurant', description: 'Restaurant department' },
     { code: 'bar', name: 'Bar', description: 'Bar department' },
-    { code: 'kitchen', name: 'Kitchen', description: 'Kitchen department' },
+    // { code: 'kitchen', name: 'Kitchen', description: 'Kitchen department' },
     { code: 'service', name: 'Service', description: 'Service department' },
     { code: 'reception', name: 'Reception', description: 'Reception department' },
     { code: 'housekeeping', name: 'Housekeeping', description: 'Housekeeping department' },
@@ -502,7 +580,7 @@ async function main() {
     const adminRoles = await seedAdminRoles();
     const roles = await seedRoles();
     await seedPermissions(roles);
-    await ensureAdminUserWithRole(adminRoles);
+    await ensureAdminUserWithRole(adminRoles, roles);
     await seedCanonicalDepartments();
 
     console.log('\n✅ Core application seed completed successfully.\n');
