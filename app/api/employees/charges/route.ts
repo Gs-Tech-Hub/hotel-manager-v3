@@ -32,14 +32,25 @@ export async function GET(request: NextRequest) {
     }
 
     const employmentDataId = request.nextUrl.searchParams.get('employmentDataId');
+    const userId = request.nextUrl.searchParams.get('userId');
     const status = request.nextUrl.searchParams.get('status');
     const limit = request.nextUrl.searchParams.get('limit');
     const offset = request.nextUrl.searchParams.get('offset');
 
     const where: any = {};
-    if (employmentDataId) {
+    
+    // If userId is provided, resolve to employmentDataId
+    if (userId) {
+      const employmentData = await prisma.employmentData.findUnique({
+        where: { userId },
+      });
+      if (employmentData) {
+        where.employmentDataId = employmentData.id;
+      }
+    } else if (employmentDataId) {
       where.employmentDataId = employmentDataId;
     }
+    
     if (status) {
       where.status = status;
     }

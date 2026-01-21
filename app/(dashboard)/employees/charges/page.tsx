@@ -70,14 +70,12 @@ export default function EmployeeChargesPage() {
   const [formData, setFormData] = useState({
     chargeType: '',
     amount: '',
-    description: '',
     reason: '',
     date: new Date().toISOString().split('T')[0],
     dueDate: '',
     status: 'pending',
     paidAmount: '0',
     paymentMethod: '',
-    notes: '',
   });
 
   useEffect(() => {
@@ -114,14 +112,12 @@ export default function EmployeeChargesPage() {
       setFormData({
         chargeType: charge.chargeType,
         amount: charge.amount.toString(),
-        description: charge.description || '',
         reason: charge.reason || '',
         date: new Date(charge.date).toISOString().split('T')[0],
         dueDate: charge.dueDate ? new Date(charge.dueDate).toISOString().split('T')[0] : '',
         status: charge.status,
         paidAmount: charge.paidAmount.toString(),
         paymentMethod: charge.paymentMethod || '',
-        notes: charge.notes || '',
       });
     } else {
       setEditingCharge(null);
@@ -129,14 +125,12 @@ export default function EmployeeChargesPage() {
       setFormData({
         chargeType: '',
         amount: '',
-        description: '',
         reason: '',
         date: new Date().toISOString().split('T')[0],
         dueDate: '',
         status: 'pending',
         paidAmount: '0',
         paymentMethod: '',
-        notes: '',
       });
     }
     setShowDialog(true);
@@ -153,14 +147,12 @@ export default function EmployeeChargesPage() {
         userId: selectedEmployee,
         chargeType: formData.chargeType,
         amount: parseFloat(formData.amount),
-        description: formData.description || null,
         reason: formData.reason || null,
         date: new Date(formData.date).toISOString(),
         dueDate: formData.dueDate ? new Date(formData.dueDate).toISOString() : null,
         status: formData.status,
         paidAmount: parseFloat(formData.paidAmount),
         paymentMethod: formData.paymentMethod || null,
-        notes: formData.notes || null,
       };
 
       let res;
@@ -276,8 +268,8 @@ export default function EmployeeChargesPage() {
                     <TableRow key={charge.id}>
                       <TableCell className="font-medium">{getEmployeeName(charge.employmentDataId)}</TableCell>
                       <TableCell>{charge.chargeType}</TableCell>
-                      <TableCell>${charge.amount.toFixed(2)}</TableCell>
-                      <TableCell>${charge.paidAmount.toFixed(2)}</TableCell>
+                      <TableCell>${Number(charge.amount).toFixed(2)}</TableCell>
+                      <TableCell>${Number(charge.paidAmount).toFixed(2)}</TableCell>
                       <TableCell>{formatDate(charge.date)}</TableCell>
                       <TableCell>
                         {charge.dueDate ? formatDate(charge.dueDate) : '-'}
@@ -351,15 +343,6 @@ export default function EmployeeChargesPage() {
             </div>
 
             <div className="space-y-2">
-              <Label>Description</Label>
-              <Textarea
-                value={formData.description}
-                onChange={(e) => setFormData({ ...formData, description: e.target.value })}
-                placeholder="Charge description"
-              />
-            </div>
-
-            <div className="space-y-2">
               <Label>Reason</Label>
               <Input
                 value={formData.reason}
@@ -422,15 +405,6 @@ export default function EmployeeChargesPage() {
                 value={formData.paymentMethod}
                 onChange={(e) => setFormData({ ...formData, paymentMethod: e.target.value })}
                 placeholder="e.g., Cash, Deduction from Salary"
-              />
-            </div>
-
-            <div className="space-y-2">
-              <Label>Notes</Label>
-              <Textarea
-                value={formData.notes}
-                onChange={(e) => setFormData({ ...formData, notes: e.target.value })}
-                placeholder="Additional notes"
               />
             </div>
           </div>

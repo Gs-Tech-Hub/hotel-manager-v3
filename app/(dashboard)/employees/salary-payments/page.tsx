@@ -79,6 +79,8 @@ export default function SalaryPaymentsPage() {
   const [showDialog, setShowDialog] = useState(false);
   const [editingPayment, setEditingPayment] = useState<SalaryPayment | null>(null);
   const [selectedEmployee, setSelectedEmployee] = useState<string>('');
+  const [employeeData, setEmployeeData] = useState<any>(null);
+  const [unpaidChargesTotal, setUnpaidChargesTotal] = useState<number>(0);
   const [formData, setFormData] = useState({
     paymentDate: new Date().toISOString().split('T')[0],
     grossSalary: '',
@@ -119,10 +121,11 @@ export default function SalaryPaymentsPage() {
     }
   };
 
-  const handleOpenDialog = (payment?: SalaryPayment) => {
+  const handleOpenDialog = async (payment?: SalaryPayment) => {
     if (payment) {
       setEditingPayment(payment);
       setSelectedEmployee(payment.userId);
+      await fetchEmployeeData(payment.userId);
       setFormData({
         paymentDate: new Date(payment.paymentDate).toISOString().split('T')[0],
         grossSalary: payment.grossSalary.toString(),
@@ -135,6 +138,8 @@ export default function SalaryPaymentsPage() {
     } else {
       setEditingPayment(null);
       setSelectedEmployee('');
+      setEmployeeData(null);
+      setUnpaidChargesTotal(0);
       setFormData({
         paymentDate: new Date().toISOString().split('T')[0],
         grossSalary: '',
@@ -206,6 +211,30 @@ export default function SalaryPaymentsPage() {
       fetchData();
     } catch (err: any) {
       toast.error(err.message);
+    }
+  };
+
+  const fetchEmployeeData = async (userId: string) => {
+    try {
+      const res = await fetch(`/api/employees/${userId}`);
+      if (res.ok) {
+        const data = await res.json();
+        const employment = data.data?.employmentData;
+        setEmployeeData(employment || null);
+        
+        // Fetch unpaid charges for this employee
+        const chargesRes = await fetch(`/api/employees/charges?userId=${userId}`);
+        if (chargesRes.ok) {
+          const chargesData = await chargesRes.json();
+          const charges = chargesData.data?.charges || [];
+          const unpaid = charges
+            .filter((c: any) => c.status !== 'paid')
+            .reduce((sum: number, c: any) => sum + Number(c.amount), 0);
+          setUnpaidChargesTotal(unpaid);
+        }
+      }
+    } catch (err) {
+      console.error('Error fetching employee data:', err);
     }
   };
 
@@ -386,7 +415,10 @@ export default function SalaryPaymentsPage() {
           <div className="space-y-4">
             <div className="space-y-2">
               <Label>Employee</Label>
-              <Select value={selectedEmployee} onValueChange={setSelectedEmployee}>
+              <Select value={selectedEmployee} onValueChange={async (value) => {
+                setSelectedEmployee(value);
+                await fetchEmployeeData(value);
+              }}>
                 <SelectTrigger>
                   <SelectValue placeholder="Select employee" />
                 </SelectTrigger>
@@ -399,6 +431,21 @@ export default function SalaryPaymentsPage() {
                 </SelectContent>
               </Select>
             </div>
+
+            {employeeData && (
+              <div className="bg-blue-50 border border-blue-200 rounded-lg p-3 space-y-2">
+                <div className="grid grid-cols-2 gap-3 text-sm">
+                  <div>
+                    <span className="text-muted-foreground">Base Salary:</span>
+                    <p className="font-semibold text-lg">${employeeData.salary ? Number(employeeData.salary).toFixed(2) : '0.00'}</p>
+                  </div>
+                  <div>
+                    <span className="text-muted-foreground">Unpaid Charges:</span>
+                    <p className="font-semibold text-lg text-red-600">${unpaidChargesTotal.toFixed(2)}</p>
+                  </div>
+                </div>
+              </div>
+            )}
 
             <div className="space-y-2">
               <Label>Payment Date</Label>
