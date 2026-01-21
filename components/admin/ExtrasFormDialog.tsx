@@ -37,7 +37,7 @@ interface Extra {
 interface Department {
   id: string;
   name: string;
-  departmentCode: string;
+  code: string;
 }
 
 interface DepartmentSection {
@@ -52,6 +52,7 @@ interface InventoryItem {
   name: string;
   sku: string;
   quantity: number;
+  available?: number;
 }
 
 interface ExtrasFormDialogProps {
@@ -72,8 +73,6 @@ export function ExtrasFormDialog({
     description: '',
     unit: 'portion',
     price: 0,
-    productId: '',
-    trackInventory: false,
     isActive: true,
   });
 
@@ -111,12 +110,8 @@ export function ExtrasFormDialog({
           setSections(sectData.data);
         }
 
-        // Load all inventory items initially
-        const invResponse = await fetch('/api/inventory?limit=999');
-        const invData = await invResponse.json();
-        if (invData.success && Array.isArray(invData.data)) {
-          setInventoryItems(invData.data);
-        }
+        // Don't load inventory items initially - they'll be loaded when department is selected
+        setInventoryItems([]);
       } catch (err) {
         console.error('Error loading data:', err);
       } finally {
@@ -127,20 +122,30 @@ export function ExtrasFormDialog({
     loadData();
   }, [open]);
 
-  // Reload inventory items when department is selected in convert mode
+  // Reload inventory items when department is selected
   useEffect(() => {
-    if (mode !== 'convert' || !selectedDepartmentId) return;
+    if (!selectedDepartmentId) {
+      setInventoryItems([]);
+      return;
+    }
 
     const loadDeptInventory = async () => {
       try {
         const selectedDept = departments.find(d => d.id === selectedDepartmentId);
         if (!selectedDept) return;
 
-        // Fetch inventory filtered by department
-        const invResponse = await fetch(`/api/inventory?departmentId=${selectedDept.id}&limit=999`);
-        const invData = await invResponse.json();
-        if (invData.success && Array.isArray(invData.data)) {
-          setInventoryItems(invData.data);
+        if (mode === 'convert') {
+          // Fetch inventory items that are NOT yet converted to extras in this department
+          const invResponse = await fetch(
+            `/api/departments/${selectedDept.code}/inventory-for-extras?limit=999`
+          );
+          const invData = await invResponse.json();
+          if (invData.success && Array.isArray(invData.data.items)) {
+            setInventoryItems(invData.data.items);
+          }
+        } else {
+          // For create mode, don't need to fetch inventory items
+          setInventoryItems([]);
         }
       } catch (err) {
         console.error('Error loading department inventory:', err);
@@ -161,8 +166,6 @@ export function ExtrasFormDialog({
         description: '',
         unit: 'portion',
         price: 0,
-        productId: '',
-        trackInventory: false,
         isActive: true,
       });
       setMode('create');
@@ -204,6 +207,12 @@ export function ExtrasFormDialog({
       // Step 1: Create the extra at the global level
       let extraId = extra?.id;
       if (!extraId) {
+        console.log('Creating extra with:', {
+          name: formData.name,
+          unit: formData.unit,
+          price: formData.price,
+        });
+        
         const createResponse = await fetch('/api/extras', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
@@ -220,10 +229,12 @@ export function ExtrasFormDialog({
 
         const createData = await createResponse.json();
         if (!createResponse.ok) {
+          console.error('Failed to create extra:', createData);
           throw new Error(createData.error?.message || 'Failed to create extra');
         }
 
         extraId = createData.data.extra.id;
+        console.log('Extra created with ID:', extraId);
       }
 
       // Step 2: Allocate to department
@@ -232,7 +243,14 @@ export function ExtrasFormDialog({
         throw new Error('Department not found');
       }
 
-      const allocateResponse = await fetch(`/api/departments/${selectedDept.departmentCode}/extras`, {
+      console.log('Allocating extra to department:', {
+        departmentCode: selectedDept.code,
+        extraId,
+        quantity: 0,
+        sectionId: selectedSectionId === 'unscoped' ? null : (selectedSectionId || null),
+      });
+
+      const allocateResponse = await fetch(`/api/departments/${selectedDept.code}/extras`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
@@ -243,7 +261,9 @@ export function ExtrasFormDialog({
       });
 
       const allocateData = await allocateResponse.json();
+      console.log('Allocation response:', allocateData);
       if (!allocateResponse.ok) {
+        console.error('Failed to allocate:', allocateData);
         throw new Error(allocateData.error?.message || 'Failed to allocate extra to department');
       }
 
@@ -295,7 +315,7 @@ export function ExtrasFormDialog({
         throw new Error('Department not found');
       }
 
-      const allocateResponse = await fetch(`/api/departments/${selectedDept.departmentCode}/extras`, {
+      const allocateResponse = await fetch(`/api/departments/${selectedDept.code}/extras`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
@@ -348,8 +368,8 @@ export function ExtrasFormDialog({
 
             {/* Mode Selector (only if creating new) */}
             {!extra && (
-              <div className="space-y-2">
-                <Label>Create Mode</Label>
+              <div className="space-y-3">
+                <Label>How to Create Extra</Label>
                 <div className="flex gap-2">
                   <button
                     type="button"
@@ -361,7 +381,7 @@ export function ExtrasFormDialog({
                     }`}
                     disabled={submitting}
                   >
-                    Create New
+                    ✨ Create New
                   </button>
                   <button
                     type="button"
@@ -373,15 +393,28 @@ export function ExtrasFormDialog({
                     }`}
                     disabled={submitting}
                   >
-                    Convert Item
+                    📦 From Inventory
                   </button>
+                </div>
+                <div className="bg-blue-50 border border-blue-200 rounded p-2 text-xs text-blue-800 space-y-1">
+                  {mode === 'create' ? (
+                    <>
+                      <p><strong>Create New:</strong> Make a standalone extra (e.g., sauce, side dish) without inventory tracking.</p>
+                      <p>1️⃣ Fill in details → 2️⃣ Select department → ✅ Create</p>
+                    </>
+                  ) : (
+                    <>
+                      <p><strong>From Inventory:</strong> Convert an inventory item to an extra with automatic stock tracking.</p>
+                      <p>1️⃣ Select department → 2️⃣ Select inventory item → ✅ Convert & Allocate</p>
+                    </>
+                  )}
                 </div>
               </div>
             )}
 
             {/* Inventory Item Selection (Convert Mode) */}
             {mode === 'convert' && (
-              <div className="space-y-2">
+              <div className="space-y-3">
                 <Label htmlFor="inventoryItem">
                   Inventory Item *
                   {selectedDepartmentId && (
@@ -397,7 +430,7 @@ export function ExtrasFormDialog({
                 )}
                 {selectedDepartmentId && inventoryItems.length === 0 && (
                   <div className="text-sm text-amber-600 bg-amber-50 border border-amber-200 rounded p-2">
-                    No inventory items found for this department
+                    No inventory items found for this department. All items are already converted to extras or not available.
                   </div>
                 )}
                 <Select
@@ -428,11 +461,32 @@ export function ExtrasFormDialog({
                   <SelectContent>
                     {inventoryItems.map((item: any) => (
                       <SelectItem key={item.id} value={item.id}>
-                        {item.name} — SKU: {item.sku} (Stock: {item.quantity || 0})
+                        {item.name} — SKU: {item.sku} (Stock: {item.available || 0})
                       </SelectItem>
                     ))}
                   </SelectContent>
                 </Select>
+
+                {/* Summary of what will happen */}
+                {selectedInventoryId && (
+                  <div className="bg-green-50 border border-green-200 rounded p-3 text-xs text-green-800 space-y-2">
+                    {(() => {
+                      const selectedItem = inventoryItems.find(i => i.id === selectedInventoryId);
+                      return (
+                        <>
+                          <p className="font-medium">✅ Conversion will:</p>
+                          <ul className="list-disc list-inside space-y-1">
+                            <li>Convert <strong>{selectedItem?.name}</strong> to an extra</li>
+                            <li>Enable automatic inventory tracking</li>
+                            <li>Allocate <strong>{selectedItem?.available || 0} units</strong> to {departments.find(d => d.id === selectedDepartmentId)?.name}</li>
+                            <li>Current stock syncs from department inventory</li>
+                          </ul>
+                          <p className="text-xs text-green-700 mt-2">After conversion, you can transfer units to sections as needed.</p>
+                        </>
+                      );
+                    })()}
+                  </div>
+                )}
               </div>
             )}
 
@@ -548,50 +602,6 @@ export function ExtrasFormDialog({
                           {sect.name}
                         </SelectItem>
                       ))}
-                  </SelectContent>
-                </Select>
-              </div>
-            )}
-
-            {/* Track Inventory (Create Mode Only) */}
-            {mode === 'create' && (
-              <div className="space-y-2 flex items-center justify-between">
-                <Label htmlFor="trackInventory">Track Inventory</Label>
-                <Switch
-                  id="trackInventory"
-                  checked={formData.trackInventory || false}
-                  onCheckedChange={(checked) =>
-                    setFormData({
-                      ...formData,
-                      trackInventory: checked,
-                      productId: checked ? formData.productId : '',
-                    })
-                  }
-                  disabled={submitting}
-                />
-              </div>
-            )}
-
-            {/* Product (only if tracking and create mode) */}
-            {mode === 'create' && formData.trackInventory && (
-              <div className="space-y-2">
-                <Label htmlFor="product">Inventory Item</Label>
-                <Select
-                  value={formData.productId || ''}
-                  onValueChange={(value) =>
-                    setFormData({ ...formData, productId: value })
-                  }
-                  disabled={submitting}
-                >
-                  <SelectTrigger id="product">
-                    <SelectValue placeholder="Select inventory item" />
-                  </SelectTrigger>
-                  <SelectContent>
-                    {inventoryItems.map((item) => (
-                      <SelectItem key={item.id} value={item.id}>
-                        {item.name} (Stock: {item.quantity})
-                      </SelectItem>
-                    ))}
                   </SelectContent>
                 </Select>
               </div>

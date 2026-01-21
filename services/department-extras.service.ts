@@ -50,19 +50,29 @@ export class DepartmentExtrasService {
       // Normalize sectionId to null if not provided
       const normalizedSectionId = sectionId || null;
 
+      console.log('[allocateExtraToDepartment] Input:', {
+        departmentId,
+        extraId,
+        quantity,
+        sectionId: normalizedSectionId,
+      });
+
       // Check if allocation already exists
-      const existing = await prisma.departmentExtra.findUnique({
+      // Note: Prisma doesn't support null values in composite unique keys with findUnique()
+      // So we use findFirst() instead when sectionId could be null
+      const existing = await prisma.departmentExtra.findFirst({
         where: {
-          departmentId_sectionId_extraId: {
-            departmentId,
-            sectionId: normalizedSectionId as string | null,
-            extraId,
-          } as any,
+          departmentId,
+          extraId,
+          sectionId: normalizedSectionId,
         },
       });
 
+      console.log('[allocateExtraToDepartment] Existing allocation found:', !!existing);
+
       if (existing) {
         // Update existing allocation
+        console.log('[allocateExtraToDepartment] Updating existing allocation:', existing.id);
         return await prisma.departmentExtra.update({
           where: { id: existing.id },
           data: {
@@ -76,6 +86,7 @@ export class DepartmentExtrasService {
       }
 
       // Create new allocation
+      console.log('[allocateExtraToDepartment] Creating new allocation');
       return await prisma.departmentExtra.create({
         data: {
           departmentId,
@@ -89,7 +100,7 @@ export class DepartmentExtrasService {
         },
       });
     } catch (error) {
-      console.error('Error allocating extra to department:', error);
+      console.error('[allocateExtraToDepartment] Error:', error);
       throw error;
     }
   }
@@ -178,6 +189,7 @@ export class DepartmentExtrasService {
 
   /**
    * Deduct extras when used in an order
+   * If the extra is inventory-tracked, also deducts from DepartmentInventory
    */
   static async deductExtraUsage(
     departmentId: string,
@@ -194,6 +206,13 @@ export class DepartmentExtrasService {
             extraId,
           } as any,
         },
+        include: {
+          extra: {
+            include: {
+              product: true,
+            },
+          },
+        },
       });
 
       if (!allocation) {
@@ -204,7 +223,8 @@ export class DepartmentExtrasService {
         throw new Error('Insufficient quantity');
       }
 
-      return await prisma.departmentExtra.update({
+      // Update the extra allocation
+      const updated = await prisma.departmentExtra.update({
         where: { id: allocation.id },
         data: {
           quantity: allocation.quantity - quantity,
@@ -213,6 +233,30 @@ export class DepartmentExtrasService {
           extra: true,
         },
       });
+
+      // If this extra is inventory-tracked, also deduct from DepartmentInventory
+      if (allocation.extra.trackInventory && allocation.extra.productId) {
+        const deptInventory = await prisma.departmentInventory.findUnique({
+          where: {
+            departmentId_sectionId_inventoryItemId: {
+              departmentId,
+              sectionId: sectionId || null,
+              inventoryItemId: allocation.extra.productId,
+            } as any,
+          },
+        });
+
+        if (deptInventory) {
+          await prisma.departmentInventory.update({
+            where: { id: deptInventory.id },
+            data: {
+              quantity: Math.max(0, deptInventory.quantity - quantity),
+            },
+          });
+        }
+      }
+
+      return updated;
     } catch (error) {
       console.error('Error deducting extra usage:', error);
       throw error;
@@ -314,4 +358,173 @@ export class DepartmentExtrasService {
       throw error;
     }
   }
+
+  /**
+   * Allocate an inventory item as an extra to a department
+   * This method:
+   * 1. Creates an extra from the inventory item with inventory tracking
+   * 2. Allocates it to the department (and optionally section)
+   * 3. Syncs the inventory quantity to DepartmentExtra
+   *
+   * This maintains the same pattern as inventory: item → department allocation → section transfer
+   */
+  static async allocateInventoryItemAsExtra(
+    departmentId: string,
+    inventoryItemId: string,
+    unit: string,
+    priceOverride?: number,
+    sectionId?: string | null
+  ) {
+    try {
+      // Get inventory item
+      const inventoryItem = await prisma.inventoryItem.findUnique({
+        where: { id: inventoryItemId },
+        include: { departmentInventories: { where: { departmentId } } },
+      });
+
+      if (!inventoryItem) {
+        throw new Error('Inventory item not found');
+      }
+
+      // Check if already converted to extra in this department
+      const existingExtra = await prisma.extra.findFirst({
+        where: {
+          productId: inventoryItemId,
+          departmentExtras: {
+            some: { departmentId },
+          },
+        },
+      });
+
+      if (existingExtra) {
+        throw new Error(
+          'This inventory item is already converted to an extra in this department'
+        );
+      }
+
+      // Create extra with inventory tracking
+      const price = priceOverride || Math.round(inventoryItem.unitPrice.toNumber() * 100);
+
+      const extra = await prisma.extra.create({
+        data: {
+          name: inventoryItem.name,
+          description: inventoryItem.description,
+          unit,
+          price,
+          productId: inventoryItemId,
+          trackInventory: true,
+          isActive: inventoryItem.isActive,
+        },
+      });
+
+      // Get current inventory quantity for this department
+      const deptInventory = inventoryItem.departmentInventories[0];
+      const quantity = deptInventory?.quantity || 0;
+
+      // Allocate to department with same quantity
+      const allocation = await prisma.departmentExtra.create({
+        data: {
+          departmentId,
+          extraId: extra.id,
+          sectionId: sectionId || null,
+          quantity,
+        },
+        include: {
+          extra: true,
+          section: true,
+        },
+      });
+
+      return allocation;
+    } catch (error) {
+      console.error('Error allocating inventory item as extra:', error);
+      throw error;
+    }
+  }
+
+  /**
+   * Transfer extras from parent department to section (or between sections)
+   * Similar to inventory transfers
+   */
+  static async transferExtra(
+    departmentId: string,
+    extraId: string,
+    sourceSectionId: string | null,
+    destinationSectionId: string | null,
+    quantity: number
+  ) {
+    try {
+      // Get source allocation
+      const sourceWhere: any = {
+        departmentId,
+        extraId,
+        sectionId: sourceSectionId,
+      };
+
+      const source = await prisma.departmentExtra.findFirst({
+        where: sourceWhere,
+      });
+
+      if (!source) {
+        throw new Error(`Source allocation not found for extra transfer`);
+      }
+
+      if (source.quantity < quantity) {
+        throw new Error(
+          `Insufficient quantity. Available: ${source.quantity}, Requested: ${quantity}`
+        );
+      }
+
+      // Reduce from source
+      const updatedSource = await prisma.departmentExtra.update({
+        where: { id: source.id },
+        data: {
+          quantity: source.quantity - quantity,
+        },
+      });
+
+      // Add to destination
+      const destWhere: any = {
+        departmentId,
+        extraId,
+        sectionId: destinationSectionId,
+      };
+
+      const destination = await prisma.departmentExtra.findFirst({
+        where: destWhere,
+      });
+
+      if (destination) {
+        // Update existing
+        return await prisma.departmentExtra.update({
+          where: { id: destination.id },
+          data: {
+            quantity: destination.quantity + quantity,
+          },
+          include: {
+            extra: true,
+            section: true,
+          },
+        });
+      } else {
+        // Create new
+        return await prisma.departmentExtra.create({
+          data: {
+            departmentId,
+            extraId,
+            sectionId: destinationSectionId,
+            quantity,
+          },
+          include: {
+            extra: true,
+            section: true,
+          },
+        });
+      }
+    } catch (error) {
+      console.error('[transferExtra] Error:', error);
+      throw error;
+    }
+  }
 }
+

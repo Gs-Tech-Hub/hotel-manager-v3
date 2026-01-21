@@ -20,8 +20,11 @@ type InventoryItem = {
   category: string
   itemType?: string
   quantity: number
+  available?: number
   unitPrice: number
   usedAsExtras?: Array<{ id: string }> // extras linked to this inventory item
+  departmentInventoryId?: string
+  departmentExtraId?: string
 }
 
 export default function InventoryPage() {
@@ -57,17 +60,23 @@ export default function InventoryPage() {
     setLoading(true)
     setError(null)
     try {
-      const url = new URL('/api/inventory', window.location.origin)
-      // backend filters by category (department code mapped to category) so send category param
+      let url: string
+      
+      // If department is selected, fetch combined inventory + extras from department endpoint
       if (dept) {
-        const cat = mapDeptCodeToCategory(dept)
-        if (cat) url.searchParams.set('category', cat)
+        url = `/api/departments/${encodeURIComponent(dept)}/items`
+      } else {
+        // Otherwise fetch global inventory
+        url = new URL('/api/inventory', window.location.origin).toString()
       }
-      const res = await fetch(url.toString())
+      
+      const res = await fetch(url)
       if (!res.ok) throw new Error(`Failed to fetch inventory (${res.status})`)
       const json = await res.json()
       if (!json?.success) throw new Error(json?.error || 'Invalid response')
-      const fetched: any[] = json.data?.items || []
+      
+      const fetched: any[] = dept ? (json.data?.items || []) : (json.data?.items || [])
+      
       // If a department is selected, show only available items (quantity > 0)
       if (dept) {
         setItems(fetched.filter((it) => Number(it?.quantity ?? 0) > 0))
@@ -387,9 +396,13 @@ export default function InventoryPage() {
                   <Price amount={Number(it.unitPrice)} isMinor={false} />
                 </td>
                 <td className="p-2">
-                  {it.usedAsExtras && it.usedAsExtras.length > 0 ? (
+                  {it.itemType === 'extra' ? (
+                    <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-purple-100 text-purple-800">
+                      Extra (Standalone)
+                    </span>
+                  ) : it.usedAsExtras && it.usedAsExtras.length > 0 ? (
                     <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-blue-100 text-blue-800">
-                      Extra
+                      Extra (From Inventory)
                     </span>
                   ) : (
                     <span className="text-xs text-slate-400">Standard</span>

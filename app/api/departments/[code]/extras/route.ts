@@ -73,6 +73,8 @@ export async function POST(
     const body = await request.json();
     const { extraId, quantity, sectionId } = body;
 
+    console.log('POST /api/departments/[code]/extras - Request body:', { departmentCode, extraId, quantity, sectionId });
+
     if (!extraId || quantity === undefined) {
       return NextResponse.json(
         errorResponse(
@@ -89,9 +91,26 @@ export async function POST(
       select: { id: true },
     });
 
+    console.log('Department lookup result:', { departmentCode, deptId: dept?.id });
+
     if (!dept) {
       return NextResponse.json(
         errorResponse(ErrorCodes.NOT_FOUND, 'Department not found'),
+        { status: 404 }
+      );
+    }
+
+    // Verify extra exists
+    const extraExists = await prisma.extra.findUnique({
+      where: { id: extraId },
+      select: { id: true, name: true },
+    });
+
+    console.log('Extra lookup result:', { extraId, extra: extraExists });
+
+    if (!extraExists) {
+      return NextResponse.json(
+        errorResponse(ErrorCodes.NOT_FOUND, `Extra not found: ${extraId}`),
         { status: 404 }
       );
     }
@@ -112,9 +131,10 @@ export async function POST(
       { status: 201 }
     );
   } catch (error) {
-    console.error('Error allocating extra:', error);
+    const errorMsg = error instanceof Error ? error.message : String(error);
+    console.error('Error allocating extra:', errorMsg, error);
     return NextResponse.json(
-      errorResponse(ErrorCodes.INTERNAL_ERROR, 'Failed to allocate extra'),
+      errorResponse(ErrorCodes.INTERNAL_ERROR, `Failed to allocate extra: ${errorMsg}`),
       { status: 500 }
     );
   }
