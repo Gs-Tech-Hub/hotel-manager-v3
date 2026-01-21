@@ -1,0 +1,455 @@
+'use client';
+
+import { useEffect, useState } from 'react';
+import { Plus, Trash2, Edit2, AlertCircle, CheckCircle } from 'lucide-react';
+import { Button } from '@/components/ui/button';
+import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
+import {
+  Table,
+  TableBody,
+  TableCell,
+  TableHead,
+  TableHeader,
+  TableRow,
+} from '@/components/ui/table';
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from '@/components/ui/dialog';
+import { Input } from '@/components/ui/input';
+import { Label } from '@/components/ui/label';
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from '@/components/ui/select';
+import { Textarea } from '@/components/ui/textarea';
+import { toast } from 'sonner';
+
+const formatDate = (dateString: string) => {
+  const date = new Date(dateString);
+  return date.toLocaleDateString('en-US', { year: 'numeric', month: 'short', day: '2-digit' });
+};
+
+interface EmployeeCharge {
+  id: string;
+  employmentDataId: string;
+  chargeType: string;
+  amount: number;
+  description?: string;
+  reason?: string;
+  date: string;
+  dueDate?: string;
+  status: 'pending' | 'paid' | 'partially_paid' | 'waived' | 'cancelled';
+  paidAmount: number;
+  paymentDate?: string;
+  paymentMethod?: string;
+  notes?: string;
+}
+
+interface EmploymentData {
+  id: string;
+  userId: string;
+  position: string;
+  salary: number;
+  user?: {
+    firstname?: string;
+    lastname?: string;
+    email: string;
+  };
+}
+
+export default function EmployeeChargesPage() {
+  const [charges, setCharges] = useState<EmployeeCharge[]>([]);
+  const [employmentData, setEmploymentData] = useState<EmploymentData[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [showDialog, setShowDialog] = useState(false);
+  const [editingCharge, setEditingCharge] = useState<EmployeeCharge | null>(null);
+  const [selectedEmployee, setSelectedEmployee] = useState<string>('');
+  const [formData, setFormData] = useState({
+    chargeType: '',
+    amount: '',
+    description: '',
+    reason: '',
+    date: new Date().toISOString().split('T')[0],
+    dueDate: '',
+    status: 'pending',
+    paidAmount: '0',
+    paymentMethod: '',
+    notes: '',
+  });
+
+  useEffect(() => {
+    fetchData();
+  }, []);
+
+  const fetchData = async () => {
+    setLoading(true);
+    try {
+      const empRes = await fetch('/api/employees');
+      if (empRes.ok) {
+        const empJson = await empRes.json();
+        const empList = empJson.data?.employees || empJson.data || [];
+        setEmploymentData(Array.isArray(empList) ? empList : []);
+      }
+
+      const chargeRes = await fetch('/api/employees/charges');
+      if (chargeRes.ok) {
+        const chargeJson = await chargeRes.json();
+        setCharges(chargeJson.data?.charges || []);
+      }
+    } catch (err) {
+      console.error('Error fetching data:', err);
+      toast.error('Failed to load data');
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const handleOpenDialog = (charge?: EmployeeCharge) => {
+    if (charge) {
+      setEditingCharge(charge);
+      setSelectedEmployee(charge.employmentDataId);
+      setFormData({
+        chargeType: charge.chargeType,
+        amount: charge.amount.toString(),
+        description: charge.description || '',
+        reason: charge.reason || '',
+        date: new Date(charge.date).toISOString().split('T')[0],
+        dueDate: charge.dueDate ? new Date(charge.dueDate).toISOString().split('T')[0] : '',
+        status: charge.status,
+        paidAmount: charge.paidAmount.toString(),
+        paymentMethod: charge.paymentMethod || '',
+        notes: charge.notes || '',
+      });
+    } else {
+      setEditingCharge(null);
+      setSelectedEmployee('');
+      setFormData({
+        chargeType: '',
+        amount: '',
+        description: '',
+        reason: '',
+        date: new Date().toISOString().split('T')[0],
+        dueDate: '',
+        status: 'pending',
+        paidAmount: '0',
+        paymentMethod: '',
+        notes: '',
+      });
+    }
+    setShowDialog(true);
+  };
+
+  const handleSubmit = async () => {
+    if (!selectedEmployee || !formData.chargeType || !formData.amount) {
+      toast.error('Please fill required fields');
+      return;
+    }
+
+    try {
+      const payload = {
+        employmentDataId: selectedEmployee,
+        chargeType: formData.chargeType,
+        amount: parseFloat(formData.amount),
+        description: formData.description || null,
+        reason: formData.reason || null,
+        date: new Date(formData.date).toISOString(),
+        dueDate: formData.dueDate ? new Date(formData.dueDate).toISOString() : null,
+        status: formData.status,
+        paidAmount: parseFloat(formData.paidAmount),
+        paymentMethod: formData.paymentMethod || null,
+        notes: formData.notes || null,
+      };
+
+      let res;
+      if (editingCharge) {
+        res = await fetch(`/api/employees/charges/${editingCharge.id}`, {
+          method: 'PUT',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(payload),
+        });
+      } else {
+        res = await fetch('/api/employees/charges', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(payload),
+        });
+      }
+
+      if (!res.ok) throw new Error('Failed to save charge');
+      toast.success(editingCharge ? 'Charge updated' : 'Charge created');
+      setShowDialog(false);
+      fetchData();
+    } catch (err: any) {
+      console.error('Error saving charge:', err);
+      toast.error(err.message);
+    }
+  };
+
+  const handleDelete = async (id: string) => {
+    if (!confirm('Are you sure you want to delete this charge?')) return;
+
+    try {
+      const res = await fetch(`/api/employees/charges/${id}`, { method: 'DELETE' });
+      if (!res.ok) throw new Error('Failed to delete');
+      toast.success('Charge deleted');
+      fetchData();
+    } catch (err: any) {
+      toast.error(err.message);
+    }
+  };
+
+  const getEmployeeName = (empDataId: string) => {
+    const emp = employmentData.find((e) => e.id === empDataId);
+    return emp?.user ? `${emp.user.firstname} ${emp.user.lastname}` : 'Unknown';
+  };
+
+  const getStatusColor = (status: string) => {
+    switch (status) {
+      case 'paid':
+        return 'text-green-600';
+      case 'pending':
+        return 'text-yellow-600';
+      case 'partially_paid':
+        return 'text-blue-600';
+      case 'waived':
+        return 'text-gray-600';
+      case 'cancelled':
+        return 'text-red-600';
+      default:
+        return 'text-gray-600';
+    }
+  };
+
+  if (loading) {
+    return (
+      <div className="flex items-center justify-center h-screen">
+        <p className="text-muted-foreground">Loading...</p>
+      </div>
+    );
+  }
+
+  return (
+    <div className="space-y-6">
+      <div className="flex items-center justify-between">
+        <div>
+          <h1 className="text-3xl font-bold tracking-tight">Employee Charges</h1>
+          <p className="text-muted-foreground">Manage employee charges, fines, and deductions</p>
+        </div>
+        <Button onClick={() => handleOpenDialog()}>
+          <Plus className="mr-2 h-4 w-4" />
+          Add Charge
+        </Button>
+      </div>
+
+      <Card>
+        <CardHeader>
+          <CardTitle>Charge Records</CardTitle>
+          <CardDescription>All employee charges and deductions</CardDescription>
+        </CardHeader>
+        <CardContent>
+          <div className="overflow-x-auto">
+            <Table>
+              <TableHeader>
+                <TableRow>
+                  <TableHead>Employee</TableHead>
+                  <TableHead>Type</TableHead>
+                  <TableHead>Amount</TableHead>
+                  <TableHead>Paid</TableHead>
+                  <TableHead>Date</TableHead>
+                  <TableHead>Due Date</TableHead>
+                  <TableHead>Status</TableHead>
+                  <TableHead className="text-right">Actions</TableHead>
+                </TableRow>
+              </TableHeader>
+              <TableBody>
+                {charges.length === 0 ? (
+                  <TableRow>
+                    <TableCell colSpan={8} className="text-center text-muted-foreground">
+                      No charges recorded
+                    </TableCell>
+                  </TableRow>
+                ) : (
+                  charges.map((charge) => (
+                    <TableRow key={charge.id}>
+                      <TableCell className="font-medium">{getEmployeeName(charge.employmentDataId)}</TableCell>
+                      <TableCell>{charge.chargeType}</TableCell>
+                      <TableCell>${charge.amount.toFixed(2)}</TableCell>
+                      <TableCell>${charge.paidAmount.toFixed(2)}</TableCell>
+                      <TableCell>{formatDate(charge.date)}</TableCell>
+                      <TableCell>
+                        {charge.dueDate ? formatDate(charge.dueDate) : '-'}
+                      </TableCell>
+                      <TableCell>
+                        <span className={`text-sm font-medium capitalize ${getStatusColor(charge.status)}`}>
+                          {charge.status.replace('_', ' ')}
+                        </span>
+                      </TableCell>
+                      <TableCell className="text-right space-x-2">
+                        <Button size="sm" variant="ghost" onClick={() => handleOpenDialog(charge)}>
+                          <Edit2 className="h-4 w-4" />
+                        </Button>
+                        <Button size="sm" variant="ghost" onClick={() => handleDelete(charge.id)}>
+                          <Trash2 className="h-4 w-4 text-red-600" />
+                        </Button>
+                      </TableCell>
+                    </TableRow>
+                  ))
+                )}
+              </TableBody>
+            </Table>
+          </div>
+        </CardContent>
+      </Card>
+
+      <Dialog open={showDialog} onOpenChange={setShowDialog}>
+        <DialogContent className="max-w-lg">
+          <DialogHeader>
+            <DialogTitle>{editingCharge ? 'Update Charge' : 'Add New Charge'}</DialogTitle>
+            <DialogDescription>
+              {editingCharge ? 'Update the charge details' : 'Record a new employee charge or deduction'}
+            </DialogDescription>
+          </DialogHeader>
+
+          <div className="space-y-4">
+            <div className="space-y-2">
+              <Label>Employee</Label>
+              <Select value={selectedEmployee} onValueChange={setSelectedEmployee}>
+                <SelectTrigger>
+                  <SelectValue placeholder="Select employee" />
+                </SelectTrigger>
+                <SelectContent>
+                  {employmentData.map((emp) => (
+                    <SelectItem key={emp.id} value={emp.id}>
+                      {emp.user?.firstname} {emp.user?.lastname} - {emp.position}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+
+            <div className="grid grid-cols-2 gap-4">
+              <div className="space-y-2">
+                <Label>Charge Type</Label>
+                <Input
+                  value={formData.chargeType}
+                  onChange={(e) => setFormData({ ...formData, chargeType: e.target.value })}
+                  placeholder="e.g., Fine, Shortage, Advance"
+                />
+              </div>
+              <div className="space-y-2">
+                <Label>Amount</Label>
+                <Input
+                  type="number"
+                  step="0.01"
+                  value={formData.amount}
+                  onChange={(e) => setFormData({ ...formData, amount: e.target.value })}
+                />
+              </div>
+            </div>
+
+            <div className="space-y-2">
+              <Label>Description</Label>
+              <Textarea
+                value={formData.description}
+                onChange={(e) => setFormData({ ...formData, description: e.target.value })}
+                placeholder="Charge description"
+              />
+            </div>
+
+            <div className="space-y-2">
+              <Label>Reason</Label>
+              <Input
+                value={formData.reason}
+                onChange={(e) => setFormData({ ...formData, reason: e.target.value })}
+                placeholder="Reason for charge"
+              />
+            </div>
+
+            <div className="grid grid-cols-2 gap-4">
+              <div className="space-y-2">
+                <Label>Charge Date</Label>
+                <Input
+                  type="date"
+                  value={formData.date}
+                  onChange={(e) => setFormData({ ...formData, date: e.target.value })}
+                />
+              </div>
+              <div className="space-y-2">
+                <Label>Due Date</Label>
+                <Input
+                  type="date"
+                  value={formData.dueDate}
+                  onChange={(e) => setFormData({ ...formData, dueDate: e.target.value })}
+                />
+              </div>
+            </div>
+
+            <div className="grid grid-cols-2 gap-4">
+              <div className="space-y-2">
+                <Label>Status</Label>
+                <Select value={formData.status} onValueChange={(value) =>
+                  setFormData({ ...formData, status: value as any })
+                }>
+                  <SelectTrigger>
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="pending">Pending</SelectItem>
+                    <SelectItem value="paid">Paid</SelectItem>
+                    <SelectItem value="partially_paid">Partially Paid</SelectItem>
+                    <SelectItem value="waived">Waived</SelectItem>
+                    <SelectItem value="cancelled">Cancelled</SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
+              <div className="space-y-2">
+                <Label>Paid Amount</Label>
+                <Input
+                  type="number"
+                  step="0.01"
+                  value={formData.paidAmount}
+                  onChange={(e) => setFormData({ ...formData, paidAmount: e.target.value })}
+                />
+              </div>
+            </div>
+
+            <div className="space-y-2">
+              <Label>Payment Method</Label>
+              <Input
+                value={formData.paymentMethod}
+                onChange={(e) => setFormData({ ...formData, paymentMethod: e.target.value })}
+                placeholder="e.g., Cash, Deduction from Salary"
+              />
+            </div>
+
+            <div className="space-y-2">
+              <Label>Notes</Label>
+              <Textarea
+                value={formData.notes}
+                onChange={(e) => setFormData({ ...formData, notes: e.target.value })}
+                placeholder="Additional notes"
+              />
+            </div>
+          </div>
+
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setShowDialog(false)}>
+              Cancel
+            </Button>
+            <Button onClick={handleSubmit}>
+              {editingCharge ? 'Update' : 'Create'} Charge
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+    </div>
+  );
+}

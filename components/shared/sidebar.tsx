@@ -24,6 +24,9 @@ import {
 	BookMarked,
 	ShoppingCart,
 	ChevronDown,
+	DollarSign,
+	AlertCircleIcon,
+	Briefcase,
 
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
@@ -69,6 +72,28 @@ const sidebarGroups = [
 				href: "/employees",
 				icon: Users,
 				badge: null,
+				children: [
+					{
+						title: "Employee List",
+						href: "/employees",
+						icon: Users,
+					},
+					{
+						title: "Salary Payments",
+						href: "/employees/salary-payments",
+						icon: DollarSign,
+					},
+					{
+						title: "Charges",
+						href: "/employees/charges",
+						icon: AlertCircle,
+					},
+					{
+						title: "Leave Management",
+						href: "/employees/leaves",
+						icon: Calendar,
+					},
+				],
 			},
 			{
 				title: "Departments",

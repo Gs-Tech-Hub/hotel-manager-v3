@@ -1575,11 +1575,13 @@ model SalaryPayment {
   paymentMethod   String?
   status          String    @default("completed") // pending, completed, failed
   notes           String?
+  salaryDueDate   DateTime?  // When salary is due (calculated from employment date + frequency)
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
   @@index([userId, paymentDate])
+  @@index([salaryDueDate])
   @@map("salary_payments")
 }
 
