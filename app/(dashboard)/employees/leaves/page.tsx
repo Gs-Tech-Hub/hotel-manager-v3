@@ -49,6 +49,13 @@ const calculateDays = (start: string, end: string) => {
   }
 };
 
+interface Employee {
+  id: string;
+  firstname?: string;
+  lastname?: string;
+  email: string;
+}
+
 interface EmployeeLeave {
   id: string;
   employmentDataId: string;
@@ -63,21 +70,9 @@ interface EmployeeLeave {
   notes?: string;
 }
 
-interface EmploymentData {
-  id: string;
-  userId: string;
-  position: string;
-  salary: number;
-  user?: {
-    firstname?: string;
-    lastname?: string;
-    email: string;
-  };
-}
-
 export default function EmployeeLeavesPage() {
   const [leaves, setLeaves] = useState<EmployeeLeave[]>([]);
-  const [employmentData, setEmploymentData] = useState<EmploymentData[]>([]);
+  const [employees, setEmployees] = useState<Employee[]>([]);
   const [loading, setLoading] = useState(true);
   const [showDialog, setShowDialog] = useState(false);
   const [editingLeave, setEditingLeave] = useState<EmployeeLeave | null>(null);
@@ -103,7 +98,7 @@ export default function EmployeeLeavesPage() {
       if (empRes.ok) {
         const empJson = await empRes.json();
         const empList = empJson.data?.employees || empJson.data || [];
-        setEmploymentData(Array.isArray(empList) ? empList : []);
+        setEmployees(Array.isArray(empList) ? empList : []);
       }
 
       const leaveRes = await fetch('/api/employees/leaves');
@@ -172,7 +167,7 @@ export default function EmployeeLeavesPage() {
 
     try {
       const payload = {
-        employmentDataId: selectedEmployee,
+        userId: selectedEmployee,
         leaveType: formData.leaveType,
         startDate: new Date(formData.startDate).toISOString(),
         endDate: new Date(formData.endDate).toISOString(),
@@ -220,9 +215,9 @@ export default function EmployeeLeavesPage() {
     }
   };
 
-  const getEmployeeName = (empDataId: string) => {
-    const emp = employmentData.find((e) => e.id === empDataId);
-    return emp?.user ? `${emp.user.firstname} ${emp.user.lastname}` : 'Unknown';
+  const getEmployeeName = (userId: string) => {
+    const emp = employees.find((e) => e.id === userId);
+    return emp ? `${emp.firstname} ${emp.lastname}` : 'Unknown';
   };
 
   const getStatusIcon = (status: string) => {
@@ -339,9 +334,9 @@ export default function EmployeeLeavesPage() {
                   <SelectValue placeholder="Select employee" />
                 </SelectTrigger>
                 <SelectContent>
-                  {employmentData.map((emp) => (
+                  {employees.map((emp) => (
                     <SelectItem key={emp.id} value={emp.id}>
-                      {emp.user?.firstname} {emp.user?.lastname} - {emp.position}
+                      {emp.firstname} {emp.lastname}
                     </SelectItem>
                   ))}
                 </SelectContent>

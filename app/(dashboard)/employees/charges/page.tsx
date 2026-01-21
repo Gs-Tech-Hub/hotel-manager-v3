@@ -37,6 +37,13 @@ const formatDate = (dateString: string) => {
   return date.toLocaleDateString('en-US', { year: 'numeric', month: 'short', day: '2-digit' });
 };
 
+interface Employee {
+  id: string;
+  firstname?: string;
+  lastname?: string;
+  email: string;
+}
+
 interface EmployeeCharge {
   id: string;
   employmentDataId: string;
@@ -53,21 +60,9 @@ interface EmployeeCharge {
   notes?: string;
 }
 
-interface EmploymentData {
-  id: string;
-  userId: string;
-  position: string;
-  salary: number;
-  user?: {
-    firstname?: string;
-    lastname?: string;
-    email: string;
-  };
-}
-
 export default function EmployeeChargesPage() {
   const [charges, setCharges] = useState<EmployeeCharge[]>([]);
-  const [employmentData, setEmploymentData] = useState<EmploymentData[]>([]);
+  const [employees, setEmployees] = useState<Employee[]>([]);
   const [loading, setLoading] = useState(true);
   const [showDialog, setShowDialog] = useState(false);
   const [editingCharge, setEditingCharge] = useState<EmployeeCharge | null>(null);
@@ -96,7 +91,7 @@ export default function EmployeeChargesPage() {
       if (empRes.ok) {
         const empJson = await empRes.json();
         const empList = empJson.data?.employees || empJson.data || [];
-        setEmploymentData(Array.isArray(empList) ? empList : []);
+        setEmployees(Array.isArray(empList) ? empList : []);
       }
 
       const chargeRes = await fetch('/api/employees/charges');
@@ -155,7 +150,7 @@ export default function EmployeeChargesPage() {
 
     try {
       const payload = {
-        employmentDataId: selectedEmployee,
+        userId: selectedEmployee,
         chargeType: formData.chargeType,
         amount: parseFloat(formData.amount),
         description: formData.description || null,
@@ -206,9 +201,9 @@ export default function EmployeeChargesPage() {
     }
   };
 
-  const getEmployeeName = (empDataId: string) => {
-    const emp = employmentData.find((e) => e.id === empDataId);
-    return emp?.user ? `${emp.user.firstname} ${emp.user.lastname}` : 'Unknown';
+  const getEmployeeName = (userId: string) => {
+    const emp = employees.find((e) => e.id === userId);
+    return emp ? `${emp.firstname} ${emp.lastname}` : 'Unknown';
   };
 
   const getStatusColor = (status: string) => {
@@ -326,9 +321,9 @@ export default function EmployeeChargesPage() {
                   <SelectValue placeholder="Select employee" />
                 </SelectTrigger>
                 <SelectContent>
-                  {employmentData.map((emp) => (
+                  {employees.map((emp) => (
                     <SelectItem key={emp.id} value={emp.id}>
-                      {emp.user?.firstname} {emp.user?.lastname} - {emp.position}
+                      {emp.firstname} {emp.lastname}
                     </SelectItem>
                   ))}
                 </SelectContent>
