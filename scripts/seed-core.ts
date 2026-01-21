@@ -148,9 +148,9 @@ async function seedRoles() {
   const rolesToSeed = [
     { code: 'admin', name: 'Administrator', description: 'Full system administrator access' },
     { code: 'manager', name: 'Manager', description: 'Manager with elevated permissions' },
-    { code: 'staff', name: 'Staff', description: 'General staff member' },
-    { code: 'employee', name: 'Employee', description: 'Employee with read-only access' },
+    { code: 'staff', name: 'Staff', description: 'Department staff with limited operational access' },
     { code: 'cashier', name: 'Cashier', description: 'Cashier for payment processing' },
+    { code: 'accountant', name: 'Accountant', description: 'Finance and accounting management' },
   ];
 
   const roles: Record<string, any> = {};
@@ -316,57 +316,53 @@ async function seedPermissions(roles: Record<string, any>) {
       { action: 'reports', subject: 'export' },
     ],
     staff: [
-      // Orders
+      // Orders (department scoped)
       { action: 'orders', subject: 'read' },
       { action: 'orders', subject: 'create' },
-      { action: 'orders', subject: 'update' },
       
-      // Payments
+      // Payments (view only)
       { action: 'payments', subject: 'read' },
-      { action: 'payments', subject: 'process' },
       
-      // Inventory
+      // Inventory (view only)
       { action: 'inventory', subject: 'read' },
-      
-      // Inventory Items
       { action: 'inventory_items', subject: 'read' },
       
-      // Bookings
+      // Bookings (limited)
       { action: 'bookings', subject: 'read' },
       
-      // Departments
+      // Departments (read only)
       { action: 'departments', subject: 'read' },
-      
-      // Department Sections
       { action: 'department_sections', subject: 'read' },
       
-      // Reports
+      // Reports (read only)
       { action: 'reports', subject: 'read' },
     ],
-    employee: [
-      // Orders
+    accountant: [
+      // Payments (full financial access)
+      { action: 'payments', subject: 'read' },
+      { action: 'payments', subject: 'process' },
+      { action: 'payments', subject: 'refund' },
+      
+      // Orders (view for accounting)
       { action: 'orders', subject: 'read' },
       
-      // Inventory
+      // Inventory (cost tracking)
       { action: 'inventory', subject: 'read' },
-      
-      // Inventory Items
       { action: 'inventory_items', subject: 'read' },
       
-      // Bookings
+      // Bookings (revenue tracking)
       { action: 'bookings', subject: 'read' },
       
-      // Departments
-      { action: 'departments', subject: 'read' },
+      // Discounts (financial impact)
+      { action: 'discounts', subject: 'read' },
       
-      // Department Sections
-      { action: 'department_sections', subject: 'read' },
-      
-      // Reports
+      // Reports (financial reporting)
       { action: 'reports', subject: 'read' },
+      { action: 'reports', subject: 'generate' },
+      { action: 'reports', subject: 'export' },
       
-      // Employees (own profile)
-      { action: 'employees', subject: 'read' },
+      // Analytics (financial insights)
+      { action: 'analytics', subject: 'read' },
     ],
     cashier: [
       // Orders

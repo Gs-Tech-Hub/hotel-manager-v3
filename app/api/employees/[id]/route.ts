@@ -94,7 +94,7 @@ export async function GET(
 
 /**
  * PUT /api/employees/[id]
- * Update employee and their roles
+ * Update employee and their roles including employment data
  */
 export async function PUT(
   req: NextRequest,
@@ -114,11 +114,24 @@ export async function PUT(
       firstName,
       lastName,
       roles = [],
+      // Employment data fields
+      position,
+      department,
+      salary,
+      salaryType,
+      salaryFrequency,
+      contractType,
+      reportsTo,
+      employmentStatus,
+      terminationDate,
+      terminationReason,
+      terminationNotes,
     } = body;
 
     // Verify employee exists
     const employee = await prisma.pluginUsersPermissionsUser.findUnique({
       where: { id },
+      include: { employmentData: true },
     });
 
     if (!employee) {
@@ -141,59 +154,130 @@ export async function PUT(
       }
     }
 
-    // Update employee info
-    const updated = await prisma.pluginUsersPermissionsUser.update({
-      where: { id },
-      data: {
-        username: username || employee.username,
-        email: email || employee.email,
-        firstname: firstName !== undefined ? firstName : employee.firstname,
-        lastname: lastName !== undefined ? lastName : employee.lastname,
-      },
-    });
-
-    // Update roles: remove old, add new
-    if (Array.isArray(roles)) {
-      // Remove existing roles
-      await prisma.userRole.deleteMany({
-        where: {
-          userId: id,
-          userType: 'employee',
+    try {
+      // Update employee info
+      const updated = await prisma.pluginUsersPermissionsUser.update({
+        where: { id },
+        data: {
+          username: username || employee.username,
+          email: email || employee.email,
+          firstname: firstName !== undefined ? firstName : employee.firstname,
+          lastname: lastName !== undefined ? lastName : employee.lastname,
         },
       });
 
-      // Add new roles
-      if (roles.length > 0) {
-        await Promise.all(
-          roles.map((role: { roleId: string; departmentId?: string }) =>
-            prisma.userRole.create({
-              data: {
-                userId: id,
-                userType: 'employee',
-                roleId: role.roleId,
-                departmentId: role.departmentId || null,
-                grantedAt: new Date(),
-                grantedBy: ctx.userId,
-              },
-            })
-          )
+      // Update employment data if provided
+      if (
+        position !== undefined ||
+        department !== undefined ||
+        salary !== undefined ||
+        salaryType !== undefined ||
+        salaryFrequency !== undefined ||
+        contractType !== undefined ||
+        reportsTo !== undefined ||
+        employmentStatus !== undefined ||
+        terminationDate !== undefined ||
+        terminationReason !== undefined ||
+        terminationNotes !== undefined
+      ) {
+        if (employee.employmentData) {
+          // Update existing employment data
+          await prisma.employmentData.update({
+            where: { id: employee.employmentData.id },
+            data: {
+              ...(position !== undefined && { position }),
+              ...(department !== undefined && { department }),
+              ...(salary !== undefined && { salary: parseFloat(salary.toString()) }),
+              ...(salaryType !== undefined && { salaryType }),
+              ...(salaryFrequency !== undefined && { salaryFrequency }),
+              ...(contractType !== undefined && { contractType }),
+              ...(reportsTo !== undefined && { reportsTo }),
+              ...(employmentStatus !== undefined && { employmentStatus }),
+              ...(terminationDate !== undefined && { terminationDate: terminationDate ? new Date(terminationDate) : null }),
+              ...(terminationReason !== undefined && { terminationReason }),
+              ...(terminationNotes !== undefined && { terminationNotes }),
+            },
+          });
+        } else {
+          // Create employment data if it doesn't exist
+          await prisma.employmentData.create({
+            data: {
+              userId: id,
+              employmentDate: new Date(),
+              position: position || 'Staff',
+              department: department || null,
+              salary: salary !== undefined ? parseFloat(salary.toString()) : 0,
+              salaryType: salaryType || 'monthly',
+              salaryFrequency: salaryFrequency || 'monthly',
+              contractType: contractType || null,
+              reportsTo: reportsTo || null,
+              employmentStatus: employmentStatus || 'active',
+            },
+          });
+        }
+      }
+
+      // Update roles: remove old, add new
+      if (Array.isArray(roles)) {
+        // Remove existing roles
+        await prisma.userRole.deleteMany({
+          where: {
+            userId: id,
+            userType: 'employee',
+          },
+        });
+
+        // Add new roles
+        if (roles.length > 0) {
+          await Promise.all(
+            roles.map((role: { roleId: string; departmentId?: string }) =>
+              prisma.userRole.create({
+                data: {
+                  userId: id,
+                  userType: 'employee',
+                  roleId: role.roleId,
+                  departmentId: role.departmentId || null,
+                  grantedAt: new Date(),
+                  grantedBy: ctx.userId,
+                },
+              })
+            )
+          );
+        }
+      }
+
+      console.log(`[API] Updated employee: ${updated.email} (ID: ${id})`);
+
+      // Fetch updated employee with employment data
+      const updatedWithEmployment = await prisma.pluginUsersPermissionsUser.findUnique({
+        where: { id },
+        include: { employmentData: true },
+      });
+
+      return NextResponse.json(
+        successResponse({
+          data: {
+            id: updated.id,
+            email: updated.email,
+            username: updated.username,
+            firstname: updated.firstname,
+            lastname: updated.lastname,
+            employmentData: updatedWithEmployment?.employmentData,
+          },
+        }),
+        { status: 200 }
+      );
+    } catch (dbError: any) {
+      // Handle table-not-exists error gracefully
+      if (dbError?.code === 'P2021') {
+        console.warn('[API] Employment tables not created yet');
+        return NextResponse.json(
+          errorResponse('INTERNAL_ERROR', 'Employment tables not initialized. Please contact administrator.'),
+          { status: 500 }
         );
       }
+      throw dbError;
     }
-
-    console.log(`[API] Updated employee: ${updated.email} (ID: ${id})`);
-
-    return NextResponse.json(
-      successResponse({
-        data:   {
-        id: updated.id,
-        email: updated.email,
-        username: updated.username,
-        firstname: updated.firstname,
-        lastname: updated.lastname,
-      }}),
-      { status: 200 }
-    );
   } catch (error: any) {
     console.error('[API] Failed to update employee:', error);
     return NextResponse.json(
@@ -205,7 +289,7 @@ export async function PUT(
 
 /**
  * DELETE /api/employees/[id]
- * Soft delete (block) an employee
+ * Soft delete (deactivate) an employee
  */
 export async function DELETE(
   req: NextRequest,
@@ -222,6 +306,7 @@ export async function DELETE(
     // Verify employee exists
     const employee = await prisma.pluginUsersPermissionsUser.findUnique({
       where: { id },
+      include: { employmentData: true },
     });
 
     if (!employee) {
@@ -231,18 +316,45 @@ export async function DELETE(
       );
     }
 
-    // Soft delete: just block the employee
-    const blocked = await prisma.pluginUsersPermissionsUser.update({
-      where: { id },
-      data: { blocked: true },
-    });
+    try {
+      // Block user account
+      await prisma.pluginUsersPermissionsUser.update({
+        where: { id },
+        data: { blocked: true },
+      });
 
-    console.log(`[API] Deactivated employee: ${employee.email} (ID: ${id})`);
+      // Update employment status to inactive
+      if (employee.employmentData) {
+        await prisma.employmentData.update({
+          where: { id: employee.employmentData.id },
+          data: {
+            employmentStatus: 'inactive',
+            terminationDate: new Date(),
+          },
+        });
+      }
 
-    return NextResponse.json(
-      successResponse({ message: 'Employee deactivated successfully' }),
-      { status: 200 }
-    );
+      console.log(`[API] Deactivated employee: ${employee.email} (ID: ${id})`);
+
+      return NextResponse.json(
+        successResponse({ data: { message: 'Employee deactivated successfully' } }),
+        { status: 200 }
+      );
+    } catch (dbError: any) {
+      if (dbError?.code === 'P2021') {
+        console.warn('[API] Employment tables not created yet');
+        // Still block the user even if employment tables don't exist
+        await prisma.pluginUsersPermissionsUser.update({
+          where: { id },
+          data: { blocked: true },
+        });
+        return NextResponse.json(
+          successResponse({ data: { message: 'Employee account deactivated' } }),
+          { status: 200 }
+        );
+      }
+      throw dbError;
+    }
   } catch (error: any) {
     console.error('[API] Failed to delete employee:', error);
     return NextResponse.json(

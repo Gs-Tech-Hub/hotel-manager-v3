@@ -47,7 +47,7 @@ export function EmployeeForm({
   employeeId,
   initialData,
 }: EmployeeFormProps) {
-  const [step, setStep] = useState<'basic' | 'roles'>('basic');
+  const [step, setStep] = useState<'basic' | 'employment' | 'roles'>('basic');
   const [roles, setRoles] = useState<Role[]>([]);
   const [departments, setDepartments] = useState<Department[]>([]);
   const [loading, setLoading] = useState(false);
@@ -60,6 +60,19 @@ export function EmployeeForm({
     firstName: '',
     lastName: '',
     password: '',
+  });
+
+  // Employment data
+  const [employmentData, setEmploymentData] = useState({
+    employmentDate: new Date().toISOString().split('T')[0],
+    position: '',
+    department: '',
+    salary: '',
+    salaryType: 'monthly',
+    salaryFrequency: 'monthly',
+    contractType: 'permanent',
+    reportsTo: '',
+    employmentStatus: 'active',
   });
 
   const [selectedRoles, setSelectedRoles] = useState<
@@ -86,7 +99,7 @@ export function EmployeeForm({
         password: '', // Don't pre-fill password on edit
       });
       setSelectedRoles(initialData.roles);
-      setStep('roles'); // Go directly to roles for edit
+      setStep('employment'); // Go to employment step for edit
     } else {
       setFormData({
         email: '',
@@ -94,6 +107,17 @@ export function EmployeeForm({
         firstName: '',
         lastName: '',
         password: '',
+      });
+      setEmploymentData({
+        employmentDate: new Date().toISOString().split('T')[0],
+        position: '',
+        department: '',
+        salary: '',
+        salaryType: 'monthly',
+        salaryFrequency: 'monthly',
+        contractType: 'permanent',
+        reportsTo: '',
+        employmentStatus: 'active',
       });
       setSelectedRoles([]);
       setStep('basic');
@@ -142,6 +166,15 @@ export function EmployeeForm({
       return;
     }
 
+    setStep('employment');
+  };
+
+  const handleEmploymentSubmit = (e: React.FormEvent) => {
+    e.preventDefault();
+    setError('');
+
+    // Optional employment data - no strict validation needed
+    // Just proceed to roles step
     setStep('roles');
   };
 
@@ -164,6 +197,13 @@ export function EmployeeForm({
           ...formData,
           firstName: formData.firstName || null,
           lastName: formData.lastName || null,
+          // Include employment data
+          ...Object.fromEntries(
+            Object.entries(employmentData).map(([key, value]) => [
+              key,
+              value || undefined
+            ])
+          ),
           roles: selectedRoles,
         }),
         credentials: 'include',
@@ -217,6 +257,20 @@ export function EmployeeForm({
           >
             <X size={24} />
           </button>
+        </div>
+
+        {/* Progress Steps */}
+        <div className="flex items-center justify-between px-6 pt-6 pb-4 border-b">
+          <div className="flex items-center gap-2">
+            <div className={`w-8 h-8 rounded-full flex items-center justify-center text-sm font-bold ${step === 'basic' || step === 'employment' || step === 'roles' ? 'bg-blue-600 text-white' : 'bg-green-600 text-white'}`}>1</div>
+            <span className="text-sm font-medium">Basic Info</span>
+          </div>
+          <div className="flex-1 h-1 mx-2" style={{backgroundColor: (step === 'employment' || step === 'roles') ? '#2563eb' : '#e5e7eb'}}></div>
+          <div className={`w-8 h-8 rounded-full flex items-center justify-center text-sm font-bold ${step === 'employment' || step === 'roles' ? 'bg-blue-600 text-white' : 'bg-gray-300 text-gray-600'}`}>2</div>
+          <span className="text-sm font-medium">Employment</span>
+          <div className="flex-1 h-1 mx-2" style={{backgroundColor: step === 'roles' ? '#2563eb' : '#e5e7eb'}}></div>
+          <div className={`w-8 h-8 rounded-full flex items-center justify-center text-sm font-bold ${step === 'roles' ? 'bg-blue-600 text-white' : 'bg-gray-300 text-gray-600'}`}>3</div>
+          <span className="text-sm font-medium">Roles</span>
         </div>
 
         {/* Error Alert */}
@@ -329,7 +383,198 @@ export function EmployeeForm({
           </form>
         )}
 
-        {/* Step 2: Roles Assignment */}
+        {/* Step 2: Employment Data */}
+        {step === 'employment' && (
+          <form onSubmit={handleEmploymentSubmit} className="p-6 space-y-4">
+            <h3 className="text-lg font-semibold">Employment Information (Optional)</h3>
+            
+            <div className="grid grid-cols-2 gap-4">
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">
+                  Employment Date
+                </label>
+                <input
+                  type="date"
+                  value={employmentData.employmentDate}
+                  onChange={(e) =>
+                    setEmploymentData({ ...employmentData, employmentDate: e.target.value })
+                  }
+                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 outline-none"
+                />
+              </div>
+
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">
+                  Position
+                </label>
+                <input
+                  type="text"
+                  value={employmentData.position}
+                  onChange={(e) =>
+                    setEmploymentData({ ...employmentData, position: e.target.value })
+                  }
+                  placeholder="e.g., Server, Chef, Manager"
+                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 outline-none"
+                />
+              </div>
+            </div>
+
+            <div className="grid grid-cols-2 gap-4">
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">
+                  Department
+                </label>
+                <select
+                  value={employmentData.department}
+                  onChange={(e) =>
+                    setEmploymentData({ ...employmentData, department: e.target.value })
+                  }
+                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 outline-none"
+                >
+                  <option value="">-- Select department --</option>
+                  {departments.map((dept) => (
+                    <option key={dept.id} value={dept.code}>
+                      {dept.name} ({dept.code})
+                    </option>
+                  ))}
+                </select>
+              </div>
+
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">
+                  Salary
+                </label>
+                <input
+                  type="number"
+                  step="0.01"
+                  min="0"
+                  value={employmentData.salary}
+                  onChange={(e) =>
+                    setEmploymentData({ ...employmentData, salary: e.target.value })
+                  }
+                  placeholder="e.g., 1500.00"
+                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 outline-none"
+                />
+              </div>
+            </div>
+
+            <div className="grid grid-cols-3 gap-4">
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">
+                  Salary Type
+                </label>
+                <select
+                  value={employmentData.salaryType}
+                  onChange={(e) =>
+                    setEmploymentData({ ...employmentData, salaryType: e.target.value })
+                  }
+                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 outline-none"
+                >
+                  <option value="monthly">Monthly</option>
+                  <option value="hourly">Hourly</option>
+                  <option value="annual">Annual</option>
+                  <option value="daily">Daily</option>
+                </select>
+              </div>
+
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">
+                  Salary Frequency
+                </label>
+                <select
+                  value={employmentData.salaryFrequency}
+                  onChange={(e) =>
+                    setEmploymentData({ ...employmentData, salaryFrequency: e.target.value })
+                  }
+                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 outline-none"
+                >
+                  <option value="monthly">Monthly</option>
+                  <option value="bi-weekly">Bi-weekly</option>
+                  <option value="weekly">Weekly</option>
+                  <option value="daily">Daily</option>
+                </select>
+              </div>
+
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">
+                  Contract Type
+                </label>
+                <select
+                  value={employmentData.contractType}
+                  onChange={(e) =>
+                    setEmploymentData({ ...employmentData, contractType: e.target.value })
+                  }
+                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 outline-none"
+                >
+                  <option value="permanent">Permanent</option>
+                  <option value="temporary">Temporary</option>
+                  <option value="contractor">Contractor</option>
+                  <option value="intern">Intern</option>
+                </select>
+              </div>
+            </div>
+
+            <div className="grid grid-cols-2 gap-4">
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">
+                  Employment Status
+                </label>
+                <select
+                  value={employmentData.employmentStatus}
+                  onChange={(e) =>
+                    setEmploymentData({ ...employmentData, employmentStatus: e.target.value })
+                  }
+                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 outline-none"
+                >
+                  <option value="active">Active</option>
+                  <option value="inactive">Inactive</option>
+                  <option value="on_leave">On Leave</option>
+                  <option value="terminated">Terminated</option>
+                </select>
+              </div>
+
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">
+                  Reports To (Manager ID)
+                </label>
+                <input
+                  type="text"
+                  value={employmentData.reportsTo}
+                  onChange={(e) =>
+                    setEmploymentData({ ...employmentData, reportsTo: e.target.value })
+                  }
+                  placeholder="Manager user ID (optional)"
+                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 outline-none"
+                />
+              </div>
+            </div>
+
+            <div className="flex gap-3 pt-4">
+              <button
+                type="button"
+                onClick={() => setStep('basic')}
+                className="flex-1 px-4 py-2 border border-gray-300 rounded-lg hover:bg-gray-50"
+              >
+                Back
+              </button>
+              <button
+                type="button"
+                onClick={onClose}
+                className="flex-1 px-4 py-2 border border-gray-300 rounded-lg hover:bg-gray-50"
+              >
+                Cancel
+              </button>
+              <button
+                type="submit"
+                className="flex-1 px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700"
+              >
+                Next: Assign Roles
+              </button>
+            </div>
+          </form>
+        )}
+
+        {/* Step 3: Roles Assignment */}
         {step === 'roles' && (
           <form onSubmit={handleRolesSubmit} className="p-6 space-y-4">
             <div>
@@ -440,7 +685,7 @@ export function EmployeeForm({
             <div className="flex gap-3 pt-4">
               <button
                 type="button"
-                onClick={() => setStep('basic')}
+                onClick={() => setStep('employment')}
                 className="flex-1 px-4 py-2 border border-gray-300 rounded-lg hover:bg-gray-50"
               >
                 Back

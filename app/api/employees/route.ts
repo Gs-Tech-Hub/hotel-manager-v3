@@ -31,76 +31,94 @@ export async function GET(req: NextRequest) {
       where.employmentData = { ...where.employmentData, department };
     }
 
-    // Fetch employees
-    const [employees, total] = await Promise.all([
-      prisma.pluginUsersPermissionsUser.findMany({
-        where: where.employmentData ? { employmentData: where.employmentData } : {},
-        include: {
-          employmentData: {
-            include: {
-              leaves: { where: { status: 'approved' } },
-              charges: { where: { status: { in: ['pending', 'partially_paid'] } } },
-            },
-          },
-          employeeSummary: true,
-        },
-        orderBy: { createdAt: 'desc' },
-        skip,
-        take: limit,
-      }),
-      prisma.pluginUsersPermissionsUser.count({
-        where: where.employmentData ? { employmentData: where.employmentData } : {},
-      }),
-    ]);
-
-    const employeesWithRoles = await Promise.all(
-      (employees || []).map(async (emp) => {
-        const userRoles = await prisma.userRole.findMany({
-          where: {
-            userId: emp.id,
-            userType: 'employee',
-          },
+    try {
+      // Fetch employees
+      const [employees, total] = await Promise.all([
+        prisma.pluginUsersPermissionsUser.findMany({
+          where: where.employmentData ? { employmentData: where.employmentData } : {},
           include: {
-            role: true,
-            department: true,
+            employmentData: {
+              include: {
+                leaves: { where: { status: 'approved' } },
+                charges: { where: { status: { in: ['pending', 'partially_paid'] } } },
+              },
+            },
+            employeeSummary: true,
           },
-        });
+          orderBy: { createdAt: 'desc' },
+          skip,
+          take: limit,
+        }),
+        prisma.pluginUsersPermissionsUser.count({
+          where: where.employmentData ? { employmentData: where.employmentData } : {},
+        }),
+      ]);
 
-        return {
-          id: emp.id,
-          email: emp.email,
-          username: emp.username,
-          firstname: emp.firstname,
-          lastname: emp.lastname,
-          blocked: emp.blocked,
-          employmentData: emp.employmentData,
-          summary: emp.employeeSummary,
-          roles: userRoles.map((ur) => ({
-            roleId: ur.role.id,
-            roleName: ur.role.name,
-            departmentId: ur.departmentId,
-            departmentName: ur.department?.name,
-          })),
-          totalCharges: emp.employmentData?.charges.reduce((sum, c) => sum + Number(c.amount), 0) || 0,
-          activeLeaves: emp.employmentData?.leaves.length || 0,
-          createdAt: emp.createdAt,
-        };
-      })
-    ) || [];
+      const employeesWithRoles = await Promise.all(
+        (employees || []).map(async (emp) => {
+          const userRoles = await prisma.userRole.findMany({
+            where: {
+              userId: emp.id,
+              userType: 'employee',
+            },
+            include: {
+              role: true,
+              department: true,
+            },
+          });
 
-    return NextResponse.json(
-      successResponse({
-        data: {
-          employees: Array.isArray(employeesWithRoles) ? employeesWithRoles : [],
-          pagination: { page, limit, total, pages: Math.ceil(total / limit) },
-        },
-      }),
-      { status: 200 }
-    );
+          return {
+            id: emp.id,
+            email: emp.email,
+            username: emp.username,
+            firstname: emp.firstname,
+            lastname: emp.lastname,
+            blocked: emp.blocked,
+            employmentData: emp.employmentData,
+            summary: emp.employeeSummary,
+            roles: userRoles.map((ur) => ({
+              roleId: ur.role.id,
+              roleName: ur.role.name,
+              departmentId: ur.departmentId,
+              departmentName: ur.department?.name,
+            })),
+            totalCharges: emp.employmentData?.charges.reduce((sum, c) => sum + Number(c.amount), 0) || 0,
+            activeLeaves: emp.employmentData?.leaves.length || 0,
+            createdAt: emp.createdAt,
+          };
+        })
+      ) || [];
+
+      return NextResponse.json(
+        successResponse({
+          data: {
+            employees: Array.isArray(employeesWithRoles) ? employeesWithRoles : [],
+            pagination: { page, limit, total, pages: Math.ceil(total / limit) },
+          },
+        }),
+        { status: 200 }
+      );
+    } catch (dbError: any) {
+      // Handle table-not-exists error gracefully
+      if (dbError?.code === 'P2021') {
+        console.warn('[API] Employment tables not created yet, returning empty list');
+        return NextResponse.json(
+          successResponse({
+            data: {
+              employees: [],
+              pagination: { page, limit, total: 0, pages: 0 },
+            },
+          }),
+          { status: 200 }
+        );
+      }
+      throw dbError;
+    }
   } catch (error) {
     console.error('[API] Failed to list employees:', error);
+    const errorMessage = error instanceof Error ? error.message : 'Failed to list employees';
     return NextResponse.json(
-      errorResponse('INTERNAL_ERROR', 'Failed to list employees'),
+      errorResponse('INTERNAL_ERROR', errorMessage),
       { status: 500 }
     );
   }
@@ -125,6 +143,7 @@ export async function POST(req: NextRequest) {
       firstName,
       lastName,
       roles = [],
+      // Employment data fields
       employmentDate,
       position,
       department,
@@ -132,6 +151,8 @@ export async function POST(req: NextRequest) {
       salaryType = 'monthly',
       salaryFrequency = 'monthly',
       contractType,
+      reportsTo,
+      employmentStatus = 'active',
     } = body;
 
     // Validate required fields
@@ -166,17 +187,18 @@ export async function POST(req: NextRequest) {
         firstname: firstName || null,
         lastname: lastName || null,
         blocked: false,
-        employmentData: employmentDate
+        employmentData: employmentDate || position || salary !== undefined
           ? {
               create: {
-                employmentDate: new Date(employmentDate),
+                employmentDate: employmentDate ? new Date(employmentDate) : new Date(),
                 position: position || 'Staff',
                 department: department || null,
-                salary: salary ? parseFloat(salary.toString()) : 0,
+                salary: salary !== undefined ? parseFloat(salary.toString()) : 0,
                 salaryType,
                 salaryFrequency,
                 contractType: contractType || null,
-                employmentStatus: 'active',
+                reportsTo: reportsTo || null,
+                employmentStatus,
               },
             }
           : undefined,
