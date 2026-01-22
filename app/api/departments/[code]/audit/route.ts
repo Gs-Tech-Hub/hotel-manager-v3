@@ -34,6 +34,13 @@ export async function GET(request: NextRequest, { params }: { params: Promise<{ 
       }
     }
 
+    // Fetch current extras for this department (for display)
+    const departmentExtras = await prisma.departmentExtra.findMany({
+      where: { departmentId: dept.id },
+      include: { extra: true, section: true },
+    })
+    console.log(`[audit] Found ${departmentExtras.length} extras for department ${dept.code}`)
+
     const [inventoryItems, drinks, foodItems] = await Promise.all([
       inventoryIds.size > 0 ? prisma.inventoryItem.findMany({ where: { id: { in: Array.from(inventoryIds) } }, select: { id: true, name: true } }) : [],
       drinkIds.size > 0 ? prisma.drink.findMany({ where: { id: { in: Array.from(drinkIds) } }, select: { id: true, name: true } }) : [],
@@ -60,7 +67,26 @@ export async function GET(request: NextRequest, { params }: { params: Promise<{ 
     const movementMap = new Map(movementItems.map((mi) => [mi.id, mi.name]))
     const enrichedMovements = movements.map((m) => ({ ...m, inventoryItemName: movementMap.get(m.inventoryItemId) || null }))
 
-    return NextResponse.json(successResponse({ data: { transfers: enrichedTransfers, movements: enrichedMovements } }))
+    // Convert department extras to transfer-like display format
+    const extraTransfers = departmentExtras.map((extra, idx) => ({
+      id: `extra_${extra.id}`,
+      status: 'allocated',
+      fromDepartmentId: dept.id,
+      toDepartmentId: dept.id,
+      fromDepartmentName: dept.name,
+      toDepartmentName: extra.section?.name || 'General Stock',
+      createdAt: extra.createdAt,
+      updatedAt: extra.updatedAt,
+      items: [{
+        productType: 'extra',
+        productId: extra.extraId,
+        productName: extra.extra.name,
+        quantity: extra.quantity,
+      }],
+    }))
+    console.log(`[audit] Converting ${extraTransfers.length} extras to transfer format`)
+
+    return NextResponse.json(successResponse({ data: { transfers: [...enrichedTransfers, ...extraTransfers], movements: enrichedMovements } }))
   } catch (err: any) {
     console.error('GET /api/departments/[code]/audit error', err)
     return NextResponse.json(errorResponse(ErrorCodes.INTERNAL_ERROR, 'Failed to fetch audit data'), { status: getStatusCode(ErrorCodes.INTERNAL_ERROR) })

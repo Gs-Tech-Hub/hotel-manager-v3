@@ -8,7 +8,7 @@ import Link from 'next/link'
 import { useRouter } from 'next/navigation'
 import Price from '@/components/ui/Price'
 
-type Item = { id: string; name: string; quantity?: number; available?: number; unitPrice?: number }
+type Item = { id: string; name: string; quantity?: number; available?: number; unitPrice?: number; itemType?: 'inventory' | 'extra'; sku?: string; unit?: string; category?: string }
 
 export default function InventoryTransferPage() {
   const router = useRouter()
@@ -34,7 +34,7 @@ export default function InventoryTransferPage() {
   const [sections, setSections] = useState<Array<{ id: string; code: string; name: string }>>([])
   const [destination, setDestination] = useState<string | null>(null)
 
-  const [cart, setCart] = useState<{ id: string; name: string; quantity: number }[]>([])
+  const [cart, setCart] = useState<{ id: string; name: string; quantity: number; itemType: 'inventory' | 'extra' }[]>([])
   const [sourceDeptId, setSourceDeptId] = useState<string | null>(null)
 
   useEffect(() => {
@@ -85,14 +85,13 @@ export default function InventoryTransferPage() {
     if (!source) return
     setLoading(true)
     try {
-      const q = new URLSearchParams({ page: String(p), pageSize: String(pageSize) })
-      // The API filters by category (department code mapped to category). Add category to inventory query.
-      const cat = mapDeptCodeToCategory(source)
-      if (cat) q.set('category', cat)
-      const res = await fetch(`/api/inventory?${q.toString()}`)
+      // Use the department-specific endpoint that includes both inventory and extras
+      const res = await fetch(`/api/departments/${encodeURIComponent(source)}/items?limit=100`)
       const j = await res.json()
-      setProducts(j.data?.items || [])
-      setTotal(j.data?.total || 0)
+      // Show all items with available > 0, but allow transfer for all (UI will handle trackInventory separately)
+      const filtered = (j.data?.items || []).filter((item: any) => Number(item.available ?? item.quantity ?? 0) > 0)
+      setProducts(filtered)
+      setTotal(filtered.length)
       setPage(p)
     } catch (e) {
       console.error('failed to load products', e)
@@ -103,38 +102,45 @@ export default function InventoryTransferPage() {
 
   async function quickSearch(qs: string) {
     try {
-      const q = new URLSearchParams({ search: qs, page: '1', pageSize: '10' })
-  // Use category filter when searching so results reflect the selected source department
-  const cat = mapDeptCodeToCategory(source)
-  if (cat) q.set('category', cat)
-      const res = await fetch(`/api/inventory?${q.toString()}`)
+      // Search in department items (includes extras)
+      const res = await fetch(`/api/departments/${encodeURIComponent(source || '')}/items?limit=10`)
       const j = await res.json()
-      setResults(j.data?.items || [])
+      const all = j.data?.items || []
+      // Filter locally by search term AND by available quantity > 0
+      const filtered = all.filter((item: any) => 
+        (Number(item.available ?? item.quantity ?? 0) > 0) &&
+        (item.name.toLowerCase().includes(qs.toLowerCase()) ||
+         item.sku?.toLowerCase().includes(qs.toLowerCase()))
+      )
+      setResults(filtered)
     } catch (e) {
       console.error('quick search failed', e)
     }
   }
 
   function addToCart(item: Item) {
+    const itemType = item.itemType || 'inventory'
     setCart((c) => {
-      const found = c.find((x) => x.id === item.id)
-      if (found) return c.map((x) => x.id === item.id ? { ...x, quantity: Math.min((item.available ?? 0), x.quantity + 1) } : x)
-      return [...c, { id: item.id, name: item.name, quantity: 1 }]
+      const found = c.find((x) => x.id === item.id && x.itemType === itemType)
+      if (found) return c.map((x) => x.id === item.id && x.itemType === itemType ? { ...x, quantity: Math.min((item.available ?? 0), x.quantity + 1) } : x)
+      return [...c, { id: item.id, name: item.name, quantity: 1, itemType }]
     })
   }
 
-  function updateQty(id: string, qty: number) {
-    setCart((c) => c.map((x) => x.id === id ? { ...x, quantity: qty } : x))
+  function updateQty(id: string, itemType: 'inventory' | 'extra', qty: number) {
+    setCart((c) => c.map((x) => x.id === id && x.itemType === itemType ? { ...x, quantity: qty } : x))
   }
 
-  function removeItem(id: string) { setCart((c) => c.filter((x) => x.id !== id)) }
+  function removeItem(id: string, itemType: 'inventory' | 'extra') { 
+    setCart((c) => c.filter((x) => !(x.id === id && x.itemType === itemType))) 
+  }
 
   async function submit() {
     if (!source) return alert('Missing source department')
     if (!destination) return alert('Choose a destination section')
     if (cart.length === 0) return alert('Add items')
     try {
-      const items = cart.map((c) => ({ type: 'inventoryItem', id: c.id, quantity: c.quantity }))
+      const items = cart.map((c) => ({ type: c.itemType === 'extra' ? 'extra' : 'inventoryItem', id: c.id, quantity: c.quantity }))
       const res = await fetch(`/api/departments/${encodeURIComponent(source)}/transfer`, {
         method: 'POST', headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ toDepartmentCode: destination, items })
@@ -176,9 +182,12 @@ export default function InventoryTransferPage() {
             <input value={query} onChange={(e) => { setQuery(e.target.value); quickSearch(e.target.value) }} className="w-full p-2 border rounded" placeholder="Search products by name or SKU" />
             <div className="bg-white border rounded mt-1 max-h-40 overflow-auto">
               {results.map((r) => (
-                <div key={r.id} className="p-2 flex items-center justify-between hover:bg-gray-50 border-b">
+                <div key={`${r.itemType}_${r.id}`} className="p-2 flex items-center justify-between hover:bg-gray-50 border-b">
                   <div className="flex-1">
-                    <div className="font-medium text-sm">{r.name}</div>
+                    <div className="font-medium text-sm flex items-center gap-2">
+                      {r.name}
+                      {r.itemType === 'extra' && <span className="text-xs bg-purple-100 text-purple-800 px-2 py-0.5 rounded">Extra</span>}
+                    </div>
                     <div className="text-xs text-muted-foreground">
                       Stock: {r.available ?? 0}
                       {r.unitPrice !== undefined && <span className="ml-2">| Price: <Price amount={r.unitPrice} isMinor={false} /></span>}
@@ -194,12 +203,19 @@ export default function InventoryTransferPage() {
             <div className="text-sm font-medium mb-2">All items</div>
             <div className="space-y-2 max-h-[60vh] overflow-auto border rounded p-2 bg-white">
               {loading ? <div className="text-sm">Loading...</div> : products.map((p) => (
-                <div key={p.id} className="p-2 flex items-center justify-between border-b hover:bg-gray-50">
+                <div key={`${p.itemType}_${p.id}`} className="p-2 flex items-center justify-between border-b hover:bg-gray-50">
                   <div className="flex-1">
-                    <div className="font-medium">{p.name}</div>
+                    <div className="font-medium flex items-center gap-2">
+                      {p.name}
+                      {p.itemType === 'extra' && <span className="text-xs bg-purple-100 text-purple-800 px-2 py-0.5 rounded">Extra</span>}
+                    </div>
                     <div className="text-xs text-muted-foreground">
                       Available: <span className="font-mono bg-blue-50 px-2 py-0.5 rounded">{String(p.available ?? p.quantity ?? 0)}</span>
-                      {p.unitPrice !== undefined && <span className="ml-3">Price: <Price amount={p.unitPrice} isMinor={false} /></span>}
+                      {p.itemType === 'extra' ? (
+                        <span className="ml-3">Unit: {p.unit || 'portion'} | Price: <Price amount={p.unitPrice || 0} isMinor={false} /></span>
+                      ) : (
+                        p.unitPrice !== undefined && <span className="ml-3">Price: <Price amount={p.unitPrice} isMinor={false} /></span>
+                      )}
                     </div>
                   </div>
                   <div>
@@ -231,13 +247,16 @@ export default function InventoryTransferPage() {
             <div className="text-sm font-medium">Cart</div>
             <div className="mt-2 space-y-2">
               {cart.map((c) => (
-                <div key={c.id} className="flex items-center justify-between border rounded p-2">
+                <div key={`${c.itemType}_${c.id}`} className="flex items-center justify-between border rounded p-2">
                   <div>
-                    <div className="font-medium">{c.name}</div>
+                    <div className="font-medium flex items-center gap-2">
+                      {c.name}
+                      {c.itemType === 'extra' && <span className="text-xs bg-purple-100 text-purple-800 px-2 py-0.5 rounded">Extra</span>}
+                    </div>
                   </div>
                   <div className="flex items-center gap-2">
-                    <input type="number" min={1} value={c.quantity} onChange={(e) => updateQty(c.id, Math.max(1, Number(e.target.value || 1)))} className="w-20 p-1 border rounded" />
-                    <button className="px-2 py-1 border rounded" onClick={() => removeItem(c.id)}>Remove</button>
+                    <input type="number" min={1} value={c.quantity} onChange={(e) => updateQty(c.id, c.itemType, Math.max(1, Number(e.target.value || 1)))} className="w-20 p-1 border rounded" />
+                    <button className="px-2 py-1 border rounded" onClick={() => removeItem(c.id, c.itemType)}>Remove</button>
                   </div>
                 </div>
               ))}

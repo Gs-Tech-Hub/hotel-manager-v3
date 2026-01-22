@@ -111,8 +111,10 @@ export async function GET(
         name: `${record.extra.name} (Extra)`,
         sku: '', // Extras don't have SKU
         category: 'extra',
-        quantity: record.quantity,
-        available: record.quantity - record.reserved,
+        // Non-tracked extras use quantity: 1 as persistent state (not countable)
+        // Tracked extras have actual countable quantity
+        quantity: record.extra.trackInventory ? record.quantity : 1,
+        available: record.extra.trackInventory ? (record.quantity - record.reserved) : 1,
         itemType: 'extra' as const,
         unit: record.extra.unit,
         price: record.extra.price,

@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import { prisma } from '@/lib/auth/prisma'
 import { transferService } from '@/services/inventory/transfer.service'
 import { stockService } from '@/services/stock.service'
+import { DepartmentExtrasService } from '@/services/department-extras.service'
 import { successResponse, errorResponse, ErrorCodes, getStatusCode } from '@/lib/api-response'
 
 /**
@@ -80,10 +81,10 @@ export async function POST(request: NextRequest, { params }: { params: Promise<{
       return NextResponse.json(errorResponse(ErrorCodes.NOT_FOUND, 'Source or destination department not found'), { status: getStatusCode(ErrorCodes.NOT_FOUND) })
     }
 
-    // Only support drink transfers for now; create a persistent transfer request
-    const unsupported = items.find((it: any) => it.type !== 'drink' && it.type !== 'inventoryItem')
+    // Only support drink, inventoryItem, and extra transfers
+    const unsupported = items.find((it: any) => it.type !== 'drink' && it.type !== 'inventoryItem' && it.type !== 'extra')
     if (unsupported) {
-      return NextResponse.json(errorResponse(ErrorCodes.VALIDATION_ERROR, 'Only transfers of type "drink" or "inventoryItem" are supported by this endpoint'), { status: getStatusCode(ErrorCodes.VALIDATION_ERROR) })
+      return NextResponse.json(errorResponse(ErrorCodes.VALIDATION_ERROR, 'Only transfers of type "drink", "inventoryItem", or "extra" are supported by this endpoint'), { status: getStatusCode(ErrorCodes.VALIDATION_ERROR) })
     }
 
     // Normalize and validate items
@@ -128,12 +129,86 @@ export async function POST(request: NextRequest, { params }: { params: Promise<{
       }
     }
 
-    // create transfer record (pending)
-    // Pass both source and destination codes (which may be section codes like "RESTAURANT:bar") 
-    // so they can be properly resolved during approval
-    const created = await transferService.createTransfer(fromDept.id, toDepartmentId, mappedItems, undefined, { from: fromCode, to: destinationCode })
+    // Check extras separately
+    const extraItems = mappedItems.filter(m => m.productType === 'extra')
+    if (extraItems.length) {
+      for (const extraItem of extraItems) {
+        const deptExtra = await prisma.departmentExtra.findFirst({
+          where: {
+            departmentId: fromDept.id,
+            extraId: extraItem.productId,
+            sectionId: null, // Check parent level allocation
+          },
+          include: { extra: true },
+        })
+        if (!deptExtra) {
+          return NextResponse.json(
+            errorResponse(ErrorCodes.NOT_FOUND, `Extra not found for product ${extraItem.productId}`),
+            { status: getStatusCode(ErrorCodes.NOT_FOUND) }
+          )
+        }
+        // For tracked extras, validate quantity; for non-tracked, just ensure it's available
+        const availableQty = deptExtra.extra.trackInventory ? deptExtra.quantity : 1
+        if (availableQty < extraItem.quantity) {
+          return NextResponse.json(
+            errorResponse(ErrorCodes.VALIDATION_ERROR, `Insufficient quantity for extra "${deptExtra.extra.name}"`),
+            { status: getStatusCode(ErrorCodes.VALIDATION_ERROR) }
+          )
+        }
+      }
+    }
 
-    const resp = NextResponse.json(successResponse({ data: { transfer: created }, message: 'Transfer request created' }))
+    // create transfer record (pending) for non-extra items
+    // Extras are handled directly via DepartmentExtrasService.transferExtra
+    const nonExtraItems = mappedItems.filter(m => m.productType !== 'extra')
+    
+    let transferResult = null
+    if (nonExtraItems.length > 0) {
+      // Pass both source and destination codes (which may be section codes like "RESTAURANT:bar") 
+      // so they can be properly resolved during approval
+      transferResult = await transferService.createTransfer(fromDept.id, toDepartmentId, nonExtraItems, undefined, { from: fromCode, to: destinationCode })
+    }
+
+    // Handle extras transfers directly
+    const extraItemsResult = []
+    for (const extraItem of extraItems) {
+      try {
+        // For extras, determine destination section ID if it's a section transfer
+        let destinationSectionId: string | null = null
+        if (destinationCode.includes(':')) {
+          const parts = destinationCode.split(':')
+          const sectionSlugOrId = parts.slice(1).join(':')
+          const section = await prisma.departmentSection.findFirst({
+            where: {
+              departmentId: toDept.id,
+              isActive: true,
+              OR: [
+                { slug: sectionSlugOrId },
+                { id: sectionSlugOrId }
+              ]
+            }
+          })
+          destinationSectionId = section?.id || null
+        }
+
+        // Transfer extras from parent (sectionId = null) to destination
+        const result = await DepartmentExtrasService.transferExtra(
+          fromDept.id,
+          extraItem.productId,
+          null, // source is always parent
+          destinationSectionId,
+          extraItem.quantity
+        )
+        extraItemsResult.push(result)
+      } catch (e: any) {
+        return NextResponse.json(
+          errorResponse(ErrorCodes.INTERNAL_ERROR, `Failed to transfer extra: ${e?.message}`),
+          { status: getStatusCode(ErrorCodes.INTERNAL_ERROR) }
+        )
+      }
+    }
+
+    const resp = NextResponse.json(successResponse({ data: { transfer: transferResult, extras: extraItemsResult }, message: 'Transfer request created' }))
     console.timeEnd('POST /api/departments/[code]/transfer')
     return resp
   } catch (error: any) {

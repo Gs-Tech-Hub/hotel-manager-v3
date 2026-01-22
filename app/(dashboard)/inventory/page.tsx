@@ -75,13 +75,16 @@ export default function InventoryPage() {
       const json = await res.json()
       if (!json?.success) throw new Error(json?.error || 'Invalid response')
       
-      const fetched: any[] = dept ? (json.data?.items || []) : (json.data?.items || [])
+      const fetched: any[] = json.data?.items || []
       
-      // If a department is selected, show only available items (quantity > 0)
+      // When using department endpoint, show all items (both inventory with qty > 0 AND extras with qty 0)
+      // When using global endpoint, filter to qty > 0 only
       if (dept) {
-        setItems(fetched.filter((it) => Number(it?.quantity ?? 0) > 0))
-      } else {
+        // Show all items - inventory and extras
         setItems(fetched)
+      } else {
+        // Global inventory: only show items with quantity > 0
+        setItems(fetched.filter((it) => Number(it?.quantity ?? 0) > 0))
       }
     } catch (err: any) {
       console.error('Failed to load inventory', err)

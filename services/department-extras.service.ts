@@ -50,11 +50,22 @@ export class DepartmentExtrasService {
       // Normalize sectionId to null if not provided
       const normalizedSectionId = sectionId || null;
 
+      // Get the extra to check if it's tracked
+      const extra = await prisma.extra.findUnique({ where: { id: extraId } });
+      if (!extra) {
+        throw new Error('Extra not found');
+      }
+
+      // For non-tracked extras, always use quantity: 1
+      const allocatedQuantity = extra.trackInventory ? quantity : 1;
+
       console.log('[allocateExtraToDepartment] Input:', {
         departmentId,
         extraId,
         quantity,
         sectionId: normalizedSectionId,
+        isTracked: extra.trackInventory,
+        finalQuantity: allocatedQuantity,
       });
 
       // Check if allocation already exists
@@ -76,7 +87,7 @@ export class DepartmentExtrasService {
         return await prisma.departmentExtra.update({
           where: { id: existing.id },
           data: {
-            quantity: existing.quantity + quantity,
+            quantity: extra.trackInventory ? (existing.quantity + allocatedQuantity) : 1,
           },
           include: {
             extra: true,
@@ -92,7 +103,7 @@ export class DepartmentExtrasService {
           departmentId,
           extraId,
           sectionId: normalizedSectionId,
-          quantity,
+          quantity: allocatedQuantity,
         },
         include: {
           extra: true,
@@ -494,9 +505,10 @@ export class DepartmentExtrasService {
         where: destWhere,
       });
 
+      let result;
       if (destination) {
         // Update existing
-        return await prisma.departmentExtra.update({
+        result = await prisma.departmentExtra.update({
           where: { id: destination.id },
           data: {
             quantity: destination.quantity + quantity,
@@ -508,7 +520,7 @@ export class DepartmentExtrasService {
         });
       } else {
         // Create new
-        return await prisma.departmentExtra.create({
+        result = await prisma.departmentExtra.create({
           data: {
             departmentId,
             extraId,
@@ -521,6 +533,11 @@ export class DepartmentExtrasService {
           },
         });
       }
+
+      // TODO: Log extras transfers to a dedicated audit log table when created
+      // For now, transfers are tracked via direct DepartmentExtra updates
+
+      return result;
     } catch (error) {
       console.error('[transferExtra] Error:', error);
       throw error;
