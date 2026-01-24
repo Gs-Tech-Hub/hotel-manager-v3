@@ -2,7 +2,6 @@ import { NextRequest, NextResponse } from 'next/server'
 import { prisma } from '@/lib/auth/prisma'
 import { transferService } from '@/services/inventory/transfer.service'
 import { stockService } from '@/services/stock.service'
-import { DepartmentExtrasService } from '@/services/department-extras.service'
 import { successResponse, errorResponse, ErrorCodes, getStatusCode } from '@/lib/api-response'
 
 /**
@@ -158,57 +157,16 @@ export async function POST(request: NextRequest, { params }: { params: Promise<{
       }
     }
 
-    // create transfer record (pending) for non-extra items
-    // Extras are handled directly via DepartmentExtrasService.transferExtra
-    const nonExtraItems = mappedItems.filter(m => m.productType !== 'extra')
-    
+    // create transfer record (pending) for all items including extras
+    // All items (drinks, inventory, extras) now follow the same approval workflow
+    // Pass both source and destination codes (which may be section codes like "RESTAURANT:bar") 
+    // so they can be properly resolved during approval
     let transferResult = null
-    if (nonExtraItems.length > 0) {
-      // Pass both source and destination codes (which may be section codes like "RESTAURANT:bar") 
-      // so they can be properly resolved during approval
-      transferResult = await transferService.createTransfer(fromDept.id, toDepartmentId, nonExtraItems, undefined, { from: fromCode, to: destinationCode })
+    if (mappedItems.length > 0) {
+      transferResult = await transferService.createTransfer(fromDept.id, toDepartmentId, mappedItems, undefined, { from: fromCode, to: destinationCode })
     }
 
-    // Handle extras transfers directly
-    const extraItemsResult = []
-    for (const extraItem of extraItems) {
-      try {
-        // For extras, determine destination section ID if it's a section transfer
-        let destinationSectionId: string | null = null
-        if (destinationCode.includes(':')) {
-          const parts = destinationCode.split(':')
-          const sectionSlugOrId = parts.slice(1).join(':')
-          const section = await prisma.departmentSection.findFirst({
-            where: {
-              departmentId: toDept.id,
-              isActive: true,
-              OR: [
-                { slug: sectionSlugOrId },
-                { id: sectionSlugOrId }
-              ]
-            }
-          })
-          destinationSectionId = section?.id || null
-        }
-
-        // Transfer extras from parent (sectionId = null) to destination
-        const result = await DepartmentExtrasService.transferExtra(
-          fromDept.id,
-          extraItem.productId,
-          null, // source is always parent
-          destinationSectionId,
-          extraItem.quantity
-        )
-        extraItemsResult.push(result)
-      } catch (e: any) {
-        return NextResponse.json(
-          errorResponse(ErrorCodes.INTERNAL_ERROR, `Failed to transfer extra: ${e?.message}`),
-          { status: getStatusCode(ErrorCodes.INTERNAL_ERROR) }
-        )
-      }
-    }
-
-    const resp = NextResponse.json(successResponse({ data: { transfer: transferResult, extras: extraItemsResult }, message: 'Transfer request created' }))
+    const resp = NextResponse.json(successResponse({ data: { transfer: transferResult }, message: 'Transfer request created' }))
     console.timeEnd('POST /api/departments/[code]/transfer')
     return resp
   } catch (error: any) {

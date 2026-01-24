@@ -1,9 +1,11 @@
 import { prisma } from '@/lib/auth/prisma'
 import { stockService } from './stock.service'
+import { DepartmentExtrasService } from './department-extras.service'
 
 /**
  * Transfer Service
  * Handles creation and approval/execution of department-to-department transfers.
+ * Supports drinks, inventory items, and extras - all following the same approval workflow.
  * 
  * KEY PRINCIPLE: Always use stockService for ALL stock validation and balance queries.
  * Never query Drink.barStock, InventoryItem.quantity directly - use DepartmentInventory through stockService.
@@ -147,13 +149,37 @@ export class TransferService {
 
         // Validate availability outside the transaction to fail fast for obvious errors.
         // Use stockService for all balance checks - this ensures consistency between display and validation
+        // For extras, validate directly from DepartmentExtras table
         let validationError: string | null = null
         for (const it of transfer.items) {
-          const check = await stockService.checkAvailability(it.productType, it.productId, transfer.fromDepartmentId, it.quantity)
+          if (it.productType === 'extra') {
+            // For extras, check DepartmentExtras allocation at department level (sectionId = null)
+            const deptExtra = await prisma.departmentExtra.findFirst({
+              where: {
+                departmentId: transfer.fromDepartmentId,
+                extraId: it.productId,
+                sectionId: null, // Check department-level allocation
+              },
+              include: { extra: true },
+            })
+            if (!deptExtra) {
+              validationError = `Extra not allocated in source department`
+              break
+            }
+            // For tracked extras, validate quantity; for non-tracked, just ensure it's available
+            const availableQty = deptExtra.extra.trackInventory ? deptExtra.quantity : 1
+            if (availableQty < it.quantity) {
+              validationError = `Insufficient quantity for extra "${deptExtra.extra.name}": have ${availableQty}, need ${it.quantity}`
+              break
+            }
+          } else {
+            // For drinks and inventory, use stockService (which properly checks department-level stock)
+            const check = await stockService.checkAvailability(it.productType, it.productId, transfer.fromDepartmentId, it.quantity)
 
-          if (!check.hasStock) {
-            validationError = check.message || `Insufficient stock for product ${it.productId}`
-            break
+            if (!check.hasStock) {
+              validationError = check.message || `Insufficient stock for product ${it.productId}`
+              break
+            }
           }
         }
 
@@ -168,9 +194,21 @@ export class TransferService {
         const destIncrements: Array<{ departmentId: string; sectionId?: string | null; inventoryItemId: string; amount: number }> = []
         const movementRows: Array<any> = []
 
-        // Prepare payloads for drinks and inventory items
+        // Prepare payloads for drinks, inventory items, and extras
+        const extrasToTransfer: Array<{ departmentId: string; extraId: string; sourceSectionId: string | null; destinationSectionId: string | null; quantity: number }> = []
+
         for (const it of transfer.items) {
-          if (it.productType === 'drink') {
+          if (it.productType === 'extra') {
+            // Queue extras for transfer in the transaction callback
+            const toSectionId = (toDept as any).isSection ? (toDept as any).id : null
+            extrasToTransfer.push({
+              departmentId: transfer.fromDepartmentId,
+              extraId: it.productId,
+              sourceSectionId: null, // Source is always department-level
+              destinationSectionId: toSectionId,
+              quantity: it.quantity,
+            })
+          } else if (it.productType === 'drink') {
             const drink = drinkMap.get(it.productId)
             // For drinks: update DepartmentInventory, not Drink table
             // SOURCE is always a DEPARTMENT (sectionId = null)
@@ -262,9 +300,29 @@ export class TransferService {
               await tx.inventoryMovement.createMany({ data: movementRows })
             }
 
-            // 5) mark transfer completed
+            // 5) transfer extras (must be outside of transaction since DepartmentExtrasService handles its own DB calls)
+            // We'll do extras after the main transaction completes
+
+            // 6) mark transfer completed
             await tx.departmentTransfer.update({ where: { id: transferId }, data: { status: 'completed', updatedAt: new Date() } })
           }, { timeout: 15000 })
+
+          // After main transaction succeeds, transfer extras
+          // (Each extra transfer may have its own internal transaction)
+          for (const extra of extrasToTransfer) {
+            try {
+              await DepartmentExtrasService.transferExtra(
+                extra.departmentId,
+                extra.extraId,
+                extra.sourceSectionId,
+                extra.destinationSectionId,
+                extra.quantity
+              )
+            } catch (e: any) {
+              // Log the error but continue - we don't want one extra failure to block the whole transfer
+              console.warn(`Failed to transfer extra ${extra.extraId}: ${e?.message}`)
+            }
+          }
 
           const took = Date.now() - start
           // success

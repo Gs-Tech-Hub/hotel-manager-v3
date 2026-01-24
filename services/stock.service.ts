@@ -34,7 +34,7 @@ export class StockService {
         where: {
           departmentId,
           inventoryItemId: productId,
-          sectionId: sectionId ?? undefined, // Pass undefined for "any null/undefined value"
+          sectionId: sectionId === undefined ? null : sectionId,
         },
       })
 
@@ -168,7 +168,7 @@ export class StockService {
       where: {
         departmentId,
         inventoryItemId: { in: productIds },
-        sectionId: sectionId ?? undefined,
+        sectionId: sectionId === undefined ? null : sectionId,
       },
     })
 
