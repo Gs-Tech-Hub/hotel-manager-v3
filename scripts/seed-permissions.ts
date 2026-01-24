@@ -56,6 +56,14 @@ async function seedPermissions() {
         { action: "inventory.delete", subject: "inventory", description: "Delete inventory" },
         { action: "inventory.transfer", subject: "inventory", description: "Transfer inventory between departments" },
         
+        // Extras
+        { action: "extras.read", subject: "extras", description: "View extras" },
+        { action: "extras.create", subject: "extras", description: "Create extras" },
+        { action: "extras.update", subject: "extras", description: "Update extras" },
+        { action: "extras.delete", subject: "extras", description: "Delete extras" },
+        { action: "extras.allocate", subject: "extras", description: "Allocate extras to departments" },
+        { action: "extras.transfer", subject: "extras", description: "Transfer extras between departments" },
+        
         // Bookings
         { action: "bookings.create", subject: "bookings", description: "Create bookings" },
         { action: "bookings.read", subject: "bookings", description: "View bookings" },
@@ -90,6 +98,14 @@ async function seedPermissions() {
         { action: "inventory.read", subject: "inventory", description: "View inventory" },
         { action: "inventory.update", subject: "inventory", description: "Update inventory" },
         { action: "inventory.transfer", subject: "inventory", description: "Transfer inventory" },
+        
+        // Extras
+        { action: "extras.read", subject: "extras", description: "View extras" },
+        { action: "extras.create", subject: "extras", description: "Create extras" },
+        { action: "extras.update", subject: "extras", description: "Update extras" },
+        { action: "extras.delete", subject: "extras", description: "Delete extras" },
+        { action: "extras.allocate", subject: "extras", description: "Allocate extras to departments" },
+        { action: "extras.transfer", subject: "extras", description: "Transfer extras between departments" },
         
         // Bookings
         { action: "bookings.read", subject: "bookings", description: "View bookings" },
@@ -181,6 +197,14 @@ async function seedPermissions() {
         { action: "inventory.update", subject: "inventory", description: "Update inventory" },
         { action: "inventory.transfer", subject: "inventory", description: "Transfer inventory between departments" },
         
+        // Extras
+        { action: "extras.read", subject: "extras", description: "View extras" },
+        { action: "extras.create", subject: "extras", description: "Create extras" },
+        { action: "extras.update", subject: "extras", description: "Update extras" },
+        { action: "extras.delete", subject: "extras", description: "Delete extras" },
+        { action: "extras.allocate", subject: "extras", description: "Allocate extras to departments" },
+        { action: "extras.transfer", subject: "extras", description: "Transfer extras between departments" },
+        
         // Departments (read only)
         { action: "departments.read", subject: "departments", description: "View departments" },
       ],
@@ -215,6 +239,9 @@ async function seedPermissions() {
         { action: "inventory.read", subject: "inventory", description: "View inventory" },
         { action: "inventory.update", subject: "inventory", description: "Update inventory" },
         { action: "inventory.transfer", subject: "inventory", description: "Transfer inventory" },
+        
+        // Extras (read only)
+        { action: "extras.read", subject: "extras", description: "View extras" },
         
         // Departments
         { action: "departments.read", subject: "departments", description: "View departments" },

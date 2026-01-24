@@ -465,6 +465,12 @@ export class DepartmentExtrasService {
     quantity: number
   ) {
     try {
+      // Get the extra to check if it's tracked
+      const extra = await prisma.extra.findUnique({ where: { id: extraId } });
+      if (!extra) {
+        throw new Error('Extra not found');
+      }
+
       // Get source allocation
       const sourceWhere: any = {
         departmentId,
@@ -480,17 +486,21 @@ export class DepartmentExtrasService {
         throw new Error(`Source allocation not found for extra transfer`);
       }
 
-      if (source.quantity < quantity) {
+      // For non-tracked extras, treat quantity: 0 as quantity: 1 (persistent state)
+      const sourceQty = extra.trackInventory ? source.quantity : (source.quantity > 0 ? source.quantity : 1);
+      const transferQty = extra.trackInventory ? quantity : 1;
+
+      if (sourceQty < transferQty) {
         throw new Error(
-          `Insufficient quantity. Available: ${source.quantity}, Requested: ${quantity}`
+          `Insufficient quantity. Available: ${sourceQty}, Requested: ${transferQty}`
         );
       }
 
-      // Reduce from source
+      // Reduce from source (for tracked extras only; non-tracked stay at 1)
       const updatedSource = await prisma.departmentExtra.update({
         where: { id: source.id },
         data: {
-          quantity: source.quantity - quantity,
+          quantity: extra.trackInventory ? (source.quantity - transferQty) : 1,
         },
       });
 
@@ -511,7 +521,7 @@ export class DepartmentExtrasService {
         result = await prisma.departmentExtra.update({
           where: { id: destination.id },
           data: {
-            quantity: destination.quantity + quantity,
+            quantity: extra.trackInventory ? (destination.quantity + transferQty) : 1,
           },
           include: {
             extra: true,
@@ -525,7 +535,7 @@ export class DepartmentExtrasService {
             departmentId,
             extraId,
             sectionId: destinationSectionId,
-            quantity,
+            quantity: transferQty,
           },
           include: {
             extra: true,

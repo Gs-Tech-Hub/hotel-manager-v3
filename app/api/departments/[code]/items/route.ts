@@ -1,7 +1,9 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { successResponse, errorResponse, ErrorCodes } from '@/lib/api-response';
-import { extractUserContext } from '@/lib/user-context';
+import { extractUserContext, loadUserWithRoles } from '@/lib/user-context';
 import { prisma } from '@/lib/auth/prisma';
+import { checkPermission } from '@/lib/auth/rbac';
+import { DepartmentExtrasService } from '@/services/department-extras.service';
 
 /**
  * GET /api/departments/[code]/items
@@ -12,6 +14,9 @@ import { prisma } from '@/lib/auth/prisma';
  * - id, name, sku, category, quantity, available
  * - itemType: 'inventory' | 'extra'
  * - If extra: price, unit, trackInventory, productId
+ * 
+ * DELETE /api/departments/[code]/items?itemId=X&itemType=extra|inventory
+ * Delete an item (extra or inventory) from department
  */
 export async function GET(
   request: NextRequest,
@@ -48,7 +53,8 @@ export async function GET(
     if (sectionId) {
       deptInvWhere.sectionId = sectionId;
     } else {
-      deptInvWhere.sectionId = null; // Only parent-level inventory when no section specified
+      // Only fetch parent-level (department-level) inventory when no section specified
+      deptInvWhere.sectionId = null;
     }
 
     const inventoryRecords = await prisma.departmentInventory.findMany({
@@ -71,6 +77,7 @@ export async function GET(
     if (sectionId) {
       deptExtrasWhere.sectionId = sectionId;
     } else {
+      // Only fetch parent-level (department-level) extras when no section specified
       deptExtrasWhere.sectionId = null;
     }
 
@@ -137,6 +144,189 @@ export async function GET(
     console.error('Error fetching department items:', error);
     return NextResponse.json(
       errorResponse(ErrorCodes.INTERNAL_ERROR, 'Failed to fetch items'),
+      { status: 500 }
+    );
+  }
+}
+
+export async function DELETE(
+  request: NextRequest,
+  { params }: { params: Promise<{ code: string }> }
+) {
+  try {
+    const ctx = await extractUserContext(request);
+    if (!ctx.userId) {
+      return NextResponse.json(
+        errorResponse(ErrorCodes.UNAUTHORIZED, 'User not authenticated'),
+        { status: 401 }
+      );
+    }
+
+    const userWithRoles = await loadUserWithRoles(ctx.userId);
+    if (!userWithRoles) {
+      return NextResponse.json(
+        errorResponse(ErrorCodes.FORBIDDEN, 'User not found'),
+        { status: 403 }
+      );
+    }
+
+    // Check permissions based on item type
+    const itemType = request.nextUrl.searchParams.get('itemType') || '';
+    const itemId = request.nextUrl.searchParams.get('itemId');
+
+    if (!itemId) {
+      return NextResponse.json(
+        errorResponse(ErrorCodes.VALIDATION_ERROR, 'itemId is required'),
+        { status: 400 }
+      );
+    }
+
+    const permCtx = {
+      userId: ctx.userId,
+      userType: (userWithRoles.isAdmin ? 'admin' : 'employee') as any,
+      departmentId: userWithRoles.userId, // Use userId as fallback
+    };
+
+    // Check appropriate permission based on item type
+    if (itemType === 'extra') {
+      const canDelete = await checkPermission(permCtx, 'extras.delete', 'extras');
+      if (!canDelete) {
+        return NextResponse.json(
+          errorResponse(ErrorCodes.FORBIDDEN, 'Insufficient permissions to delete extras'),
+          { status: 403 }
+        );
+      }
+    } else if (itemType === 'inventory') {
+      const canDelete = await checkPermission(permCtx, 'inventory.delete', 'inventory');
+      if (!canDelete) {
+        return NextResponse.json(
+          errorResponse(ErrorCodes.FORBIDDEN, 'Insufficient permissions to delete inventory'),
+          { status: 403 }
+        );
+      }
+    } else {
+      return NextResponse.json(
+        errorResponse(ErrorCodes.VALIDATION_ERROR, 'Invalid itemType'),
+        { status: 400 }
+      );
+    }
+
+    const { code: departmentCode } = await params;
+    const sectionId = request.nextUrl.searchParams.get('sectionId');
+
+    // Get department
+    const dept = await prisma.department.findFirst({
+      where: { code: departmentCode },
+      select: { id: true },
+    });
+
+    if (!dept) {
+      return NextResponse.json(
+        errorResponse(ErrorCodes.NOT_FOUND, 'Department not found'),
+        { status: 404 }
+      );
+    }
+
+    if (itemType === 'extra') {
+      // Delete extra from department
+      let deleted = { count: 0 };
+
+      // First try to delete from parent level (sectionId = null)
+      if (!sectionId) {
+        deleted = await prisma.departmentExtra.deleteMany({
+          where: {
+            departmentId: dept.id,
+            extraId: itemId,
+            sectionId: null,
+          },
+        });
+
+        // If not found at parent level, delete from ANY section
+        if (deleted.count === 0) {
+          deleted = await prisma.departmentExtra.deleteMany({
+            where: {
+              departmentId: dept.id,
+              extraId: itemId,
+            },
+          });
+        }
+      } else {
+        // If sectionId specified, delete only from that section
+        deleted = await prisma.departmentExtra.deleteMany({
+          where: {
+            departmentId: dept.id,
+            extraId: itemId,
+            sectionId: sectionId,
+          },
+        });
+      }
+
+      if (deleted.count === 0) {
+        return NextResponse.json(
+          errorResponse(ErrorCodes.NOT_FOUND, 'Extra not found in this department'),
+          { status: 404 }
+        );
+      }
+
+      return NextResponse.json(
+        successResponse({
+          data: { message: 'Extra deleted successfully' },
+        }),
+        { status: 200 }
+      );
+    } else {
+      // Delete inventory from department
+      let deleted = { count: 0 };
+
+      // First try to delete from parent level (sectionId = null)
+      if (!sectionId) {
+        deleted = await prisma.departmentInventory.deleteMany({
+          where: {
+            departmentId: dept.id,
+            inventoryItemId: itemId,
+            sectionId: null,
+          },
+        });
+
+        // If not found at parent level, delete from ANY section
+        if (deleted.count === 0) {
+          deleted = await prisma.departmentInventory.deleteMany({
+            where: {
+              departmentId: dept.id,
+              inventoryItemId: itemId,
+            },
+          });
+        }
+      } else {
+        // If sectionId specified, delete only from that section
+        deleted = await prisma.departmentInventory.deleteMany({
+          where: {
+            departmentId: dept.id,
+            inventoryItemId: itemId,
+            sectionId: sectionId,
+          },
+        });
+      }
+
+      if (deleted.count === 0) {
+        return NextResponse.json(
+          errorResponse(ErrorCodes.NOT_FOUND, 'Inventory item not found in this department'),
+          { status: 404 }
+        );
+      }
+
+      return NextResponse.json(
+        successResponse({
+          data: { message: 'Inventory item deleted successfully' },
+        }),
+        { status: 200 }
+      );
+    }
+  } catch (error) {
+    console.error('Error deleting item:', error);
+    const msg = error instanceof Error ? error.message : 'Failed to delete item';
+    return NextResponse.json(
+      errorResponse(ErrorCodes.INTERNAL_ERROR, msg),
       { status: 500 }
     );
   }

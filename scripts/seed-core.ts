@@ -306,6 +306,14 @@ async function seedPermissions(roles: Record<string, any>) {
       // Discounts
       { action: 'discounts', subject: 'read' },
       
+      // Extras
+      { action: 'extras', subject: 'create' },
+      { action: 'extras', subject: 'read' },
+      { action: 'extras', subject: 'update' },
+      { action: 'extras', subject: 'delete' },
+      { action: 'extras', subject: 'allocate' },
+      { action: 'extras', subject: 'transfer' },
+      
       // Employees
       { action: 'employees', subject: 'read' },
       { action: 'employees', subject: 'update' },
@@ -326,6 +334,9 @@ async function seedPermissions(roles: Record<string, any>) {
       // Inventory (view only)
       { action: 'inventory', subject: 'read' },
       { action: 'inventory_items', subject: 'read' },
+      
+      // Extras (view only)
+      { action: 'extras', subject: 'read' },
       
       // Bookings (limited)
       { action: 'bookings', subject: 'read' },
@@ -537,7 +548,6 @@ async function seedCanonicalDepartments() {
   const departments = [
     { code: 'restaurant', name: 'Restaurant', description: 'Restaurant department' },
     { code: 'bar', name: 'Bar', description: 'Bar department' },
-    // { code: 'kitchen', name: 'Kitchen', description: 'Kitchen department' },
     { code: 'service', name: 'Service', description: 'Service department' },
     { code: 'reception', name: 'Reception', description: 'Reception department' },
     { code: 'housekeeping', name: 'Housekeeping', description: 'Housekeeping department' },

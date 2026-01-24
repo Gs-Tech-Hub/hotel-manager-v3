@@ -145,11 +145,19 @@ export default function InventoryPage() {
     if (!window.confirm('Are you sure you want to delete this inventory item?')) return
     
     try {
-      const res = await fetch(`/api/inventory?id=${encodeURIComponent(id)}`, {
+      const deptCode = selectedDept || 'restaurant'
+      const url = new URL(
+        `/api/departments/${encodeURIComponent(deptCode)}/items`,
+        window.location.origin
+      )
+      url.searchParams.set('itemId', id)
+      url.searchParams.set('itemType', 'inventory')
+      
+      const res = await fetch(url.toString(), {
         method: 'DELETE',
       })
       const json = await res.json()
-      if (!res.ok) throw new Error(json.error || `Failed to delete item (${res.status})`)
+      if (!res.ok) throw new Error(json.message || `Failed to delete item (${res.status})`)
       await fetchItems(selectedDept)
     } catch (err: any) {
       console.error('Failed to delete inventory item:', err)

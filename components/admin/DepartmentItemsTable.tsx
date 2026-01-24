@@ -1,7 +1,7 @@
 'use client';
 
 import { useEffect, useState } from 'react';
-import { Loader2, ArrowRight, MoreHorizontal } from 'lucide-react';
+import { Loader2, ArrowRight, MoreHorizontal, Trash2 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import {
@@ -51,6 +51,7 @@ export function DepartmentItemsTable({
   const [items, setItems] = useState<Item[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [deleting, setDeleting] = useState<string | null>(null);
 
   useEffect(() => {
     fetchItems();
@@ -82,6 +83,42 @@ export function DepartmentItemsTable({
       setError(err instanceof Error ? err.message : 'Failed to load items');
     } finally {
       setLoading(false);
+    }
+  };
+
+  const handleDelete = async (item: Item) => {
+    if (!confirm(`Delete "${item.name}"?`)) {
+      return;
+    }
+
+    try {
+      setDeleting(item.id);
+      const url = new URL(
+        `/api/departments/${departmentCode}/items`,
+        window.location.origin
+      );
+      
+      // Pass the item ID (for inventory items or extras)
+      url.searchParams.set('itemId', item.id);
+      url.searchParams.set('itemType', item.itemType);
+
+      const response = await fetch(url.toString(), {
+        method: 'DELETE',
+      });
+
+      const data = await response.json();
+
+      if (!response.ok) {
+        throw new Error(data.message || 'Failed to delete item');
+      }
+
+      // Remove from UI
+      setItems(items.filter(i => i.id !== item.id));
+    } catch (err) {
+      console.error('Error deleting item:', err);
+      alert(err instanceof Error ? err.message : 'Failed to delete item');
+    } finally {
+      setDeleting(null);
     }
   };
 
@@ -165,8 +202,12 @@ export function DepartmentItemsTable({
               <TableCell className="text-right">
                 <DropdownMenu>
                   <DropdownMenuTrigger asChild>
-                    <Button variant="ghost" size="sm" className="h-8 w-8 p-0">
-                      <MoreHorizontal className="h-4 w-4" />
+                    <Button variant="ghost" size="sm" className="h-8 w-8 p-0" disabled={deleting === item.id}>
+                      {deleting === item.id ? (
+                        <Loader2 className="h-4 w-4 animate-spin" />
+                      ) : (
+                        <MoreHorizontal className="h-4 w-4" />
+                      )}
                       <span className="sr-only">Open menu</span>
                     </Button>
                   </DropdownMenuTrigger>
@@ -182,6 +223,14 @@ export function DepartmentItemsTable({
                         Convert to Extra
                       </DropdownMenuItem>
                     )}
+                    <DropdownMenuItem
+                      onClick={() => handleDelete(item)}
+                      className="text-red-600"
+                      disabled={deleting === item.id}
+                    >
+                      <Trash2 className="h-4 w-4 mr-2" />
+                      Delete
+                    </DropdownMenuItem>
                   </DropdownMenuContent>
                 </DropdownMenu>
               </TableCell>
