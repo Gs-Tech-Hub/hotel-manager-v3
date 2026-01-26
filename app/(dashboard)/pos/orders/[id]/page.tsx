@@ -4,7 +4,7 @@ import { useEffect, useState } from "react";
 import { useParams, useRouter } from "next/navigation";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-import { Loader2, CheckCircle2, AlertCircle, X, Plus } from "lucide-react";
+import { Loader2, CheckCircle2, AlertCircle, Plus } from "lucide-react";
 import { formatCents } from '@/lib/price';
 import Link from "next/link";
 import { Badge } from "@/components/ui/badge";
@@ -18,7 +18,6 @@ import {
 } from "@/components/ui/dialog";
 import { OrderExtrasDialog } from "@/components/pos/orders/OrderExtrasDialog";
 import { OrderLineExtras } from "@/components/pos/orders/OrderLineExtras";
-import { DiscountSection } from "@/components/pos/orders/DiscountSection";
 
 export default function OrderDetailPage() {
     const params = useParams();
@@ -34,6 +33,8 @@ export default function OrderDetailPage() {
     const [refundReason, setRefundReason] = useState("");
     const [extrasDialogOpen, setExtrasDialogOpen] = useState(false);
     const [selectedLineId, setSelectedLineId] = useState<string | null>(null);
+    const [selectedSectionId, setSelectedSectionId] = useState<string | null>(null);
+    const [selectedDepartmentCode, setSelectedDepartmentCode] = useState<string | null>(null);
 
     useEffect(() => {
         if (!id) return;
@@ -46,10 +47,16 @@ export default function OrderDetailPage() {
                     setOrder(data.data);
                 } else {
                     // API returned error (not found, forbidden, etc.) — show not found UI
+                    console.error("Failed to fetch order:", {
+                        status: res.status,
+                        orderId: id,
+                        error: data?.error?.message || data?.error || 'Unknown error'
+                    });
                     setOrder(null);
                 }
             } catch (e) {
                 console.error("Error fetching order:", e);
+                setOrder(null);
             } finally {
                 setIsLoading(false);
             }
@@ -191,7 +198,14 @@ export default function OrderDetailPage() {
     if (!order) {
         return (
             <div className="text-center py-12">
-                <p className="text-muted-foreground">Order not found</p>
+                <AlertCircle className="h-12 w-12 text-red-600 mx-auto mb-4" />
+                <p className="text-lg font-semibold text-gray-900 mb-2">Order Not Found</p>
+                <p className="text-muted-foreground mb-4">
+                    The order ID &quot;<code className="bg-gray-100 px-2 py-1 rounded text-sm">{id}</code>&quot; does not exist or you don&apos;t have permission to view it.
+                </p>
+                <p className="text-sm text-muted-foreground mb-6">
+                    Check the order ID and try again, or return to the orders list.
+                </p>
                 <Link href="/pos/orders">
                     <Button className="mt-4">Back to Orders</Button>
                 </Link>
@@ -210,11 +224,6 @@ export default function OrderDetailPage() {
                         order.paymentStatus === 'partial' ? 'bg-blue-100 text-blue-800' :
                         order.paymentStatus === 'refunded' ? 'bg-orange-100 text-orange-800' :
                         'bg-gray-100 text-gray-800';
-    
-    // Calculate extras total from order extras
-    const extrasTotal = (order.extras || []).reduce((sum: number, extra: any) => {
-      return sum + (extra.lineTotal || 0);
-    }, 0);
     
     // Determine available actions
     const canCancel = order.status === 'pending';
@@ -258,7 +267,7 @@ export default function OrderDetailPage() {
                 </div>
             </div>
 
-            <div className="grid gap-6 md:grid-cols-3">
+            <div className="grid gap-6 md:grid-cols-2">
                 <Card>
                     <CardHeader>
                         <CardTitle>Customer</CardTitle>
@@ -269,17 +278,6 @@ export default function OrderDetailPage() {
                         <p className="text-sm text-muted-foreground">{(order.customer as any)?.email || ''}</p>
                     </CardContent>
                 </Card>
-
-            {/* Discount Section with Price Breakdown */}
-            <DiscountSection
-                orderId={order.id}
-                subtotal={order.subtotal}
-                discountTotal={order.discountTotal}
-                tax={order.tax}
-                total={order.total}
-                appliedDiscounts={order.discounts || []}
-                onDiscountApplied={refreshOrder}
-            />
 
                 <Card>
                     <CardHeader>
@@ -337,6 +335,8 @@ export default function OrderDetailPage() {
                                                     variant="outline"
                                                     onClick={() => {
                                                         setSelectedLineId(line.id);
+                                                        setSelectedDepartmentCode(line.departmentCode);
+                                                        setSelectedSectionId(line.sectionId || null);
                                                         setExtrasDialogOpen(true);
                                                     }}
                                                     disabled={isUpdating}
@@ -499,6 +499,8 @@ export default function OrderDetailPage() {
                 onOpenChange={setExtrasDialogOpen}
                 orderHeaderId={order?.id || ''}
                 orderLineId={selectedLineId || ''}
+                departmentCode={selectedDepartmentCode || undefined}
+                sectionId={selectedSectionId || undefined}
                 onSuccess={refreshOrder}
             />
         </div>

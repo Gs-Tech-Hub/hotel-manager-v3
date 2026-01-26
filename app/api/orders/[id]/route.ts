@@ -23,6 +23,8 @@ export async function GET(
   try {
     const { id: orderId } = await params;
 
+    console.log(`[GET /api/orders] Fetching order: ${orderId}`);
+
     // Get user context
     const ctx = await extractUserContext(request);
     if (!ctx.userId) {
@@ -58,12 +60,14 @@ export async function GET(
         },
         fulfillments: true,
         reservations: true,
+        extras: true,
       },
     });
 
     if (!order) {
+      console.log(`[GET /api/orders] Order not found: ${orderId}`);
       return NextResponse.json(
-        errorResponse(ErrorCodes.NOT_FOUND, 'Order not found'),
+        errorResponse(ErrorCodes.NOT_FOUND, `Order with ID "${orderId}" not found in database`),
         { status: getStatusCode(ErrorCodes.NOT_FOUND) }
       );
     }
@@ -78,7 +82,7 @@ export async function GET(
       }
     }
 
-    const payload = successResponse(order);
+    const payload = successResponse({ data: order });
     try {
       console.log('GET /api/orders/[id] payload:', JSON.stringify(payload));
     } catch (logErr) {

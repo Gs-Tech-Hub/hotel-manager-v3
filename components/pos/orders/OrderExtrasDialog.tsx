@@ -11,9 +11,18 @@ import {
   DialogFooter,
 } from '@/components/ui/dialog';
 import { Button } from '@/components/ui/button';
-import { Input } from '@/components/ui/input';
 import { Badge } from '@/components/ui/badge';
+import { Switch } from '@/components/ui/switch';
 import { formatPrice } from '@/lib/price';
+
+interface DepartmentExtra {
+  id: string;
+  departmentId: string;
+  sectionId?: string;
+  extraId: string;
+  quantity: number;
+  reserved: number;
+}
 
 interface Extra {
   id: string;
@@ -29,6 +38,7 @@ interface Extra {
     sku: string;
     quantity: number;
   };
+  departmentExtras?: DepartmentExtra[];
 }
 
 interface SelectedExtra {
@@ -42,6 +52,7 @@ interface OrderExtrasDialogProps {
   orderHeaderId: string;
   orderLineId: string;
   departmentCode?: string;
+  sectionId?: string;
   onSuccess?: () => void;
 }
 
@@ -51,6 +62,7 @@ export function OrderExtrasDialog({
   orderHeaderId,
   orderLineId,
   departmentCode,
+  sectionId,
   onSuccess,
 }: OrderExtrasDialogProps) {
   const [extras, setExtras] = useState<Extra[]>([]);
@@ -79,8 +91,19 @@ export function OrderExtrasDialog({
         }
 
         const data = await response.json();
-        if (data.success && Array.isArray(data.data)) {
-          setExtras(data.data);
+        if (data.success && data.data?.extras && Array.isArray(data.data.extras)) {
+          // Filter extras by section if sectionId is provided
+          const filteredExtras = sectionId
+            ? (data.data.extras as Extra[]).filter((extra) => {
+                // Keep extras that have a department allocation for this section
+                return (
+                  extra.departmentExtras &&
+                  extra.departmentExtras.some((dept) => dept.sectionId === sectionId)
+                );
+              })
+            : (data.data.extras as Extra[]);
+          
+          setExtras(filteredExtras);
         }
       } catch (err) {
         console.error('Error fetching extras:', err);
@@ -93,39 +116,54 @@ export function OrderExtrasDialog({
     };
 
     fetchExtras();
-  }, [open, departmentCode]);
+  }, [open, departmentCode, sectionId]);
 
-  // Handle quantity change with inventory validation
-  const handleQuantityChange = (extraId: string, quantity: number) => {
-    // Get the extra to check inventory limits
-    const extra = extras.find(e => e.id === extraId);
+  // Calculate available quantity for an extra from departmentExtras (filtered by section if provided)
+  const getAvailableQuantity = (extra: Extra): number => {
+    if (!extra.departmentExtras || extra.departmentExtras.length === 0) {
+      return extra.product?.quantity ?? 999; // Use product quantity or unlimited if no department allocation
+    }
     
-    // If tracked extra, validate against inventory
-    if (extra?.trackInventory && extra?.product) {
-      const maxQuantity = extra.product.quantity;
-      if (quantity > maxQuantity) {
-        setError(`Cannot exceed available inventory: ${maxQuantity} ${extra.unit}`);
-        return;
+    // First, try to find section-specific allocation if sectionId is provided
+    if (sectionId) {
+      const sectionAlloc = extra.departmentExtras.find((dept) => dept.sectionId === sectionId);
+      if (sectionAlloc) {
+        return Math.max(0, (sectionAlloc.quantity || 0) - (sectionAlloc.reserved || 0));
       }
+      // If no section-specific allocation, fallback to department-level (sectionId === null)
+      const deptAlloc = extra.departmentExtras.find((dept) => dept.sectionId === null);
+      if (deptAlloc) {
+        return Math.max(0, (deptAlloc.quantity || 0) - (deptAlloc.reserved || 0));
+      }
+      return 0; // No allocation for this section or department
     }
+    
+    // If no sectionId, use department-level allocations (sectionId === null)
+    const deptAllocations = extra.departmentExtras.filter((dept) => dept.sectionId === null);
+    if (deptAllocations.length === 0) {
+      return 0;
+    }
+    
+    return deptAllocations.reduce((total, dept) => {
+      return total + Math.max(0, (dept.quantity || 0) - (dept.reserved || 0));
+    }, 0);
+  };
 
-    if (quantity <= 0) {
-      setSelectedExtras((prev) => {
-        const updated = new Map(prev);
+  // Handle checkbox change - selection always sets quantity to 1
+  const handleSelectChange = (extraId: string, checked: boolean) => {
+    setSelectedExtras((prev) => {
+      const updated = new Map(prev);
+      if (checked) {
+        // When selected, always set quantity to 1
+        updated.set(extraId, { extraId, quantity: 1 });
+      } else {
+        // When deselected, remove from map
         updated.delete(extraId);
-        return updated;
-      });
-    } else {
-      setSelectedExtras((prev) => {
-        const updated = new Map(prev);
-        updated.set(extraId, { extraId, quantity });
-        return updated;
-      });
-      // Clear error when valid quantity entered
-      if (error?.includes('Cannot exceed')) {
-        setError(null);
       }
-    }
+      return updated;
+    });
+    // Clear any previous errors
+    setError(null);
   };
 
   // Submit extras
@@ -159,10 +197,15 @@ export function OrderExtrasDialog({
         );
       }
 
-      // Success
+      // Success - clear state and close dialog
       setSelectedExtras(new Map());
+      setExtras([]); // Clear extras list
       onOpenChange(false);
-      onSuccess?.();
+      
+      // Refresh order details after successful addition
+      if (onSuccess) {
+        onSuccess();
+      }
     } catch (err) {
       console.error('Error adding extras:', err);
       setError(err instanceof Error ? err.message : 'Failed to add extras');
@@ -195,92 +238,83 @@ export function OrderExtrasDialog({
           <div className="rounded-md bg-red-50 border border-red-200 p-3">
             <p className="text-sm text-red-800">{error}</p>
           </div>
-        ) : extras.length === 0 ? (
-          <div className="text-center py-8">
-            <p className="text-muted-foreground">No extras available</p>
-          </div>
-        ) : (
-          <div className="space-y-4">
-            {/* Extras List */}
-            <div className="space-y-3 max-h-96 overflow-y-auto">
-              {extras.map((extra) => {
-                const selected = selectedExtras.get(extra.id);
-                const quantity = selected?.quantity || 0;
-
-                return (
-                  <div
-                    key={extra.id}
-                    className="flex items-center gap-3 rounded-md border p-3 bg-white hover:bg-gray-50"
-                  >
-                    <div className="flex-1 min-w-0">
-                      <div className="flex items-baseline gap-2">
-                        <label className="font-medium text-sm cursor-pointer">
-                          {extra.name}
-                        </label>
-                        <Badge variant="outline" className="text-xs">
-                          {extra.unit}
-                        </Badge>
-                        {extra.trackInventory ? (
-                          <Badge variant="secondary" className="text-xs">
-                            In stock: {extra.product?.quantity ?? 0}
-                          </Badge>
-                        ) : (
-                          <Badge variant="outline" className="text-xs text-gray-500">
-                            Standalone
-                          </Badge>
-                        )}
-                      </div>
-                      {extra.description && (
-                        <p className="text-xs text-muted-foreground mt-1">
-                          {extra.description}
-                        </p>
-                      )}
-                      <p className="text-sm font-semibold text-amber-900 mt-1">
-                        {formatPrice(extra.price / 100)} each
-                      </p>
-                    </div>
-
-                    {/* Quantity Input */}
-                    <div className="flex items-center gap-2">
-                      <Input
-                        type="number"
-                        min="0"
-                        max={extra.trackInventory ? extra.product?.quantity : 999}
-                        value={quantity}
-                        onChange={(e) =>
-                          handleQuantityChange(
-                            extra.id,
-                            parseInt(e.target.value) || 0
-                          )
-                        }
-                        disabled={submitting || (extra.trackInventory && (extra.product?.quantity ?? 0) === 0)}
-                        className="w-16 text-center"
-                        placeholder="0"
-                      />
-                      {quantity > 0 && (
-                        <span className="text-sm font-medium text-amber-900 whitespace-nowrap">
-                          {formatPrice((extra.price * quantity) / 100)}
-                        </span>
-                      )}
-                    </div>
-                  </div>
-                );
-              })}
+        ) : (() => {
+          // Filter to only show extras with available quantity (no standalone without allocations)
+          const availableExtras = extras.filter(
+            (extra) =>
+              getAvailableQuantity(extra) > 0 &&
+              ((extra.departmentExtras && extra.departmentExtras.length > 0) || extra.product)
+          );
+          return availableExtras.length === 0 ? (
+            <div className="text-center py-8">
+              <p className="text-muted-foreground">No extras available</p>
             </div>
+          ) : (
+            <div className="space-y-4">
+              {/* Extras List */}
+              <div className="space-y-3 max-h-96 overflow-y-auto">
+                {availableExtras.map((extra) => {
+                  const selected = selectedExtras.has(extra.id);
+
+                  return (
+                    <div
+                      key={extra.id}
+                      className={`flex items-start gap-3 rounded-md border p-3 transition-colors ${
+                        selected ? 'bg-amber-50 border-amber-300' : 'bg-white hover:bg-gray-50'
+                      }`}
+                    >
+                      {/* Toggle Switch */}
+                      <div className="pt-1">
+                        <Switch
+                          checked={selected}
+                          onCheckedChange={(checked) =>
+                            handleSelectChange(extra.id, checked)
+                          }
+                          disabled={submitting}
+                        />
+                      </div>
+                      
+                      {/* Extra Details */}
+                      <div className="flex-1 min-w-0">
+                        <div className="flex items-baseline gap-2">
+                          <label className="font-medium text-sm cursor-pointer">
+                            {extra.name}
+                          </label>
+                          <Badge variant="outline" className="text-xs">
+                            {extra.unit}
+                          </Badge>
+                          <Badge variant="secondary" className="text-xs">
+                            Available: {getAvailableQuantity(extra)}
+                          </Badge>
+                        </div>
+                        {extra.description && (
+                          <p className="text-xs text-muted-foreground mt-1">
+                            {extra.description}
+                          </p>
+                        )}
+                        <p className="text-sm font-semibold text-amber-900 mt-1">
+                          {formatPrice(extra.price / 100)} each
+                        </p>
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
 
             {/* Total */}
             {selectedExtras.size > 0 && (
               <div className="border-t pt-3 mt-4">
                 <div className="flex justify-between items-center font-semibold">
-                  <span>Extras Total</span>
+                  <span>Total for {selectedExtras.size} Extra(s)</span>
                   <span className="text-lg text-amber-900">
                     {formatPrice(totalPrice / 100)}
                   </span>
                 </div>
               </div>
             )}
-          </div>
-        )}
+            </div>
+          );
+        })()}
 
         <DialogFooter>
           <Button
