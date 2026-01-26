@@ -48,13 +48,17 @@ export async function GET(req: Request) {
       const tomorrow = new Date(today)
       tomorrow.setDate(tomorrow.getDate() + 1)
 
-      // Build the full section code (PARENT:slug format)
-      const sectionCode = `${section.department.code}:${section.slug}`;
+      // Build the section identifier (slug or id)
+      // Use slug if available, otherwise use section ID
+      const sectionIdentifier = section.slug || section.id;
+      
+      // Build the full department code for querying
+      const fullDepartmentCode = `${section.department.code}:${sectionIdentifier}`;
 
-      // Query orders using the section code for accurate section-specific counts
+      // Query orders using the full department code for accurate section-specific counts
       const orders = await prisma.orderHeader.findMany({
         where: {
-          departmentCode: sectionCode,
+          departmentCode: fullDepartmentCode,
           createdAt: {
             gte: today,
             lt: tomorrow
@@ -70,7 +74,7 @@ export async function GET(req: Request) {
         name: section.name,
         slug: section.slug,
         departmentCode: section.department.code,
-        sectionCode: sectionCode,
+        sectionCode: sectionIdentifier,
         departmentName: section.department.name,
         status: 'online', // Sections are always online if active
         today: { count, total: salesTotal }

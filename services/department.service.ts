@@ -679,8 +679,19 @@ export class DepartmentService extends BaseService<IDepartment> {
         }
       });
 
-      // Map to menu shape
-      const menu = inventories.map((inv: any) => {
+      // Get section-specific extras
+      const extras = await (prisma as any).departmentExtra.findMany({
+        where: {
+          departmentId: parentDept.id,
+          sectionId: section.id
+        },
+        include: {
+          extra: true
+        }
+      });
+
+      // Map inventory items to menu shape
+      const inventoryMenu = inventories.map((inv: any) => {
         const quantity = Number(inv.quantity || 0);
         const priceInCents = Math.round((typeof inv.inventoryItem.unitPrice === 'object' && typeof inv.inventoryItem.unitPrice.toNumber === 'function' ? inv.inventoryItem.unitPrice.toNumber() : Number(inv.inventoryItem.unitPrice)) * 100);
 
@@ -691,8 +702,31 @@ export class DepartmentService extends BaseService<IDepartment> {
           type: category,
           available: quantity > 0,
           quantity: quantity,
+          itemType: 'inventory' as const,
         };
       });
+
+      // Map extras to menu shape
+      const extrasMenu = extras.map((extra: any) => {
+        const quantity = extra.extra.trackInventory ? Number(extra.quantity || 0) : 1;
+        const priceInCents = Math.round((typeof extra.extra.price === 'object' && typeof extra.extra.price.toNumber === 'function' ? extra.extra.price.toNumber() : Number(extra.extra.price || 0)) * 100);
+
+        return {
+          id: extra.extraId,
+          name: extra.extra.name,
+          price: priceInCents,
+          type: 'extra',
+          available: quantity > 0,
+          quantity: quantity,
+          itemType: 'extra' as const,
+          unit: extra.extra.unit,
+          productId: extra.extra.productId,
+          trackInventory: extra.extra.trackInventory,
+        };
+      });
+
+      // Combine inventory and extras menu
+      const menu = [...inventoryMenu, ...extrasMenu];
 
       return menu;
     } catch (error) {

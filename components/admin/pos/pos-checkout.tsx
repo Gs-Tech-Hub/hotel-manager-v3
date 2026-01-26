@@ -362,7 +362,8 @@ export default function POSCheckoutShell({ terminalId }: { terminalId?: string }
 
   // Load products for selected section
   useEffect(() => {
-    const code = departmentSection?.sectionCode || departmentSection?.departmentCode
+    // Construct the code: if section is specified use section code, otherwise use department code
+    const code = departmentSection?.sectionCode ? `${departmentSection.departmentCode}:${departmentSection.sectionCode}` : departmentSection?.departmentCode
     if (!code) {
       setProducts([])
       return
