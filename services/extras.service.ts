@@ -344,6 +344,20 @@ export class ExtrasService extends BaseService<any> {
         })
       );
 
+      // Update order total to include extras
+      const allOrderExtras = await prisma.orderExtra.findMany({
+        where: { orderHeaderId: data.orderHeaderId }
+      });
+      const extrasTotal = allOrderExtras.reduce((sum, extra) => sum + (extra.lineTotal || 0), 0);
+      
+      // Recalculate order total: subtotal + extras + tax - discount
+      const newTotal = (orderHeader.subtotal || 0) + extrasTotal + (orderHeader.tax || 0) - (orderHeader.discountTotal || 0);
+      
+      await prisma.orderHeader.update({
+        where: { id: data.orderHeaderId },
+        data: { total: Math.max(0, newTotal) }
+      });
+
       return orderExtras;
     } catch (error) {
       throw normalizeError(error);

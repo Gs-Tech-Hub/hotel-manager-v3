@@ -310,6 +310,56 @@ export default function OrderDetailPage() {
 
             <Card>
                 <CardHeader>
+                    <CardTitle>Order Summary</CardTitle>
+                </CardHeader>
+                <CardContent>
+                    <div className="space-y-2">
+                        {/* Subtotal */}
+                        <div className="flex justify-between items-center">
+                            <span className="text-muted-foreground">Subtotal:</span>
+                            <span>{formatCents(order.subtotal || 0)}</span>
+                        </div>
+                        
+                        {/* Extras Total */}
+                        {order.extras && order.extras.length > 0 && (() => {
+                            const extrasTotal = order.extras.reduce((sum: number, extra: any) => sum + (extra.lineTotal || 0), 0);
+                            return extrasTotal > 0 ? (
+                                <div className="flex justify-between items-center">
+                                    <span className="text-muted-foreground">Extras:</span>
+                                    <span>{formatCents(extrasTotal)}</span>
+                                </div>
+                            ) : null;
+                        })()}
+                        
+                        {/* Tax */}
+                        {order.tax > 0 && (
+                            <div className="flex justify-between items-center">
+                                <span className="text-muted-foreground">Tax:</span>
+                                <span>{formatCents(order.tax)}</span>
+                            </div>
+                        )}
+                        
+                        {/* Discounts */}
+                        {order.discountTotal > 0 && (
+                            <div className="flex justify-between items-center text-red-600">
+                                <span className="text-muted-foreground">Discount:</span>
+                                <span>-{formatCents(order.discountTotal)}</span>
+                            </div>
+                        )}
+                        
+                        {/* Total */}
+                        <div className="border-t pt-2 mt-2">
+                            <div className="flex justify-between items-center font-semibold text-lg">
+                                <span>Total:</span>
+                                <span className="text-amber-900">{formatCents(order.total || 0)}</span>
+                            </div>
+                        </div>
+                    </div>
+                </CardContent>
+            </Card>
+
+            <Card>
+                <CardHeader>
                     <CardTitle>Order Items</CardTitle>
                 </CardHeader>
                 <CardContent>
