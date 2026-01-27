@@ -193,21 +193,15 @@ export async function PUT(
       );
     }
 
-    // Update line item and create fulfillment record
-    // Increase interactive transaction timeout to reduce P2028 occurrences
+    // Step 1: MINIMAL TRANSACTION - Only update line and create fulfillment
+    // This is the fastest critical path
     const txStart = Date.now();
     await prisma.$transaction(async (tx: any) => {
-      const t0 = Date.now();
-      // Update line item status
       await tx.orderLine.update({
         where: { id: lineItemId },
-        data: {
-          status,
-        },
+        data: { status },
       });
-      const t1 = Date.now();
 
-      // Create fulfillment record using the transactional client to keep atomicity
       await (tx as any).orderFulfillment.create({
         data: {
           orderHeaderId: orderId,
@@ -218,134 +212,168 @@ export async function PUT(
           fulfilledAt: status === 'fulfilled' ? new Date() : null,
         },
       });
-      const t2 = Date.now();
-
-      // If status is fulfilled, perform inventory consumption for this line,
-      // then check if all lines are fulfilled.
-      if (status === 'fulfilled') {
-        try {
-          // Re-fetch the line within the transaction to get authoritative data
-          const txLine = await tx.orderLine.findUnique({ where: { id: lineItemId } });
-          const fulfilledQty = quantity || (txLine?.quantity || 0);
-
-          // If this line is an inventory-backed item, decrement dept inventory and record movement
-          if (txLine && txLine.productType && ['inventoryItem', 'food', 'drink'].includes(txLine.productType)) {
-            try {
-              const dept = await tx.department.findUnique({ where: { code: txLine.departmentCode } });
-              if (dept) {
-                // Build the where clause to include sectionId if available
-                // This ensures we decrement the correct section's inventory
-                const whereClause: any = { 
-                  departmentId: dept.id, 
-                  inventoryItemId: txLine.productId, 
-                  quantity: { gte: fulfilledQty } 
-                };
-                
-                // If this line has a departmentSectionId, scope to that section
-                if (txLine.departmentSectionId) {
-                  whereClause.sectionId = txLine.departmentSectionId;
-                } else {
-                  // Legacy: if no sectionId, scope to parent (sectionId = null)
-                  whereClause.sectionId = null;
-                }
-                
-                const res = await tx.departmentInventory.updateMany({
-                  where: whereClause,
-                  data: { quantity: { decrement: fulfilledQty } },
-                });
-
-                if (res.count && res.count > 0) {
-                  await tx.inventoryMovement.create({
-                    data: {
-                      movementType: 'out',
-                      quantity: fulfilledQty,
-                      reason: 'sale',
-                      reference: orderId,
-                      inventoryItemId: txLine.productId,
-                    },
-                  });
-                } else {
-                  // If updateMany didn't find sufficient stock, log a warning but continue
-                  console.warn(`Insufficient inventory to decrement for line ${lineItemId} (product ${txLine.productId})`);
-                }
-
-                // Consume any existing reservation(s) for this order + inventoryItem
-                await tx.inventoryReservation.updateMany({
-                  where: { orderHeaderId: orderId, inventoryItemId: txLine.productId, status: 'reserved' },
-                  data: { status: 'consumed', consumedAt: new Date() },
-                });
-
-                // Recalculate section stats for this department within the transaction
-                try {
-                  const { departmentService } = await import('@/services/department.service');
-                  await departmentService.recalculateSectionStats(dept.code as string, tx);
-                } catch (e) {
-                  console.error('Error recalculating section stats during fulfillment tx:', e);
-                }
-              }
-            } catch (invErr) {
-              console.error('Inventory decrement during fulfillment failed:', invErr);
-            }
-          }
-        } catch (e) {
-          console.error('Error handling inventory consumption during fulfillment:', e);
-        }
-
-        const remaining = await tx.orderLine.count({
-          where: { orderHeaderId: orderId, status: { not: 'fulfilled' } },
-        });
-
-        if (remaining === 0) {
-          // Update order status to fulfilled
-          // Update header and sync department statuses atomically
-          await tx.orderHeader.update({ where: { id: orderId }, data: { status: 'fulfilled' } });
-          await tx.orderDepartment.updateMany({ where: { orderHeaderId: orderId }, data: { status: 'fulfilled' } });
-        }
-      }
-      const t3 = Date.now();
-      try { console.log(`Fulfillment transaction timings (ms): update=${t1-t0} create=${t2-t1} post=${t3-t2} total=${t3-t0}`); } catch(e){}
-    }, { timeout: 15000 });
+    }, { timeout: 10000 });
     const txEnd = Date.now();
-    try { console.log('Fulfillment overall transaction duration (ms):', txEnd - txStart); } catch(e){}
+    
+    // Step 2: BATCH OPERATION - Fetch all required data for post-fulfillment operations
+    // Get line details, check completion, fetch order data all together
+    let shouldUpdateOrderStatus = false;
+    let updatedOrder = null;
+    
+    if (status === 'fulfilled') {
+      try {
+        // Batch fetch: line details + remaining count in parallel
+        const [txLine, remainingCount] = await Promise.all([
+          prisma.orderLine.findUnique({ where: { id: lineItemId } }),
+          prisma.orderLine.count({
+            where: { orderHeaderId: orderId, status: { not: 'fulfilled' } },
+          }),
+        ]);
 
-    // Fetch updated order
-    const updatedOrder = await (prisma as any).orderHeader.findUnique({
-      where: { id: orderId },
-      include: {
-        lines: {
+        shouldUpdateOrderStatus = remainingCount === 0;
+
+        // Step 3: BATCH OPERATION - Update order statuses if complete
+        if (shouldUpdateOrderStatus) {
+          await Promise.all([
+            prisma.orderHeader.update({
+              where: { id: orderId },
+              data: { status: 'fulfilled' },
+            }),
+            prisma.orderDepartment.updateMany({
+              where: { orderHeaderId: orderId },
+              data: { status: 'fulfilled' },
+            }),
+          ]);
+        }
+
+        // Step 4: BATCH OPERATION - Handle inventory operations in parallel
+        if (txLine && txLine.productType && ['inventoryItem', 'food', 'drink'].includes(txLine.productType)) {
+          const dept = await prisma.department.findUnique({ where: { code: txLine.departmentCode } });
+          
+          if (dept) {
+            const fulfilledQty = quantity || (txLine?.quantity || 0);
+            const whereClause: any = {
+              departmentId: dept.id,
+              inventoryItemId: txLine.productId,
+              quantity: { gte: fulfilledQty },
+            };
+
+            if (txLine.departmentSectionId) {
+              whereClause.sectionId = txLine.departmentSectionId;
+            } else {
+              whereClause.sectionId = null;
+            }
+
+            // Batch: decrement inventory and create movement record
+            const invResult = await prisma.departmentInventory.updateMany({
+              where: whereClause,
+              data: { quantity: { decrement: fulfilledQty } },
+            });
+
+            // Only create movement if inventory was decremented
+            if (invResult.count && invResult.count > 0) {
+              await prisma.inventoryMovement.create({
+                data: {
+                  movementType: 'out',
+                  quantity: fulfilledQty,
+                  reason: 'sale',
+                  reference: orderId,
+                  inventoryItemId: txLine.productId,
+                },
+              });
+            } else {
+              console.warn(`Insufficient inventory to decrement for line ${lineItemId}`);
+            }
+
+            // Consume reservations
+            await prisma.inventoryReservation.updateMany({
+              where: { orderHeaderId: orderId, inventoryItemId: txLine.productId, status: 'reserved' },
+              data: { status: 'consumed' },
+            });
+          }
+        }
+      } catch (e) {
+        console.error('Error in post-fulfillment operations:', e);
+        // Log but don't fail the request
+      }
+    }
+
+    // Step 5: BATCH OPERATION - Fetch updated order and line departments in parallel
+    try {
+      [updatedOrder] = await Promise.all([
+        (prisma as any).orderHeader.findUnique({
+          where: { id: orderId },
           include: {
+            lines: {
+              include: {
+                fulfillments: true,
+              },
+            },
+            departments: true,
             fulfillments: true,
           },
-        },
-        departments: true,
-        fulfillments: true,
-      },
+        }),
+        // Optionally fetch department codes for stats update later
+        shouldUpdateOrderStatus
+          ? prisma.orderLine.findMany({
+              where: { orderHeaderId: orderId },
+              select: { departmentCode: true },
+            })
+          : Promise.resolve([]),
+      ]);
+    } catch (e) {
+      console.error('Error fetching updated order:', e);
+      updatedOrder = null;
+    }
+
+    const payload = successResponse({
+      data: updatedOrder,
+      message: 'Fulfillment status updated successfully',
     });
 
-    const payload = successResponse({data : updatedOrder, message : 'Fulfillment status updated successfully'});
-    try {
-      console.log('PUT /api/orders/[id]/fulfillment payload:', JSON.stringify(payload));
-    } catch (logErr) {
-      console.log('PUT /api/orders/[id]/fulfillment payload (non-serializable):', payload);
+    // Step 6: BATCH OPERATION - Recalculate stats for affected departments in parallel
+    if (shouldUpdateOrderStatus) {
+      try {
+        const { departmentService } = await import('@/services/department.service');
+        const lines = await prisma.orderLine.findMany({
+          where: { orderHeaderId: orderId },
+          select: { departmentCode: true },
+        });
+        const deptCodes = Array.from(new Set(lines.map((l: any) => l.departmentCode).filter(Boolean)));
+
+        // Batch all stat calculations in parallel
+        await Promise.all(
+          deptCodes.map(async (code) => {
+            try {
+              await Promise.all([
+                departmentService.recalculateSectionStats(code),
+                departmentService.rollupParentStats(code),
+              ]);
+            } catch (e) {
+              console.error(`Error updating stats for department ${code}:`, e);
+            }
+          })
+        );
+      } catch (e) {
+        console.error('Error in stats recalculation:', e);
+        // Don't fail the request
+      }
     }
 
-    // After fulfillment update, roll up parent stats for all departments involved
     try {
-      const { departmentService } = await import('@/services/department.service');
-      const lines = await prisma.orderLine.findMany({ where: { orderHeaderId: orderId } });
-      const deptCodes = Array.from(new Set(lines.map((l: any) => l.departmentCode)));
-      for (const code of deptCodes) {
-        if (!code) continue;
-        await departmentService.rollupParentStats(code);
-      }
-    } catch (rollupErr) {
-      console.error('Error rolling up parent stats after fulfillment:', rollupErr);
-      // Don't fail the request; just log
-    }
+      console.log(`Fulfillment completed: tx=${txEnd - txStart}ms`);
+    } catch (e) {}
 
     return NextResponse.json(payload);
   } catch (error) {
     console.error('PUT /api/orders/[id]/fulfillment error:', error);
+    
+    // Log full error details for debugging
+    if (error instanceof Error) {
+      console.error('Error message:', error.message);
+      console.error('Error stack:', error.stack);
+    }
+    
     return NextResponse.json(
       errorResponse(ErrorCodes.INTERNAL_ERROR, 'Failed to update fulfillment'),
       { status: getStatusCode(ErrorCodes.INTERNAL_ERROR) }

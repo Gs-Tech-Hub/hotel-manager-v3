@@ -6,7 +6,6 @@ import DateRangeFilter from '../../../../components/departments/DateRangeFilter'
 import useDepartmentData from '../../../../components/departments/useDepartmentData'
 import SectionProductsTable from '../../../../components/departments/SectionProductsTable'
 import DepartmentHeader from '../../../../components/departments/DepartmentHeader'
-import StockSummaryCard from '../../../../components/departments/StockSummaryCard'
 import OrderStatsCard from '../../../../components/departments/OrderStatsCard'
 import CreateSectionModal from '../../../../components/departments/CreateSectionModal'
 import IncomingTransfersModal from '../../../../components/departments/IncomingTransfersModal'
@@ -191,16 +190,6 @@ export default function DepartmentDetail() {
               defaultToDate={sectionToDate}
             />
           </div>
-
-          {/* Stock Summary Card */}
-          {sectionStock && (
-            <StockSummaryCard
-              high={sectionStock.high}
-              low={sectionStock.low}
-              empty={sectionStock.empty}
-              totalProducts={sectionStock.totalProducts}
-            />
-          )}
 
           {/* Order Stats Card */}
           {department?.metadata?.sectionStats && (
