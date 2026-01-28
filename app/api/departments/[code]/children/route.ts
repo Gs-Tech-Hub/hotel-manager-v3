@@ -49,19 +49,48 @@ export async function GET(request: NextRequest, { params }: { params: Promise<{ 
 
     console.log(`[children] Found ${children.length} child departments`)
 
-    // Department sections (separate admin table)
-    // Note: Fetch ALL sections first to debug, then filter
-    const allSections = await (prisma as any).departmentSection.findMany({
-      where: { departmentId: parent.id },
-      orderBy: { createdAt: 'desc' },
-      select: { id: true, name: true, slug: true, metadata: true, isActive: true },
+    // Department sections - use the SAME mechanism as pos/terminals
+    // Query with isActive: true and include department, then filter by parent
+    const allSectionsWithDepts = await (prisma as any).departmentSection.findMany({
+      where: {
+        isActive: true
+      },
+      include: {
+        department: {
+          select: {
+            id: true,
+            code: true,
+            name: true
+          }
+        }
+      },
+      orderBy: { createdAt: 'desc' }
     })
 
-    console.log(`[children] Found ${allSections.length} total sections (active+inactive) for department ${parent.id}`)
+    console.log(`[children] Found ${allSectionsWithDepts.length} ACTIVE sections total in database`)
     
-    // Filter to only active sections for the response
-    const sections = allSections.filter((s: any) => s.isActive !== false)
-    console.log(`[children] Returning ${sections.length} active sections`)
+    // Also check if there are ANY sections at all (inactive included)
+    const allSectionsEverywhere = await (prisma as any).departmentSection.findMany({
+      select: { id: true, name: true, departmentId: true, isActive: true }
+    })
+    console.log(`[children] Total sections in database (active + inactive): ${allSectionsEverywhere.length}`)
+    
+    if (allSectionsEverywhere.length > 0) {
+      console.log(`[children] First section: id=${allSectionsEverywhere[0].id}, name=${allSectionsEverywhere[0].name}, deptId=${allSectionsEverywhere[0].departmentId}, isActive=${allSectionsEverywhere[0].isActive}`)
+    }
+
+    // Filter to only sections belonging to this parent department
+    const sections = allSectionsWithDepts
+      .filter((s: any) => s.department.id === parent.id)
+      .map((s: any) => ({
+        id: s.id,
+        name: s.name,
+        slug: s.slug,
+        metadata: s.metadata,
+        isActive: s.isActive
+      }))
+
+    console.log(`[children] Sections matching parent ${parent.id}: ${sections.length}`)
 
     const resp = NextResponse.json(successResponse({ data: { departments: children, sections } }), { status: 200 })
     console.timeEnd('GET /api/departments/[code]/children')
