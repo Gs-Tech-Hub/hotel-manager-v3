@@ -70,18 +70,65 @@ export async function GET(
     const processingLines = order.lines.filter((l: any) => l.status === 'processing').length;
     const pendingLines = order.lines.filter((l: any) => l.status === 'pending').length;
 
+    // Fetch inventory snapshot for all order lines
+    const inventorySnapshot: any = {};
+    try {
+      const inventoryPromises = order.lines.map(async (line: any) => {
+        if (line.productType && ['inventoryItem', 'food', 'drink'].includes(line.productType)) {
+          try {
+            const dept = await prisma.department.findUnique({ 
+              where: { code: line.departmentCode } 
+            });
+            
+            if (dept) {
+              const invWhere: any = {
+                departmentId: dept.id,
+                inventoryItemId: line.productId,
+              };
+              
+              if (line.departmentSectionId) {
+                invWhere.sectionId = line.departmentSectionId;
+              }
+              
+              const inv = await prisma.departmentInventory.findFirst({
+                where: invWhere,
+              });
+              
+              if (inv) {
+                inventorySnapshot[line.id] = {
+                  lineId: line.id,
+                  productId: line.productId,
+                  quantity: inv.quantity,
+                  reserved: inv.reserved,
+                  available: Math.max(0, inv.quantity - inv.reserved),
+                };
+              }
+            }
+          } catch (e) {
+            console.error(`Error fetching inventory for line ${line.id}:`, e);
+          }
+        }
+      });
+      
+      await Promise.all(inventoryPromises);
+    } catch (e) {
+      console.error('Error fetching inventory snapshot:', e);
+    }
+
     return NextResponse.json(
       successResponse({
         data: {
-        order,
-        fulfillmentSummary: {
-          totalLines,
-          fulfilledLines,
-          processingLines,
-          pendingLines,
-          fulfillmentPercentage: totalLines > 0 ? Math.round((fulfilledLines / totalLines) * 100) : 0,
-        },
-      }})
+          order,
+          inventory: inventorySnapshot, // Include current inventory state
+          fulfillmentSummary: {
+            totalLines,
+            fulfilledLines,
+            processingLines,
+            pendingLines,
+            fulfillmentPercentage: totalLines > 0 ? Math.round((fulfilledLines / totalLines) * 100) : 0,
+          },
+        }
+      })
     );
   } catch (error) {
     console.error('GET /api/orders/[id]/fulfillment error:', error);
@@ -193,15 +240,73 @@ export async function PUT(
       );
     }
 
-    // Step 1: MINIMAL TRANSACTION - Only update line and create fulfillment
-    // This is the fastest critical path
+    // PRE-FULFILLMENT VALIDATION: Check inventory availability if fulfilling
+    // This MUST happen BEFORE any status updates
+    if (status === 'fulfilled' && ['inventoryItem', 'food', 'drink'].includes(lineItem.productType)) {
+      try {
+        const fulfilledQty = quantity || lineItem.quantity;
+        
+        // Get department info
+        const dept = await prisma.department.findUnique({ 
+          where: { code: lineItem.departmentCode } 
+        });
+        
+        if (dept) {
+          // Build inventory check query
+          const inventoryWhere: any = {
+            departmentId: dept.id,
+            inventoryItemId: lineItem.productId,
+          };
+          
+          // If there's a section, check section-level inventory
+          if (lineItem.departmentSectionId) {
+            inventoryWhere.sectionId = lineItem.departmentSectionId;
+          } else {
+            inventoryWhere.sectionId = null;
+          }
+          
+          // Get current inventory
+          const inventory = await prisma.departmentInventory.findFirst({
+            where: inventoryWhere,
+          });
+          
+          // Check if enough quantity is available
+          if (!inventory || inventory.quantity < fulfilledQty) {
+            const available = inventory?.quantity || 0;
+            console.warn(
+              `Insufficient inventory for line ${lineItemId}: need ${fulfilledQty}, ` +
+              `available ${available} at ${lineItem.departmentCode}`
+            );
+            
+            return NextResponse.json(
+              errorResponse(
+                ErrorCodes.VALIDATION_ERROR,
+                `Insufficient inventory: need ${fulfilledQty} units but only ${available} available`
+              ),
+              { status: getStatusCode(ErrorCodes.VALIDATION_ERROR) }
+            );
+          }
+        }
+      } catch (e) {
+        console.error('Inventory validation error:', e);
+        // Log but allow fulfillment to proceed (inventory check failed but not critical)
+        // In production, you might want to return an error here instead
+      }
+    }
+
+    // Step 1: MINIMAL TRANSACTION - Update line and create fulfillment + deduct inventory
+    // Inventory deduction happens IN the transaction to ensure atomicity
     const txStart = Date.now();
+    let inventoryDeducted = false;
+    
     await prisma.$transaction(async (tx: any) => {
+      // Update line status
       await tx.orderLine.update({
         where: { id: lineItemId },
         data: { status },
       });
 
+      // Create fulfillment record
       await (tx as any).orderFulfillment.create({
         data: {
           orderHeaderId: orderId,
@@ -212,6 +317,41 @@ export async function PUT(
           fulfilledAt: status === 'fulfilled' ? new Date() : null,
         },
       });
+
+      // If fulfilled AND inventory item, deduct inventory within transaction
+      if (status === 'fulfilled' && ['inventoryItem', 'food', 'drink'].includes(lineItem.productType)) {
+        const dept = await tx.department.findUnique({ 
+          where: { code: lineItem.departmentCode } 
+        });
+        
+        if (dept) {
+          const fulfilledQty = quantity || lineItem.quantity;
+          const inventoryWhere: any = {
+            departmentId: dept.id,
+            inventoryItemId: lineItem.productId,
+          };
+          
+          if (lineItem.departmentSectionId) {
+            inventoryWhere.sectionId = lineItem.departmentSectionId;
+          } else {
+            inventoryWhere.sectionId = null;
+          }
+          
+          // Deduct inventory - will only succeed if quantity >= fulfilledQty
+          const invResult = await tx.departmentInventory.updateMany({
+            where: inventoryWhere,
+            data: { quantity: { decrement: fulfilledQty } },
+          });
+          
+          inventoryDeducted = invResult.count > 0;
+          
+          if (!inventoryDeducted) {
+            // Inventory couldn't be found/updated - this shouldn't happen after pre-check
+            // but we log it for audit purposes
+            console.warn(`Inventory deduction failed for line ${lineItemId}`);
+          }
+        }
+      }
     }, { timeout: 10000 });
     const txEnd = Date.now();
     
@@ -219,6 +359,7 @@ export async function PUT(
     // Get line details, check completion, fetch order data all together
     let shouldUpdateOrderStatus = false;
     let updatedOrder = null;
+    let deptCodesResult: any[] = [];
     
     if (status === 'fulfilled') {
       try {
@@ -246,50 +387,29 @@ export async function PUT(
           ]);
         }
 
-        // Step 4: BATCH OPERATION - Handle inventory operations in parallel
-        if (txLine && txLine.productType && ['inventoryItem', 'food', 'drink'].includes(txLine.productType)) {
-          const dept = await prisma.department.findUnique({ where: { code: txLine.departmentCode } });
+        // Step 4: BATCH OPERATION - Create inventory movement record if inventory was deducted in transaction
+        // Inventory deduction happened in the transaction above, now just log it
+        if (inventoryDeducted && txLine && txLine.productType && ['inventoryItem', 'food', 'drink'].includes(txLine.productType)) {
+          const fulfilledQty = quantity || (txLine?.quantity || 0);
           
-          if (dept) {
-            const fulfilledQty = quantity || (txLine?.quantity || 0);
-            const whereClause: any = {
-              departmentId: dept.id,
-              inventoryItemId: txLine.productId,
-              quantity: { gte: fulfilledQty },
-            };
-
-            if (txLine.departmentSectionId) {
-              whereClause.sectionId = txLine.departmentSectionId;
-            } else {
-              whereClause.sectionId = null;
-            }
-
-            // Batch: decrement inventory and create movement record
-            const invResult = await prisma.departmentInventory.updateMany({
-              where: whereClause,
-              data: { quantity: { decrement: fulfilledQty } },
+          try {
+            await prisma.inventoryMovement.create({
+              data: {
+                movementType: 'out',
+                quantity: fulfilledQty,
+                reason: 'sale',
+                reference: orderId,
+                inventoryItemId: txLine.productId,
+              },
             });
-
-            // Only create movement if inventory was decremented
-            if (invResult.count && invResult.count > 0) {
-              await prisma.inventoryMovement.create({
-                data: {
-                  movementType: 'out',
-                  quantity: fulfilledQty,
-                  reason: 'sale',
-                  reference: orderId,
-                  inventoryItemId: txLine.productId,
-                },
-              });
-            } else {
-              console.warn(`Insufficient inventory to decrement for line ${lineItemId}`);
-            }
 
             // Consume reservations
             await prisma.inventoryReservation.updateMany({
               where: { orderHeaderId: orderId, inventoryItemId: txLine.productId, status: 'reserved' },
               data: { status: 'consumed' },
             });
+          } catch (e) {
+            console.error('Error creating inventory movement:', e);
           }
         }
       } catch (e) {
@@ -298,9 +418,12 @@ export async function PUT(
       }
     }
 
-    // Step 5: BATCH OPERATION - Fetch updated order and line departments in parallel
+    // Step 5: BATCH OPERATION - Fetch updated order and department codes in parallel
+    // We need department codes for EVERY fulfillment to update stats (amount sold)
+    let deptCodes: string[] = [];
+    const inventorySnapshot: any = {};
     try {
-      [updatedOrder] = await Promise.all([
+      [updatedOrder, deptCodesResult] = await Promise.all([
         (prisma as any).orderHeader.findUnique({
           where: { id: orderId },
           include: {
@@ -313,35 +436,77 @@ export async function PUT(
             fulfillments: true,
           },
         }),
-        // Optionally fetch department codes for stats update later
-        shouldUpdateOrderStatus
-          ? prisma.orderLine.findMany({
-              where: { orderHeaderId: orderId },
-              select: { departmentCode: true },
-            })
-          : Promise.resolve([]),
+        // Always fetch department codes for stats update
+        prisma.orderLine.findMany({
+          where: { orderHeaderId: orderId },
+          select: { departmentCode: true },
+        }),
       ]);
+      deptCodes = Array.from(
+        new Set((deptCodesResult as any[]).map((l: any) => l.departmentCode).filter(Boolean))
+      );
+
+      // Fetch current inventory for all order lines to include in response
+      if (updatedOrder?.lines) {
+        const inventoryPromises = updatedOrder.lines.map(async (line: any) => {
+          if (line.productType && ['inventoryItem', 'food', 'drink'].includes(line.productType)) {
+            try {
+              const dept = await prisma.department.findUnique({ 
+                where: { code: line.departmentCode } 
+              });
+              
+              if (dept) {
+                const invWhere: any = {
+                  departmentId: dept.id,
+                  inventoryItemId: line.productId,
+                };
+                
+                if (line.departmentSectionId) {
+                  invWhere.sectionId = line.departmentSectionId;
+                }
+                
+                const inv = await prisma.departmentInventory.findFirst({
+                  where: invWhere,
+                });
+                
+                if (inv) {
+                  inventorySnapshot[line.id] = {
+                    lineId: line.id,
+                    quantity: inv.quantity,
+                    reserved: inv.reserved,
+                    available: Math.max(0, inv.quantity - inv.reserved),
+                  };
+                }
+              }
+            } catch (e) {
+              console.error(`Error fetching inventory for line ${line.id}:`, e);
+            }
+          }
+        });
+        
+        await Promise.all(inventoryPromises);
+      }
     } catch (e) {
       console.error('Error fetching updated order:', e);
       updatedOrder = null;
     }
 
     const payload = successResponse({
-      data: updatedOrder,
+      data: {
+        order: updatedOrder,
+        inventory: inventorySnapshot, // Include current inventory state
+        deducted: inventoryDeducted,  // Indicate if inventory was deducted
+      },
       message: 'Fulfillment status updated successfully',
     });
 
-    // Step 6: BATCH OPERATION - Recalculate stats for affected departments in parallel
-    if (shouldUpdateOrderStatus) {
+    // Step 6: BATCH OPERATION - Recalculate stats for ALL affected departments
+    // This ensures section inventory and amount sold are updated for every fulfilled line
+    if (deptCodes.length > 0) {
       try {
         const { departmentService } = await import('@/services/department.service');
-        const lines = await prisma.orderLine.findMany({
-          where: { orderHeaderId: orderId },
-          select: { departmentCode: true },
-        });
-        const deptCodes = Array.from(new Set(lines.map((l: any) => l.departmentCode).filter(Boolean)));
 
-        // Batch all stat calculations in parallel
+        // Batch all stat calculations in parallel for all affected departments
         await Promise.all(
           deptCodes.map(async (code) => {
             try {

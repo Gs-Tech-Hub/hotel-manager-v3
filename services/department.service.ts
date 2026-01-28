@@ -262,15 +262,34 @@ export class DepartmentService extends BaseService<IDepartment> {
 
       const totalUnitsRes: any = await client.orderLine.aggregate({ _sum: { quantity: true }, where: { departmentCode } });
       const fulfilledUnitsRes: any = await client.orderLine.aggregate({ _sum: { quantity: true }, where: { departmentCode, status: 'fulfilled' } });
-      // Only count amount for fulfilled orders with payment made (paid or partial)
-      const amountRes: any = await client.orderLine.aggregate({ _sum: { lineTotal: true }, where: { departmentCode, status: 'fulfilled', orderHeader: { status: { in: ['fulfilled', 'completed'] }, paymentStatus: { in: ['paid', 'partial'] } } } });
+      
+      // Amount fulfilled: ALL fulfilled items regardless of payment status
+      const amountFulfilledRes: any = await client.orderLine.aggregate({ 
+        _sum: { lineTotal: true }, 
+        where: { departmentCode, status: 'fulfilled' } 
+      });
+      
+      // Amount paid: Only fulfilled items where payment is made (paid or partial)
+      const amountPaidRes: any = await client.orderLine.aggregate({ 
+        _sum: { lineTotal: true }, 
+        where: { 
+          departmentCode, 
+          status: 'fulfilled', 
+          orderHeader: { 
+            status: { in: ['fulfilled', 'completed'] }, 
+            paymentStatus: { in: ['paid', 'partial'] } 
+          } 
+        } 
+      });
 
       const totalUnits = totalUnitsRes._sum.quantity || 0;
       const fulfilledUnits = fulfilledUnitsRes._sum.quantity || 0;
-      const totalAmount = amountRes._sum.lineTotal || 0;
+      const amountFulfilled = amountFulfilledRes._sum.lineTotal || 0;
+      const amountPaid = amountPaidRes._sum.lineTotal || 0;
 
-      // Validate totalAmount is in cents (integer)
-      validatePrice(totalAmount, `departmentStats totalAmount for ${departmentCode}`);
+      // Validate amounts are in cents (integers)
+      validatePrice(amountFulfilled, `departmentStats amountFulfilled for ${departmentCode}`);
+      validatePrice(amountPaid, `departmentStats amountPaid for ${departmentCode}`);
 
       const stats = {
         totalOrders,
@@ -279,7 +298,9 @@ export class DepartmentService extends BaseService<IDepartment> {
         fulfilledOrders,
         totalUnits,
         fulfilledUnits,
-        totalAmount,
+        amountFulfilled,      // All fulfilled items regardless of payment
+        amountPaid,             // Only items with payment made
+        totalAmount: amountPaid, // Legacy key for backward compatibility
         fulfillmentRate: totalUnits > 0 ? Math.round((fulfilledUnits / totalUnits) * 100) : 0,
         updatedAt: new Date(),
       };

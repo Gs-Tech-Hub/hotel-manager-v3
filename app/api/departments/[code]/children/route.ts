@@ -22,6 +22,8 @@ export async function GET(request: NextRequest, { params }: { params: Promise<{ 
       return NextResponse.json(errorResponse(ErrorCodes.NOT_FOUND, 'Department not found'), { status: getStatusCode(ErrorCodes.NOT_FOUND) })
     }
 
+    console.log(`[children] Parent department: ${parent.code} (id: ${parent.id})`)
+
     // Child departments (sections stored as departments with code prefix)
     const children = await (prisma as any).department.findMany({
       where: {
@@ -45,12 +47,21 @@ export async function GET(request: NextRequest, { params }: { params: Promise<{ 
       },
     })
 
+    console.log(`[children] Found ${children.length} child departments`)
+
     // Department sections (separate admin table)
-    const sections = await (prisma as any).departmentSection.findMany({
-      where: { departmentId: parent.id, isActive: true },
+    // Note: Fetch ALL sections first to debug, then filter
+    const allSections = await (prisma as any).departmentSection.findMany({
+      where: { departmentId: parent.id },
       orderBy: { createdAt: 'desc' },
       select: { id: true, name: true, slug: true, metadata: true, isActive: true },
     })
+
+    console.log(`[children] Found ${allSections.length} total sections (active+inactive) for department ${parent.id}`)
+    
+    // Filter to only active sections for the response
+    const sections = allSections.filter((s: any) => s.isActive !== false)
+    console.log(`[children] Returning ${sections.length} active sections`)
 
     const resp = NextResponse.json(successResponse({ data: { departments: children, sections } }), { status: 200 })
     console.timeEnd('GET /api/departments/[code]/children')

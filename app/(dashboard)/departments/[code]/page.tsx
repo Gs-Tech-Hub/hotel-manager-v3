@@ -200,6 +200,8 @@ export default function DepartmentDetail() {
                 department.metadata.sectionStats.processingOrders ?? 0
               }
               fulfilledOrders={department.metadata.sectionStats.fulfilledOrders ?? 0}
+              amountFulfilled={department.metadata.sectionStats.amountFulfilled ?? 0}
+              amountPaid={department.metadata.sectionStats.amountPaid ?? 0}
               totalAmount={department.metadata.sectionStats.totalAmount ?? 0}
             />
           )}

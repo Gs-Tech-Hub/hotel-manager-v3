@@ -244,6 +244,7 @@ export default function useDepartmentData(decodedCode: string | undefined, fromD
   useEffect(() => {
     const fetchDepartment = async () => {
       setDeptLoading(true)
+      setLoading(true)
       setError(null)
       try {
         if (!decodedCode) return
@@ -336,6 +337,7 @@ export default function useDepartmentData(decodedCode: string | undefined, fromD
         setDepartment(null)
       } finally {
         setDeptLoading(false)
+        setLoading(false)
       }
     }
 
@@ -347,6 +349,7 @@ export default function useDepartmentData(decodedCode: string | undefined, fromD
     const useCode = code ?? decodedCode
     if (!useCode) return
     setDeptLoading(true)
+    setLoading(true)
     try {
       // For sections (code includes ':'), use consolidated /section endpoint
       if (useCode.includes(':')) {
@@ -433,6 +436,7 @@ export default function useDepartmentData(decodedCode: string | undefined, fromD
       console.error('refreshDepartment error', e)
     } finally {
       setDeptLoading(false)
+      setLoading(false)
     }
   }
 

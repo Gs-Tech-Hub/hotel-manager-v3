@@ -145,49 +145,87 @@ export async function GET(
       }
     }
 
-    // Compute order stats for section
-    let totalOrders = 0
-    let pendingOrders = 0
-    let processingOrders = 0
-    let fulfilledOrders = 0
+    // Compute order stats for section from department metadata
+    // The recalculateSectionStats service already aggregates these,
+    // so we just use the cached values in department.metadata.sectionStats
+    let stats = {
+      totalOrders: 0,
+      pendingOrders: 0,
+      processingOrders: 0,
+      fulfilledOrders: 0,
+      totalUnits: 0,
+      fulfilledUnits: 0,
+      amountFulfilled: 0,
+      amountPaid: 0,
+    }
 
-    try {
-      const codeStr = (dept.code || '').toString()
-      // Build date filter for orderHeader using centralized utility
-      const dateWhere = buildDateFilter(fromDate, toDate)
+    // Use cached stats from department metadata if available
+    if (dept.metadata?.sectionStats) {
+      stats = dept.metadata.sectionStats;
+    } else {
+      // Fallback: compute stats on the fly for debugging
+      try {
+        const codeStr = (dept.code || '').toString()
+        
+        if (codeStr.includes(':')) {
+          // Section: aggregate by department code on order lines
+          const [
+            totalOrderIds,
+            pendingLineIds,
+            processingLineIds,
+            fulfilledLineIds,
+            totalUnitsRes,
+            fulfilledUnitsRes,
+            amountFulfilledRes,
+            amountPaidRes,
+          ] = await Promise.all([
+            prisma.orderLine.findMany({
+              where: { departmentCode: codeStr },
+              distinct: ['orderHeaderId'],
+              select: { orderHeaderId: true },
+            }),
+            prisma.orderLine.count({ where: { departmentCode: codeStr, status: 'pending' } }),
+            prisma.orderLine.count({ where: { departmentCode: codeStr, status: 'processing' } }),
+            prisma.orderLine.count({ where: { departmentCode: codeStr, status: 'fulfilled' } }),
+            (prisma as any).orderLine.aggregate({
+              _sum: { quantity: true },
+              where: { departmentCode: codeStr },
+            }),
+            (prisma as any).orderLine.aggregate({
+              _sum: { quantity: true },
+              where: { departmentCode: codeStr, status: 'fulfilled' },
+            }),
+            (prisma as any).orderLine.aggregate({
+              _sum: { lineTotal: true },
+              where: { departmentCode: codeStr, status: 'fulfilled' },
+            }),
+            (prisma as any).orderLine.aggregate({
+              _sum: { lineTotal: true },
+              where: {
+                departmentCode: codeStr,
+                status: 'fulfilled',
+                orderHeader: {
+                  status: { in: ['fulfilled', 'completed'] },
+                  paymentStatus: { in: ['paid', 'partial'] },
+                },
+              },
+            }),
+          ]);
 
-      if (codeStr.includes(':')) {
-        // Section: count by department code on order lines
-        const headerRows = await (prisma as any).orderLine.findMany({
-          where: { departmentCode: dept.code },
-          distinct: ['orderHeaderId'],
-          select: { orderHeaderId: true },
-        })
-        const headerIds = (headerRows || []).map((h: any) => h.orderHeaderId).filter(Boolean)
-        if (headerIds.length) {
-          const hdrCounts = await (prisma as any).orderHeader.groupBy({
-            by: ['status'],
-            where: { id: { in: headerIds }, ...dateWhere },
-            _count: { _all: true }
-          })
-          for (const r of hdrCounts) {
-            const cnt = (r as any)._count?._all || 0
-            totalOrders += cnt
-            if (r.status === 'pending') pendingOrders += cnt
-            if (r.status === 'processing') processingOrders += cnt
-            if (r.status === 'fulfilled') fulfilledOrders += cnt
-          }
+          stats = {
+            totalOrders: totalOrderIds.length,
+            pendingOrders: pendingLineIds,
+            processingOrders: processingLineIds,
+            fulfilledOrders: fulfilledLineIds,
+            totalUnits: totalUnitsRes._sum?.quantity || 0,
+            fulfilledUnits: fulfilledUnitsRes._sum?.quantity || 0,
+            amountFulfilled: amountFulfilledRes._sum?.lineTotal || 0,
+            amountPaid: amountPaidRes._sum?.lineTotal || 0,
+          };
         }
-      } else {
-        // Parent department: use OrderDepartment table
-        totalOrders = await (prisma as any).orderDepartment.count({ where: { departmentId: dept.id, ...(Object.keys(dateWhere).length > 0 ? { orderHeader: dateWhere } : {}) } })
-        pendingOrders = await (prisma as any).orderDepartment.count({ where: { departmentId: dept.id, status: 'pending', ...(Object.keys(dateWhere).length > 0 ? { orderHeader: dateWhere } : {}) } })
-        processingOrders = await (prisma as any).orderDepartment.count({ where: { departmentId: dept.id, status: 'processing', ...(Object.keys(dateWhere).length > 0 ? { orderHeader: dateWhere } : {}) } })
-        fulfilledOrders = await (prisma as any).orderDepartment.count({ where: { departmentId: dept.id, status: 'fulfilled', ...(Object.keys(dateWhere).length > 0 ? { orderHeader: dateWhere } : {}) } })
+      } catch (e) {
+        console.error('Failed to compute order stats fallback:', e)
       }
-    } catch (e) {
-      // Ignore errors and keep zeros
-      console.error('Failed to fetch order stats:', e)
     }
 
     // Prepare response with only needed data
@@ -206,10 +244,14 @@ export async function GET(
       products,
       stock,
       stats: {
-        totalOrders,
-        pendingOrders,
-        processingOrders,
-        fulfilledOrders,
+        totalOrders: stats.totalOrders,
+        pendingOrders: stats.pendingOrders,
+        processingOrders: stats.processingOrders,
+        fulfilledOrders: stats.fulfilledOrders,
+        totalUnits: stats.totalUnits,
+        fulfilledUnits: stats.fulfilledUnits,
+        amountFulfilled: stats.amountFulfilled,
+        amountPaid: stats.amountPaid,
       },
     }
 
