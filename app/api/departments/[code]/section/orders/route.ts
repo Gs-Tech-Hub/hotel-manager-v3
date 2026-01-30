@@ -53,21 +53,34 @@ export async function GET(
     const startDate = url.searchParams.get('startDate')
     const endDate = url.searchParams.get('endDate')
 
-    // Normalize code
-    let lookupCode = code.toLowerCase()
+    // Normalize and parse code (format: department:sectionId)
+    let decodedCode = code
     try {
       for (let i = 0; i < 3; i++) {
-        const decoded = decodeURIComponent(lookupCode)
-        if (decoded === lookupCode) break
-        lookupCode = decoded.toLowerCase()
+        const decoded = decodeURIComponent(decodedCode)
+        if (decoded === decodedCode) break
+        decodedCode = decoded
       }
     } catch (e) {
-      lookupCode = code.toLowerCase()
+      decodedCode = code
     }
 
-    // Find the section
+    // Split by colon to get department and section parts
+    const [deptCode, sectionId] = decodedCode.split(':')
+    
+    if (!deptCode || !sectionId) {
+      return NextResponse.json(
+        errorResponse(ErrorCodes.BAD_REQUEST, 'Invalid section code format. Expected department:sectionId'),
+        { status: getStatusCode(ErrorCodes.BAD_REQUEST) }
+      )
+    }
+
+    // Find the section by ID and verify it belongs to the department
     const section = await (prisma as any).departmentSection.findFirst({
-      where: { slug: lookupCode },
+      where: { 
+        id: sectionId,
+        department: { code: deptCode }
+      },
       include: { department: true }
     })
 
@@ -81,42 +94,51 @@ export async function GET(
     // Build date filter
     const dateFilter = buildDateFilter(startDate, endDate)
 
-    // Build query filter for orders in this section
-    const departmentCode = section.department.code
-    const sectionCode = section.slug || section.id
-    const fullSectionCode = `${departmentCode}:${sectionCode}`
-
-    const whereClause: any = {
-      departmentCode: fullSectionCode,
+    // Find order lines for this section to get the order header IDs
+    const sectionLineWhere: any = {
+      departmentCode: section.id, // departmentCode in orderLine contains the section ID
     }
 
     if (status) {
-      whereClause.status = status
+      sectionLineWhere.status = status
     }
 
-    if (dateFilter && Object.keys(dateFilter).length > 0) {
-      whereClause.createdAt = dateFilter
-    }
+    // Get distinct order header IDs from order lines in this section
+    const sectionLines = await (prisma as any).orderLine.findMany({
+      where: sectionLineWhere,
+      distinct: ['orderHeaderId'],
+      select: { orderHeaderId: true },
+      orderBy: { createdAt: 'desc' }
+    })
 
+    const orderHeaderIds = sectionLines.map((l: any) => l.orderHeaderId)
+    const total = orderHeaderIds.length
+
+    // Apply pagination
     const skip = (page - 1) * limit
+    const paginatedIds = orderHeaderIds.slice(skip, skip + limit)
+
+    // Build where clause for headers with date filter
+    const headerWhere: any = {
+      id: { in: paginatedIds },
+      ...dateFilter,
+    }
 
     // Fetch orders
-    const [orders, total] = await Promise.all([
-      (prisma as any).orderHeader.findMany({
-        where: whereClause,
-        include: {
-          lines: {
-            include: {
-              fulfillments: true
+    const orders = paginatedIds.length > 0
+      ? await (prisma as any).orderHeader.findMany({
+          where: headerWhere,
+          include: {
+            lines: {
+              where: { departmentCode: section.id },
+              include: {
+                fulfillments: true
+              }
             }
-          }
-        },
-        skip,
-        take: limit,
-        orderBy: { createdAt: 'desc' }
-      }),
-      (prisma as any).orderHeader.count({ where: whereClause })
-    ])
+          },
+          orderBy: { createdAt: 'desc' }
+        })
+      : []
 
     return NextResponse.json(
       successResponse({

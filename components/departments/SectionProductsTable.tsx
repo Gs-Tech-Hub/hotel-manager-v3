@@ -56,7 +56,7 @@ export default function SectionProductsTable({ products: initialProducts, depart
         return
       }
       
-      // Otherwise, fetch from API (with or without dates)
+      // Otherwise, fetch from consolidated /section endpoint
       if (!sectionCode) {
         setProducts([])
         return
@@ -64,23 +64,27 @@ export default function SectionProductsTable({ products: initialProducts, depart
       setLoading(true)
       setError(null)
       try {
-        const parent = departmentCode || sectionCode
         const params = new URLSearchParams({
-          details: 'true',
-          section: sectionCode,
           pageSize: String(ps),
-          page: String(page),
         })
         
         if (fromDate) params.append('fromDate', fromDate)
         if (toDate) params.append('toDate', toDate)
         
-        const url = `/api/departments/${encodeURIComponent(parent)}/products?${params.toString()}`
+        // Use consolidated /section endpoint instead of /products
+        const url = `/api/departments/${encodeURIComponent(sectionCode)}/section${params.toString() ? '?' + params.toString() : ''}`
         const res = await fetch(url)
-        if (!res.ok) throw new Error('Failed to load products')
+        if (!res.ok) throw new Error('Failed to load section products')
         const j = await res.json()
-        const items = (j.data?.items || j.items || []) as any[]
-        const total = Number(j.data?.total ?? j.total ?? 0)
+        
+        if (!j?.success) {
+          throw new Error(j?.error?.message || 'Failed to load section products')
+        }
+        
+        const sectionData = j.data || {}
+        const items = (sectionData.products?.items || []) as any[]
+        const total = Number(sectionData.products?.total ?? items.length)
+        
         if (mounted) {
           setTotalCount(total)
           setTotalPages(Math.max(1, Math.ceil(total / ps)))
@@ -99,7 +103,7 @@ export default function SectionProductsTable({ products: initialProducts, depart
 
     fetchProducts()
     return () => { mounted = false }
-  }, [initialProducts, departmentCode, sectionCode, pageSizeState, page, fromDate, toDate])
+  }, [initialProducts, sectionCode, pageSizeState, page, fromDate, toDate])
 
   // Debug: log prices
   useEffect(() => {

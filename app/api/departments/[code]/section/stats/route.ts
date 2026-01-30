@@ -47,24 +47,37 @@ export async function GET(
 
     const { code } = await params
     const url = new URL(request.url)
-    const startDate = url.searchParams.get('startDate')
-    const endDate = url.searchParams.get('endDate')
+    const fromDate = url.searchParams.get('fromDate')
+    const toDate = url.searchParams.get('toDate')
 
-    // Normalize code
-    let lookupCode = code.toLowerCase()
+    // Normalize and parse code (format: department:sectionId)
+    let decodedCode = code
     try {
       for (let i = 0; i < 3; i++) {
-        const decoded = decodeURIComponent(lookupCode)
-        if (decoded === lookupCode) break
-        lookupCode = decoded.toLowerCase()
+        const decoded = decodeURIComponent(decodedCode)
+        if (decoded === decodedCode) break
+        decodedCode = decoded
       }
     } catch (e) {
-      lookupCode = code.toLowerCase()
+      decodedCode = code
     }
 
-    // Find the section or department
+    // Split by colon to get department and section parts
+    const [deptCode, sectionId] = decodedCode.split(':')
+    
+    if (!deptCode || !sectionId) {
+      return NextResponse.json(
+        errorResponse(ErrorCodes.BAD_REQUEST, 'Invalid section code format. Expected department:sectionId'),
+        { status: getStatusCode(ErrorCodes.BAD_REQUEST) }
+      )
+    }
+
+    // Find the section by ID and verify it belongs to the department
     const section = await (prisma as any).departmentSection.findFirst({
-      where: { slug: lookupCode },
+      where: { 
+        id: sectionId,
+        department: { code: deptCode }
+      },
       include: { department: true }
     })
 
@@ -76,49 +89,55 @@ export async function GET(
     }
 
     // Build date filter if provided
-    const dateFilter = buildDateFilter(startDate, endDate)
+    const dateFilter = buildDateFilter(fromDate, toDate)
 
-    // Build query filter for orders in this section
-    // Orders are linked via departmentCode like "DEPARTMENT:section"
-    const departmentCode = section.department.code
-    const sectionCode = section.slug || section.id
-    const fullSectionCode = `${departmentCode}:${sectionCode}`
-
-    const whereClause: any = {
-      departmentCode: fullSectionCode,
+    // Find order lines for this section, then get the distinct order headers
+    const sectionLineWhere: any = {
+      departmentCode: section.id, // departmentCode in orderLine contains the section ID
     }
 
-    if (dateFilter && Object.keys(dateFilter).length > 0) {
-      whereClause.createdAt = dateFilter
+    // Get distinct order header IDs that have lines in this section
+    const sectionLines = await (prisma as any).orderLine.findMany({
+      where: sectionLineWhere,
+      distinct: ['orderHeaderId'],
+      select: { orderHeaderId: true },
+    })
+
+    const orderHeaderIds = sectionLines.map((l: any) => l.orderHeaderId)
+
+    // Build whereClause for orderHeader using the found header IDs and date filter
+    const headerWhere: any = {
+      id: { in: orderHeaderIds },
+      ...dateFilter,
     }
 
     // Fetch order stats for this section
     const [pendingOrders, cancelledOrders, completedOrders, totalOrders, amountSold] = await Promise.all([
       (prisma as any).orderHeader.count({
         where: {
-          ...whereClause,
+          ...headerWhere,
           status: 'pending'
         }
       }),
       (prisma as any).orderHeader.count({
         where: {
-          ...whereClause,
+          ...headerWhere,
           status: 'cancelled'
         }
       }),
       (prisma as any).orderHeader.count({
         where: {
-          ...whereClause,
-          status: 'completed'
+          ...headerWhere,
+          status: 'fulfilled'
         }
       }),
       (prisma as any).orderHeader.count({
-        where: whereClause
+        where: headerWhere
       }),
       (prisma as any).orderHeader.aggregate({
         where: {
-          ...whereClause,
-          status: 'completed'
+          ...headerWhere,
+          status: 'fulfilled'
         },
         _sum: { total: true }
       })

@@ -153,7 +153,7 @@ export class SectionService {
                 paymentStatus: { in: ['paid', 'partial'] },
                 ...dateWhere,
               },
-              ...(params.sectionFilter ? { departmentCode: params.sectionFilter } : {}),
+              ...(resolvedSectionId ? { departmentCode: resolvedSectionId } : {}),
             },
             _sum: { quantity: true, lineTotal: true },
           })
@@ -164,7 +164,7 @@ export class SectionService {
               productId: { in: allPossibleIds },
               status: { in: ['pending', 'processing'] },
               orderHeader: { status: { not: 'cancelled' }, ...dateWhere },
-              ...(params.sectionFilter ? { departmentCode: params.sectionFilter } : {}),
+              ...(resolvedSectionId ? { departmentCode: resolvedSectionId } : {}),
             },
             _sum: { quantity: true },
           })
@@ -319,7 +319,7 @@ export class SectionService {
                 paymentStatus: { in: ['paid', 'partial'] },
                 ...dateWhere,
               },
-              ...(params.sectionFilter ? { departmentCode: params.sectionFilter } : {}),
+              ...(resolvedSectionId ? { departmentCode: resolvedSectionId } : {}),
             },
             _sum: { quantity: true, lineTotal: true },
           })
@@ -330,7 +330,7 @@ export class SectionService {
               productId: { in: allPossibleIds },
               status: { in: ['pending', 'processing'] },
               orderHeader: { status: { not: 'cancelled' }, ...dateWhere },
-              ...(params.sectionFilter ? { departmentCode: params.sectionFilter } : {}),
+              ...(resolvedSectionId ? { departmentCode: resolvedSectionId } : {}),
             },
             _sum: { quantity: true },
           })
@@ -387,7 +387,7 @@ export class SectionService {
               paymentStatus: { in: ['paid', 'partial'] },
               ...dateWhere,
             },
-            ...(sectionFilter ? { departmentCode: sectionFilter } : {}),
+            ...(resolvedSectionId ? { departmentCode: resolvedSectionId } : {}),
           },
           _sum: { quantity: true, lineTotal: true },
         })
@@ -398,7 +398,7 @@ export class SectionService {
             productId: { in: allPossibleIds },
             status: { in: ['pending', 'processing'] },
             orderHeader: { status: { not: 'cancelled' }, ...dateWhere },
-            ...(sectionFilter ? { departmentCode: sectionFilter } : {}),
+            ...(resolvedSectionId ? { departmentCode: resolvedSectionId } : {}),
           },
           _sum: { quantity: true },
         })

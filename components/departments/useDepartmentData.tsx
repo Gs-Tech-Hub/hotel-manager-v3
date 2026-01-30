@@ -105,7 +105,7 @@ export default function useDepartmentData(decodedCode: string | undefined, fromD
     setPendingOrderLinesLoading(true)
     setPendingOrderLines(null)
     try {
-      const res = await fetch(`/api/departments/${encodeURIComponent(sectionCode)}/orders?status=pending&limit=200`)
+      const res = await fetch(`/api/departments/${encodeURIComponent(sectionCode)}/section/orders?status=pending&limit=200`)
       if (!res.ok) {
         setPendingOrderLines([])
         return
@@ -199,7 +199,7 @@ export default function useDepartmentData(decodedCode: string | undefined, fromD
     setPendingModalLoading(true)
     setPendingModalItems(null)
     try {
-      const res = await fetch(`/api/departments/${encodeURIComponent(code)}/orders?status=pending&limit=200`)
+      const res = await fetch(`/api/departments/${encodeURIComponent(code)}/section/orders?status=pending&limit=200`)
       if (!res.ok) throw new Error('Failed to load pending orders')
       const j = await res.json()
       const orders = j.data?.orders || j.orders || []

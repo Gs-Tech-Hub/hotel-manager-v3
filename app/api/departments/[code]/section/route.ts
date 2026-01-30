@@ -163,45 +163,55 @@ export async function GET(
     if (dept.metadata?.sectionStats) {
       stats = dept.metadata.sectionStats;
     } else {
-      // Fallback: compute stats on the fly by querying OrderHeader (not OrderLine)
+      // Fallback: compute stats on the fly by querying through OrderLine
       try {
-        const codeStr = (dept.code || '').toString()
-        
-        if (codeStr.includes(':')) {
-          // Build base where clause
-          const baseWhere: any = { departmentCode: codeStr }
+        if (sectionRow && sectionRow.id) {
+          // Section: find orders via orderLine.departmentCode (which contains section ID)
+          const dateFilter = (fromDate || toDate) ? buildDateFilter(fromDate, toDate) : {}
           
-          // Only add date filter if dates are provided
-          if (fromDate || toDate) {
-            baseWhere.createdAt = buildDateFilter(fromDate, toDate)
+          // Get distinct order header IDs for this section
+          const sectionLines = await (prisma as any).orderLine.findMany({
+            where: {
+              departmentCode: sectionRow.id,
+            },
+            distinct: ['orderHeaderId'],
+            select: { orderHeaderId: true },
+          })
+          
+          const orderHeaderIds = sectionLines.map((l: any) => l.orderHeaderId)
+          
+          // Build where clause for headers with date filter
+          const headerWhere: any = {
+            id: { in: orderHeaderIds },
+            ...dateFilter,
           }
           
-          // Section: count distinct orders by departmentCode and order status
+          // Count orders by status
           const [
             pendingOrders,
-            completedOrders,
+            fulfilledOrders,
             totalOrders,
             amountSoldRes,
           ] = await Promise.all([
             (prisma as any).orderHeader.count({
               where: {
-                ...baseWhere,
+                ...headerWhere,
                 status: 'pending',
               }
             }),
             (prisma as any).orderHeader.count({
               where: {
-                ...baseWhere,
-                status: 'completed',
+                ...headerWhere,
+                status: 'fulfilled',
               }
             }),
             (prisma as any).orderHeader.count({
-              where: baseWhere
+              where: headerWhere
             }),
             (prisma as any).orderHeader.aggregate({
               where: {
-                ...baseWhere,
-                status: 'completed',
+                ...headerWhere,
+                status: 'fulfilled',
               },
               _sum: { total: true }
             })
@@ -210,11 +220,11 @@ export async function GET(
           stats = {
             totalOrders,
             pendingOrders,
-            processingOrders: 0,  // Not used in new model
-            fulfilledOrders: completedOrders,
-            totalUnits: 0,  // Not used in new model
-            fulfilledUnits: 0,  // Not used in new model
-            amountFulfilled: 0,  // Not used in new model
+            processingOrders: 0,
+            fulfilledOrders,
+            totalUnits: 0,
+            fulfilledUnits: 0,
+            amountFulfilled: 0,
             amountPaid: amountSoldRes._sum?.total || 0,
           };
         }
