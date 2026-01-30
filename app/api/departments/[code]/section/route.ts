@@ -163,64 +163,59 @@ export async function GET(
     if (dept.metadata?.sectionStats) {
       stats = dept.metadata.sectionStats;
     } else {
-      // Fallback: compute stats on the fly for debugging
+      // Fallback: compute stats on the fly by querying OrderHeader (not OrderLine)
       try {
         const codeStr = (dept.code || '').toString()
         
         if (codeStr.includes(':')) {
-          // Section: aggregate by department code on order lines
+          // Build base where clause
+          const baseWhere: any = { departmentCode: codeStr }
+          
+          // Only add date filter if dates are provided
+          if (fromDate || toDate) {
+            baseWhere.createdAt = buildDateFilter(fromDate, toDate)
+          }
+          
+          // Section: count distinct orders by departmentCode and order status
           const [
-            totalOrderIds,
-            pendingLineIds,
-            processingLineIds,
-            fulfilledLineIds,
-            totalUnitsRes,
-            fulfilledUnitsRes,
-            amountFulfilledRes,
-            amountPaidRes,
+            pendingOrders,
+            completedOrders,
+            totalOrders,
+            amountSoldRes,
           ] = await Promise.all([
-            prisma.orderLine.findMany({
-              where: { departmentCode: codeStr },
-              distinct: ['orderHeaderId'],
-              select: { orderHeaderId: true },
-            }),
-            prisma.orderLine.count({ where: { departmentCode: codeStr, status: 'pending' } }),
-            prisma.orderLine.count({ where: { departmentCode: codeStr, status: 'processing' } }),
-            prisma.orderLine.count({ where: { departmentCode: codeStr, status: 'fulfilled' } }),
-            (prisma as any).orderLine.aggregate({
-              _sum: { quantity: true },
-              where: { departmentCode: codeStr },
-            }),
-            (prisma as any).orderLine.aggregate({
-              _sum: { quantity: true },
-              where: { departmentCode: codeStr, status: 'fulfilled' },
-            }),
-            (prisma as any).orderLine.aggregate({
-              _sum: { lineTotal: true },
-              where: { departmentCode: codeStr, status: 'fulfilled' },
-            }),
-            (prisma as any).orderLine.aggregate({
-              _sum: { lineTotal: true },
+            (prisma as any).orderHeader.count({
               where: {
-                departmentCode: codeStr,
-                status: 'fulfilled',
-                orderHeader: {
-                  status: { in: ['fulfilled', 'completed'] },
-                  paymentStatus: { in: ['paid', 'partial'] },
-                },
-              },
+                ...baseWhere,
+                status: 'pending',
+              }
             }),
+            (prisma as any).orderHeader.count({
+              where: {
+                ...baseWhere,
+                status: 'completed',
+              }
+            }),
+            (prisma as any).orderHeader.count({
+              where: baseWhere
+            }),
+            (prisma as any).orderHeader.aggregate({
+              where: {
+                ...baseWhere,
+                status: 'completed',
+              },
+              _sum: { total: true }
+            })
           ]);
 
           stats = {
-            totalOrders: totalOrderIds.length,
-            pendingOrders: pendingLineIds,
-            processingOrders: processingLineIds,
-            fulfilledOrders: fulfilledLineIds,
-            totalUnits: totalUnitsRes._sum?.quantity || 0,
-            fulfilledUnits: fulfilledUnitsRes._sum?.quantity || 0,
-            amountFulfilled: amountFulfilledRes._sum?.lineTotal || 0,
-            amountPaid: amountPaidRes._sum?.lineTotal || 0,
+            totalOrders,
+            pendingOrders,
+            processingOrders: 0,  // Not used in new model
+            fulfilledOrders: completedOrders,
+            totalUnits: 0,  // Not used in new model
+            fulfilledUnits: 0,  // Not used in new model
+            amountFulfilled: 0,  // Not used in new model
+            amountPaid: amountSoldRes._sum?.total || 0,
           };
         }
       } catch (e) {
@@ -252,6 +247,7 @@ export async function GET(
         fulfilledUnits: stats.fulfilledUnits,
         amountFulfilled: stats.amountFulfilled,
         amountPaid: stats.amountPaid,
+        totalAmount: stats.amountPaid || 0,  // Alias for compatibility
       },
     }
 

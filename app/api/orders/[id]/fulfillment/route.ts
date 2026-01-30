@@ -333,22 +333,41 @@ export async function PUT(
           
           if (lineItem.departmentSectionId) {
             inventoryWhere.sectionId = lineItem.departmentSectionId;
+            console.log(`[fulfillment] Deducting section inventory (section: ${lineItem.departmentSectionId}, qty: ${fulfilledQty})`);
           } else {
             inventoryWhere.sectionId = null;
+            console.log(`[fulfillment] Deducting department-level inventory (dept: ${dept.id}, qty: ${fulfilledQty})`);
           }
           
           // Deduct inventory - will only succeed if quantity >= fulfilledQty
+          // Try to update - this handles both section and department-level inventory
           const invResult = await tx.departmentInventory.updateMany({
             where: inventoryWhere,
             data: { quantity: { decrement: fulfilledQty } },
           });
           
           inventoryDeducted = invResult.count > 0;
+          console.log(`[fulfillment] Deduction result: ${inventoryDeducted ? 'SUCCESS' : 'FAILED'} (count: ${invResult.count})`);
+          
+          // If section inventory wasn't updated, try department-level (no section)
+          if (!inventoryDeducted && lineItem.departmentSectionId) {
+            console.log(`[fulfillment] Section inventory not found, trying department-level fallback for ${lineItemId}`);
+            const deptLevelResult = await tx.departmentInventory.updateMany({
+              where: {
+                departmentId: dept.id,
+                inventoryItemId: lineItem.productId,
+                sectionId: null,
+              },
+              data: { quantity: { decrement: fulfilledQty } },
+            });
+            inventoryDeducted = deptLevelResult.count > 0;
+            console.log(`[fulfillment] Department-level fallback: ${inventoryDeducted ? 'SUCCESS' : 'FAILED'}`);
+          }
           
           if (!inventoryDeducted) {
             // Inventory couldn't be found/updated - this shouldn't happen after pre-check
             // but we log it for audit purposes
-            console.warn(`Inventory deduction failed for line ${lineItemId}`);
+            console.warn(`[fulfillment] Inventory deduction FAILED for line ${lineItemId}: product ${lineItem.productId} @ dept ${lineItem.departmentCode}`);
           }
         }
       }
