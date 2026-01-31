@@ -114,12 +114,23 @@ export async function GET(
     // Get products with details using section service
     let products: any = { items: [], total: 0, page: 1, pageSize }
     try {
+      // If this is a section, pass the full section code as sectionFilter
+      let sectionFilterValue = null
+      if (sectionRow && sectionRow.id) {
+        // Extract parent code from lookupCode (format: parentCode:sectionId)
+        const parts = lookupCode.split(':')
+        if (parts.length >= 2) {
+          const parentCode = parts[0]
+          sectionFilterValue = `${parentCode}:${sectionRow.id}`
+        }
+      }
+      
       products = await sectionService.getProducts({
         departmentCode: lookupCode,
         type: type || undefined,
         pageSize,
         includeDetails: true,
-        sectionFilter: lookupCode.includes(':') ? lookupCode : null,
+        sectionFilter: sectionFilterValue,
         fromDate,
         toDate,
       })

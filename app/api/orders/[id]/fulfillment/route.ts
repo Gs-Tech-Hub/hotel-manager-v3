@@ -30,9 +30,14 @@ export async function GET(
       );
     }
 
-    // Load full user with roles
+    // Load full user with roles (may be null if user doesn't exist in AdminUser table)
     const userWithRoles = await loadUserWithRoles(ctx.userId);
-    if (!userWithRoles || !hasAnyRole(userWithRoles, ['admin', 'manager', 'staff'])) {
+    
+    // Allow if user has roles loaded, or if they have a valid context with a staff-like role
+    const hasStaffAccess = userWithRoles && hasAnyRole(userWithRoles, ['admin', 'manager', 'staff']);
+    const hasContextRole = ctx.userRole && ['admin', 'manager', 'staff'].includes(ctx.userRole);
+    
+    if (!hasStaffAccess && !hasContextRole) {
       return NextResponse.json(
         errorResponse(ErrorCodes.FORBIDDEN, 'Only staff can view fulfillment'),
         { status: getStatusCode(ErrorCodes.FORBIDDEN) }
@@ -167,9 +172,14 @@ export async function PUT(
       );
     }
 
-    // Load full user with roles
+    // Load full user with roles (may be null if user doesn't exist in AdminUser table)
     const userWithRoles = await loadUserWithRoles(ctx.userId);
-    if (!userWithRoles || !hasAnyRole(userWithRoles, ['admin', 'manager', 'staff'])) {
+    
+    // Allow if user has roles loaded, or if they have a valid context with a staff-like role
+    const hasStaffAccess = userWithRoles && hasAnyRole(userWithRoles, ['admin', 'manager', 'staff']);
+    const hasContextRole = ctx.userRole && ['admin', 'manager', 'staff'].includes(ctx.userRole);
+    
+    if (!hasStaffAccess && !hasContextRole) {
       return NextResponse.json(
         errorResponse(ErrorCodes.FORBIDDEN, 'Only staff can update fulfillment'),
         { status: getStatusCode(ErrorCodes.FORBIDDEN) }
@@ -240,41 +250,53 @@ export async function PUT(
       );
     }
 
-    // PRE-FULFILLMENT VALIDATION: Check inventory availability if fulfilling
-    // This MUST happen BEFORE any status updates
+    // PRE-FULFILLMENT: Look up department OUTSIDE transaction (move expensive lookups out)
+    let deptId: string | null = null;
+    const fulfilledQty = quantity || lineItem.quantity;
+    
+    console.log(`[FULFILLMENT] START - Order: ${orderId}, Line: ${lineItemId}, Status: ${status}, Qty: ${fulfilledQty}`);
+    console.log(`[FULFILLMENT] Product Type: ${lineItem.productType}, Dept Code: ${lineItem.departmentCode}, Section: ${lineItem.departmentSectionId}`);
+    
     if (status === 'fulfilled' && ['inventoryItem', 'food', 'drink'].includes(lineItem.productType)) {
       try {
-        const fulfilledQty = quantity || lineItem.quantity;
+        console.log(`[FULFILLMENT] Inventory deduction required for product type: ${lineItem.productType}`);
         
-        // Get department info
+        // Get department info BEFORE transaction
         const dept = await prisma.department.findUnique({ 
           where: { code: lineItem.departmentCode } 
         });
         
+        console.log(`[FULFILLMENT] Department lookup: ${dept?.id || 'NOT FOUND'} (code: ${lineItem.departmentCode})`);
+        
         if (dept) {
+          deptId = dept.id;
+          
           // Build inventory check query
           const inventoryWhere: any = {
             departmentId: dept.id,
             inventoryItemId: lineItem.productId,
           };
           
-          // If there's a section, check section-level inventory
           if (lineItem.departmentSectionId) {
             inventoryWhere.sectionId = lineItem.departmentSectionId;
           } else {
             inventoryWhere.sectionId = null;
           }
           
+          console.log(`[FULFILLMENT] Inventory query: ${JSON.stringify(inventoryWhere)}`);
+          
           // Get current inventory
           const inventory = await prisma.departmentInventory.findFirst({
             where: inventoryWhere,
           });
           
+          console.log(`[FULFILLMENT] Current inventory found: ${inventory ? `Qty=${inventory.quantity}` : 'NOT FOUND'}`);
+          
           // Check if enough quantity is available
           if (!inventory || inventory.quantity < fulfilledQty) {
             const available = inventory?.quantity || 0;
             console.warn(
-              `Insufficient inventory for line ${lineItemId}: need ${fulfilledQty}, ` +
+              `[FULFILLMENT] ❌ Insufficient inventory for line ${lineItemId}: need ${fulfilledQty}, ` +
               `available ${available} at ${lineItem.departmentCode}`
             );
             
@@ -286,99 +308,122 @@ export async function PUT(
               { status: getStatusCode(ErrorCodes.VALIDATION_ERROR) }
             );
           }
+          
+          console.log(`[FULFILLMENT] ✅ Inventory check passed. Will deduct ${fulfilledQty} from ${inventory.quantity}`);
+        } else {
+          console.log(`[FULFILLMENT] ⚠️ Department not found for code: ${lineItem.departmentCode}`);
         }
       } catch (e) {
-        console.error('Inventory validation error:', e);
-        // Log but allow fulfillment to proceed (inventory check failed but not critical)
-        // In production, you might want to return an error here instead
+        console.error(`[FULFILLMENT] ❌ Inventory validation error:`, e);
+        deptId = null;
       }
+    } else {
+      console.log(`[FULFILLMENT] No inventory deduction: status=${status}, productType=${lineItem.productType}`);
     }
 
-    // Step 1: MINIMAL TRANSACTION - Update line and create fulfillment + deduct inventory
-    // Inventory deduction happens IN the transaction to ensure atomicity
-    const txStart = Date.now();
+    // Step 1: MINIMAL TRANSACTION - Only update line, create fulfillment, deduct inventory
+    // Keep transaction focused and fast
     let inventoryDeducted = false;
     
+    console.log(`[FULFILLMENT] Starting transaction - deptId: ${deptId}, status: ${status}`);
+    
     await prisma.$transaction(async (tx: any) => {
+      console.log(`[FULFILLMENT] [TX] Updating line ${lineItemId} status to ${status}`);
+      
       // Update line status
       await tx.orderLine.update({
         where: { id: lineItemId },
         data: { status },
       });
+      
+      console.log(`[FULFILLMENT] [TX] ✅ Line status updated`);
 
       // Create fulfillment record
       await (tx as any).orderFulfillment.create({
         data: {
           orderHeaderId: orderId,
           orderLineId: lineItemId,
-          fulfilledQuantity: quantity || lineItem.quantity,
+          fulfilledQuantity: fulfilledQty,
           status,
           notes,
           fulfilledAt: status === 'fulfilled' ? new Date() : null,
         },
       });
+      
+      console.log(`[FULFILLMENT] [TX] ✅ Fulfillment record created`);
 
       // If fulfilled AND inventory item, deduct inventory within transaction
-      if (status === 'fulfilled' && ['inventoryItem', 'food', 'drink'].includes(lineItem.productType)) {
-        const dept = await tx.department.findUnique({ 
-          where: { code: lineItem.departmentCode } 
+      if (status === 'fulfilled' && deptId && ['inventoryItem', 'food', 'drink'].includes(lineItem.productType)) {
+        const inventoryWhere: any = {
+          departmentId: deptId,
+          inventoryItemId: lineItem.productId,
+        };
+        
+        if (lineItem.departmentSectionId) {
+          inventoryWhere.sectionId = lineItem.departmentSectionId;
+        } else {
+          inventoryWhere.sectionId = null;
+        }
+        
+        console.log(`[FULFILLMENT] [TX] About to decrement inventory: ${JSON.stringify(inventoryWhere)} by ${fulfilledQty}`);
+        
+        // Single updateMany call - no fallback logic in transaction
+        const invResult = await tx.departmentInventory.updateMany({
+          where: inventoryWhere,
+          data: { quantity: { decrement: fulfilledQty } },
         });
         
-        if (dept) {
-          const fulfilledQty = quantity || lineItem.quantity;
-          const inventoryWhere: any = {
-            departmentId: dept.id,
-            inventoryItemId: lineItem.productId,
-          };
-          
-          if (lineItem.departmentSectionId) {
-            inventoryWhere.sectionId = lineItem.departmentSectionId;
-            console.log(`[fulfillment] Deducting section inventory (section: ${lineItem.departmentSectionId}, qty: ${fulfilledQty})`);
-          } else {
-            inventoryWhere.sectionId = null;
-            console.log(`[fulfillment] Deducting department-level inventory (dept: ${dept.id}, qty: ${fulfilledQty})`);
-          }
-          
-          // Deduct inventory - will only succeed if quantity >= fulfilledQty
-          // Try to update - this handles both section and department-level inventory
-          const invResult = await tx.departmentInventory.updateMany({
-            where: inventoryWhere,
-            data: { quantity: { decrement: fulfilledQty } },
-          });
-          
-          inventoryDeducted = invResult.count > 0;
-          console.log(`[fulfillment] Deduction result: ${inventoryDeducted ? 'SUCCESS' : 'FAILED'} (count: ${invResult.count})`);
-          
-          // If section inventory wasn't updated, try department-level (no section)
-          if (!inventoryDeducted && lineItem.departmentSectionId) {
-            console.log(`[fulfillment] Section inventory not found, trying department-level fallback for ${lineItemId}`);
-            const deptLevelResult = await tx.departmentInventory.updateMany({
-              where: {
-                departmentId: dept.id,
-                inventoryItemId: lineItem.productId,
-                sectionId: null,
-              },
-              data: { quantity: { decrement: fulfilledQty } },
-            });
-            inventoryDeducted = deptLevelResult.count > 0;
-            console.log(`[fulfillment] Department-level fallback: ${inventoryDeducted ? 'SUCCESS' : 'FAILED'}`);
-          }
-          
-          if (!inventoryDeducted) {
-            // Inventory couldn't be found/updated - this shouldn't happen after pre-check
-            // but we log it for audit purposes
-            console.warn(`[fulfillment] Inventory deduction FAILED for line ${lineItemId}: product ${lineItem.productId} @ dept ${lineItem.departmentCode}`);
-          }
+        console.log(`[FULFILLMENT] [TX] updateMany result: count=${invResult.count}`);
+        
+        inventoryDeducted = invResult.count > 0;
+        
+        if (inventoryDeducted) {
+          console.log(`[FULFILLMENT] [TX] ✅ Inventory deducted successfully (${fulfilledQty} units)`);
+        } else {
+          console.log(`[FULFILLMENT] [TX] ❌ No inventory records updated (count=0)`);
         }
+      } else {
+        console.log(`[FULFILLMENT] [TX] Skipping inventory deduction: status=${status}, deptId=${deptId}, productType=${lineItem.productType}`);
       }
-    }, { timeout: 10000 });
-    const txEnd = Date.now();
+    }, { timeout: 15000 });
     
-    // Step 2: BATCH OPERATION - Fetch all required data for post-fulfillment operations
-    // Get line details, check completion, fetch order data all together
+    console.log(`[FULFILLMENT] Transaction complete - inventoryDeducted: ${inventoryDeducted}`);
+    
+    // Step 2: FALLBACK - If inventory deduction failed in section, try department-level OUTSIDE transaction
+    if (!inventoryDeducted && status === 'fulfilled' && deptId && ['inventoryItem', 'food', 'drink'].includes(lineItem.productType)) {
+      console.log(`[FULFILLMENT] [FALLBACK] Inventory not deducted in transaction, trying department-level...`);
+      
+      try {
+        console.log(`[FULFILLMENT] [FALLBACK] Attempting dept-level deduction: deptId=${deptId}, productId=${lineItem.productId}, qty=${fulfilledQty}`);
+        
+        const deptLevelResult = await prisma.departmentInventory.updateMany({
+          where: {
+            departmentId: deptId,
+            inventoryItemId: lineItem.productId,
+            sectionId: null,
+          },
+          data: { quantity: { decrement: fulfilledQty } },
+        });
+        
+        console.log(`[FULFILLMENT] [FALLBACK] Department-level updateMany result: count=${deptLevelResult.count}`);
+        
+        inventoryDeducted = deptLevelResult.count > 0;
+        if (inventoryDeducted) {
+          console.log(`[FULFILLMENT] [FALLBACK] ✅ Department-level inventory deducted (fallback)`);
+        } else {
+          console.log(`[FULFILLMENT] [FALLBACK] ❌ No department-level inventory found (count=0)`);
+        }
+      } catch (e) {
+        console.error(`[FULFILLMENT] [FALLBACK] ❌ Fallback inventory deduction failed:`, e);
+      }
+    }
+    
+    // Step 3: BATCH OPERATION - Fetch all required data for post-fulfillment operations in parallel
     let shouldUpdateOrderStatus = false;
     let updatedOrder = null;
     let deptCodesResult: any[] = [];
+    
+    console.log(`[FULFILLMENT] Final inventory status: deducted=${inventoryDeducted}`);
     
     if (status === 'fulfilled') {
       try {
@@ -391,8 +436,10 @@ export async function PUT(
         ]);
 
         shouldUpdateOrderStatus = remainingCount === 0;
+        
+        console.log(`[FULFILLMENT] Order completion check: remainingLines=${remainingCount}, willCompleteOrder=${shouldUpdateOrderStatus}`);
 
-        // Step 3: BATCH OPERATION - Update order statuses if complete
+        // Step 4: BATCH OPERATION - Update order statuses if complete
         if (shouldUpdateOrderStatus) {
           await Promise.all([
             prisma.orderHeader.update({
@@ -406,7 +453,7 @@ export async function PUT(
           ]);
         }
 
-        // Step 4: BATCH OPERATION - Create inventory movement record if inventory was deducted in transaction
+        // Step 5: BATCH OPERATION - Create inventory movement record if inventory was deducted in transaction
         // Inventory deduction happened in the transaction above, now just log it
         if (inventoryDeducted && txLine && txLine.productType && ['inventoryItem', 'food', 'drink'].includes(txLine.productType)) {
           const fulfilledQty = quantity || (txLine?.quantity || 0);
@@ -437,9 +484,9 @@ export async function PUT(
       }
     }
 
-    // Step 5: BATCH OPERATION - Fetch updated order and department codes in parallel
-    // We need department codes for EVERY fulfillment to update stats (amount sold)
-    let deptCodes: string[] = [];
+    // Step 6: BATCH OPERATION - Fetch updated order and department codes in parallel
+    // We need department codes AND section IDs for every fulfillment to update stats
+    const deptCodesWithSections: Array<{ code: string; sectionId?: string }> = [];
     const inventorySnapshot: any = {};
     try {
       [updatedOrder, deptCodesResult] = await Promise.all([
@@ -455,15 +502,35 @@ export async function PUT(
             fulfillments: true,
           },
         }),
-        // Always fetch department codes for stats update
+        // Always fetch department codes AND section IDs for stats update
         prisma.orderLine.findMany({
           where: { orderHeaderId: orderId },
-          select: { departmentCode: true },
+          select: { departmentCode: true, departmentSectionId: true },
         }),
       ]);
-      deptCodes = Array.from(
-        new Set((deptCodesResult as any[]).map((l: any) => l.departmentCode).filter(Boolean))
-      );
+      
+      // Build array of unique department codes with their section IDs
+      const uniqueMap = new Map<string, Set<string | null>>();
+      (deptCodesResult as any[]).forEach((l: any) => {
+        if (l.departmentCode) {
+          if (!uniqueMap.has(l.departmentCode)) {
+            uniqueMap.set(l.departmentCode, new Set());
+          }
+          uniqueMap.get(l.departmentCode)?.add(l.departmentSectionId || null);
+        }
+      });
+      
+      // Convert map to array format
+      // Only include sectionId if it actually has a value (not null)
+      uniqueMap.forEach((sectionIds, code) => {
+        sectionIds.forEach(sectionId => {
+          const entry: any = { code };
+          if (sectionId) {
+            entry.sectionId = sectionId;
+          }
+          deptCodesWithSections.push(entry);
+        });
+      });
 
       // Fetch current inventory for all order lines to include in response
       if (updatedOrder?.lines) {
@@ -519,22 +586,24 @@ export async function PUT(
       message: 'Fulfillment status updated successfully',
     });
 
-    // Step 6: BATCH OPERATION - Recalculate stats for ALL affected departments
+    // Step 7: BATCH OPERATION - Recalculate stats for ALL affected departments and sections
     // This ensures section inventory and amount sold are updated for every fulfilled line
-    if (deptCodes.length > 0) {
+    if (deptCodesWithSections.length > 0) {
       try {
         const { departmentService } = await import('@/services/department.service');
 
-        // Batch all stat calculations in parallel for all affected departments
+        // Batch all stat calculations in parallel for all affected departments and sections
         await Promise.all(
-          deptCodes.map(async (code) => {
+          deptCodesWithSections.map(async ({ code, sectionId }) => {
             try {
               await Promise.all([
-                departmentService.recalculateSectionStats(code),
-                departmentService.rollupParentStats(code),
+                // Update section stats if sectionId exists, otherwise update parent department stats
+                departmentService.recalculateSectionStats(code, sectionId),
+                // Only rollup to parent if we have a section (to avoid duplicate parent updates)
+                sectionId ? departmentService.rollupParentStats(code) : Promise.resolve(),
               ]);
             } catch (e) {
-              console.error(`Error updating stats for department ${code}:`, e);
+              console.error(`Error updating stats for department ${code}${sectionId ? ` section ${sectionId}` : ''}:`, e);
             }
           })
         );
@@ -544,10 +613,7 @@ export async function PUT(
       }
     }
 
-    try {
-      console.log(`Fulfillment completed: tx=${txEnd - txStart}ms`);
-    } catch (e) {}
-
+    console.log(`[FULFILLMENT] ✅ COMPLETE - Status: ${status}, InventoryDeducted: ${inventoryDeducted}, LineID: ${lineItemId}`);
     return NextResponse.json(payload);
   } catch (error) {
     console.error('PUT /api/orders/[id]/fulfillment error:', error);

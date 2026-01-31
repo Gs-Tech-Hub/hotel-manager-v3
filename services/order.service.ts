@@ -811,7 +811,7 @@ export class OrderService extends BaseService<IOrderHeader> {
    */
   async getOrderById(id: string, ctx?: UserContext) {
     try {
-      const order = await (prisma as any).orderHeader.findUnique({
+      const order = await prisma.orderHeader.findUnique({
         where: { id },
         include: {
           customer: true,

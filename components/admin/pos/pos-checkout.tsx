@@ -134,7 +134,7 @@ export default function POSCheckoutShell({ terminalId }: { terminalId?: string }
           productId: c.productId,
           productType: (c as any).type || 'inventory',
           productName: c.productName,
-          departmentCode: departmentSection.sectionCode || departmentSection.departmentCode,
+          departmentCode: departmentSection.departmentCode,
           departmentSectionId: departmentSection.id,
           quantity: c.quantity,
           unitPrice: c.unitPrice,

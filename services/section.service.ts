@@ -1,5 +1,4 @@
 import { prisma } from '@/lib/auth/prisma'
-import { prismaDecimalToCents } from '@/lib/price'
 import { stockService } from './stock.service'
 import { buildDateFilter } from '@/lib/date-filter'
 
@@ -135,7 +134,7 @@ export class SectionService {
         })
 
         const drinkBalances = await stockService.getBalances('drink', items.map(d => d.id), dept.id, resolvedSectionId)
-        let mapped = items.map((d: any) => ({ id: d.id, name: d.name, type: 'drink', available: drinkBalances.get(d.id) ?? 0, unitPrice: prismaDecimalToCents(d.price) }))
+        let mapped = items.map((d: any) => ({ id: d.id, name: d.name, type: 'drink', available: drinkBalances.get(d.id) ?? 0, unitPrice: Number(d.price) }))
 
         if (includeDetails && mapped.length > 0) {
           const ids = mapped.map((m: any) => m.id)
@@ -153,7 +152,7 @@ export class SectionService {
                 paymentStatus: { in: ['paid', 'partial'] },
                 ...dateWhere,
               },
-              ...(resolvedSectionId ? { departmentCode: resolvedSectionId } : {}),
+              ...(resolvedSectionId ? { departmentSectionId: resolvedSectionId } : {}),
             },
             _sum: { quantity: true, lineTotal: true },
           })
@@ -164,7 +163,7 @@ export class SectionService {
               productId: { in: allPossibleIds },
               status: { in: ['pending', 'processing'] },
               orderHeader: { status: { not: 'cancelled' }, ...dateWhere },
-              ...(resolvedSectionId ? { departmentCode: resolvedSectionId } : {}),
+              ...(resolvedSectionId ? { departmentSectionId: resolvedSectionId } : {}),
             },
             _sum: { quantity: true },
           })
@@ -177,7 +176,7 @@ export class SectionService {
             return {
               ...m,
               unitsSold: sold?.quantity || 0,
-              amountSold: sold?.lineTotal ? prismaDecimalToCents(sold.lineTotal) : 0,
+              amountSold: sold?.lineTotal ? Number(sold.lineTotal) : 0,
               pendingQuantity: (pendingMap.get(m.id) as any)?.quantity || (pendingMap.get(`menu-${m.id}`) as any)?.quantity || 0,
             }
           })
@@ -198,7 +197,7 @@ export class SectionService {
       const drinkIds = items.map((d: any) => d.id)
       const drinkBalances = await stockService.getBalances('drink', drinkIds, dept.id)
 
-      let mapped = items.map((d: any) => ({ id: d.id, name: d.name, type: 'drink', available: drinkBalances.get(d.id) ?? 0, unitPrice: prismaDecimalToCents(d.price) }))
+      let mapped = items.map((d: any) => ({ id: d.id, name: d.name, type: 'drink', available: drinkBalances.get(d.id) ?? 0, unitPrice: Number(d.price) }))
 
       if (includeDetails && mapped.length > 0) {
         const ids = mapped.map((m: any) => m.id)
@@ -221,7 +220,7 @@ export class SectionService {
               paymentStatus: { in: ['paid', 'partial'] },
               ...dateWhere,
             },
-            ...(sectionFilter ? { departmentCode: sectionFilter } : {}),
+            ...(sectionFilter ? { departmentSectionId: sectionFilter } : {}),
           },
           _sum: { quantity: true, lineTotal: true },
         })
@@ -232,7 +231,7 @@ export class SectionService {
             productId: { in: allPossibleIds },
             status: { in: ['pending', 'processing'] },
             orderHeader: { status: { not: 'cancelled' }, ...dateWhere },
-            ...(sectionFilter ? { departmentCode: sectionFilter } : {}),
+            ...(sectionFilter ? { departmentSectionId: sectionFilter } : {}),
           },
           _sum: { quantity: true },
         })
@@ -242,11 +241,11 @@ export class SectionService {
 
         mapped = mapped.map((m: any) => {
           const sold = (soldMap.get(m.id) as any) || (soldMap.get(`menu-${m.id}`) as any)
-          // amountSold is lineTotal from database (Decimal type, already in cents)
+          // amountSold is lineTotal from database (Decimal type)
           return {
             ...m,
             unitsSold: sold?.quantity || 0,
-            amountSold: sold?.lineTotal ? prismaDecimalToCents(sold.lineTotal) : 0,
+            amountSold: sold?.lineTotal ? Number(sold.lineTotal) : 0,
             pendingQuantity: (pendingMap.get(m.id) as any)?.quantity || (pendingMap.get(`menu-${m.id}`) as any)?.quantity || 0,
           }
         })
@@ -301,7 +300,7 @@ export class SectionService {
         })
 
         const foodBalances = await stockService.getBalances('food', items.map(f => f.id), dept.id, resolvedSectionId)
-        let mapped = items.map((f: any) => ({ id: f.id, name: f.name, type: 'food', available: foodBalances.get(f.id) ?? 0 > 0 ? 1 : 0, unitPrice: prismaDecimalToCents(f.price) }))
+        let mapped = items.map((f: any) => ({ id: f.id, name: f.name, type: 'food', available: foodBalances.get(f.id) ?? 0 > 0 ? 1 : 0, unitPrice: Number(f.price) }))
 
         if (includeDetails && mapped.length > 0) {
           const ids = mapped.map((m: any) => m.id)
@@ -319,7 +318,7 @@ export class SectionService {
                 paymentStatus: { in: ['paid', 'partial'] },
                 ...dateWhere,
               },
-              ...(resolvedSectionId ? { departmentCode: resolvedSectionId } : {}),
+              ...(resolvedSectionId ? { departmentSectionId: resolvedSectionId } : {}),
             },
             _sum: { quantity: true, lineTotal: true },
           })
@@ -330,7 +329,7 @@ export class SectionService {
               productId: { in: allPossibleIds },
               status: { in: ['pending', 'processing'] },
               orderHeader: { status: { not: 'cancelled' }, ...dateWhere },
-              ...(resolvedSectionId ? { departmentCode: resolvedSectionId } : {}),
+              ...(resolvedSectionId ? { departmentSectionId: resolvedSectionId } : {}),
             },
             _sum: { quantity: true },
           })
@@ -343,7 +342,7 @@ export class SectionService {
             return {
               ...m,
               unitsSold: sold?.quantity || 0,
-              amountSold: sold?.lineTotal ? prismaDecimalToCents(sold.lineTotal) : 0,
+              amountSold: sold?.lineTotal ? Number(sold.lineTotal) : 0,
               pendingQuantity: (pendingMap.get(m.id) as any)?.quantity || (pendingMap.get(`menu-${m.id}`) as any)?.quantity || 0,
             }
           })
@@ -364,7 +363,7 @@ export class SectionService {
       const foodIds = items.map((f: any) => f.id)
       const foodBalances = await stockService.getBalances('food', foodIds, dept.id)
 
-      let mapped = items.map((f: any) => ({ id: f.id, name: f.name, type: 'food', available: foodBalances.get(f.id) ?? 0 > 0 ? 1 : 0, unitPrice: prismaDecimalToCents(f.price) }))
+      let mapped = items.map((f: any) => ({ id: f.id, name: f.name, type: 'food', available: foodBalances.get(f.id) ?? 0 > 0 ? 1 : 0, unitPrice: Number(f.price) }))
 
       if (includeDetails && mapped.length > 0) {
         const ids = mapped.map((m: any) => m.id)
@@ -384,10 +383,9 @@ export class SectionService {
             status: 'fulfilled',
             orderHeader: { 
               status: { in: ['fulfilled', 'completed'] },
-              paymentStatus: { in: ['paid', 'partial'] },
               ...dateWhere,
             },
-            ...(resolvedSectionId ? { departmentCode: resolvedSectionId } : {}),
+            ...(resolvedSectionId ? { departmentSectionId: resolvedSectionId } : {}),
           },
           _sum: { quantity: true, lineTotal: true },
         })
@@ -398,7 +396,7 @@ export class SectionService {
             productId: { in: allPossibleIds },
             status: { in: ['pending', 'processing'] },
             orderHeader: { status: { not: 'cancelled' }, ...dateWhere },
-            ...(resolvedSectionId ? { departmentCode: resolvedSectionId } : {}),
+            ...(resolvedSectionId ? { departmentSectionId: resolvedSectionId } : {}),
           },
           _sum: { quantity: true },
         })
@@ -408,11 +406,11 @@ export class SectionService {
 
         mapped = mapped.map((m: any) => {
           const sold = (soldMap.get(m.id) as any) || (soldMap.get(`menu-${m.id}`) as any)
-          // amountSold is lineTotal from database (Decimal type, already in cents)
+          // amountSold is lineTotal from database (Decimal type)
           return {
             ...m,
             unitsSold: sold?.quantity || 0,
-            amountSold: sold?.lineTotal ? prismaDecimalToCents(sold.lineTotal) : 0,
+            amountSold: sold?.lineTotal ? Number(sold.lineTotal) : 0,
             pendingQuantity: (pendingMap.get(m.id) as any)?.quantity || (pendingMap.get(`menu-${m.id}`) as any)?.quantity || 0,
           }
         })
@@ -499,7 +497,7 @@ export class SectionService {
       const itemIds = items.map((i: any) => i.id)
       const balances = await stockService.getBalances('inventoryItem', itemIds, dept.id, resolvedSectionId)
 
-      let mapped = items.map((it: any) => ({ id: it.id, name: it.name, type: 'inventoryItem', available: balances.get(it.id) ?? 0, unitPrice: prismaDecimalToCents(it.unitPrice) }))
+      let mapped = items.map((it: any) => ({ id: it.id, name: it.name, type: 'inventoryItem', available: balances.get(it.id) ?? 0, unitPrice: Number(it.unitPrice) }))
 
       if (includeDetails && mapped.length > 0) {
         const ids = mapped.map((m: any) => m.id)
@@ -522,7 +520,7 @@ export class SectionService {
               paymentStatus: { in: ['paid', 'partial'] },
               ...dateWhere,
             },
-            ...(sectionFilter ? { departmentCode: sectionFilter } : {}),
+            ...(resolvedSectionId ? { departmentSectionId: resolvedSectionId } : {}),
           },
           _sum: { quantity: true, lineTotal: true },
         })
@@ -533,7 +531,7 @@ export class SectionService {
             productId: { in: allPossibleIds },
             status: { in: ['pending', 'processing'] },
             orderHeader: { status: { not: 'cancelled' }, ...dateWhere },
-            ...(sectionFilter ? { departmentCode: sectionFilter } : {}),
+            ...(resolvedSectionId ? { departmentSectionId: resolvedSectionId } : {}),
           },
           _sum: { quantity: true },
         })
@@ -556,13 +554,18 @@ export class SectionService {
 
         mapped = mapped.map((m: any) => {
           const sold = (soldMap.get(m.id) as any) || (soldMap.get(`menu-${m.id}`) as any)
-          // amountSold is lineTotal from database (Decimal type, already in cents)
+          const pending = (pendingMap.get(m.id) as any) || (pendingMap.get(`menu-${m.id}`) as any)
+          const reserved = (resMap.get(m.id) as any) || { quantity: 0 }
+          
+          // Reserved quantity includes both explicit reservations and pending orders
+          const totalReserved = (reserved?.quantity || 0) + (pending?.quantity || 0)
+          
           return {
             ...m,
             unitsSold: sold?.quantity || 0,
-            amountSold: sold?.lineTotal ? prismaDecimalToCents(sold.lineTotal) : 0,
-            pendingQuantity: (pendingMap.get(m.id) as any)?.quantity || (pendingMap.get(`menu-${m.id}`) as any)?.quantity || 0,
-            reservedQuantity: (resMap.get(m.id) as any)?.quantity || 0,
+            amountSold: sold?.lineTotal ? Number(sold.lineTotal) : 0,
+            pendingQuantity: pending?.quantity || 0,
+            reservedQuantity: totalReserved,
           }
         })
       }

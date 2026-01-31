@@ -235,24 +235,32 @@ export class DepartmentService extends BaseService<IDepartment> {
   }
 
   /**
-   * Recalculate and write section-level statistics into department.metadata
-   * If a transaction client (`tx`) is provided, operations run on that client.
+  /**
+   * Recalculate stats for a section (scoped by departmentSectionId)
+   * Updates the section's metadata with stats, and parent's with aggregated rollup
    */
-  async recalculateSectionStats(departmentCode: string, tx?: any) {
+  async recalculateSectionStats(departmentCode: string, sectionId?: string, tx?: any) {
     try {
       const client = tx || prisma;
 
-      // Basic aggregates scoped to this department section (by departmentCode)
+      // If sectionId provided, calculate stats for that specific section
+      // Otherwise, calculate for department level (for backward compatibility)
+      const where: any = { departmentCode };
+      if (sectionId) {
+        where.departmentSectionId = sectionId;
+      }
+
+      // Basic aggregates scoped to this department section (by sectionId or departmentCode)
       // Count DISTINCT orders that have lines for this department section
       const [totalOrderIds, pendingLineIds, processingLineIds, fulfilledLineIds] = await Promise.all([
         client.orderLine.findMany({
-          where: { departmentCode },
+          where,
           distinct: ['orderHeaderId'],
           select: { orderHeaderId: true },
         }),
-        client.orderLine.count({ where: { departmentCode, status: 'pending' } }),
-        client.orderLine.count({ where: { departmentCode, status: 'processing' } }),
-        client.orderLine.count({ where: { departmentCode, status: 'fulfilled' } }),
+        client.orderLine.count({ where: { ...where, status: 'pending' } }),
+        client.orderLine.count({ where: { ...where, status: 'processing' } }),
+        client.orderLine.count({ where: { ...where, status: 'fulfilled' } }),
       ]);
 
       const totalOrders = totalOrderIds.length;
@@ -260,20 +268,20 @@ export class DepartmentService extends BaseService<IDepartment> {
       const processingOrders = processingLineIds;
       const fulfilledOrders = fulfilledLineIds;
 
-      const totalUnitsRes: any = await client.orderLine.aggregate({ _sum: { quantity: true }, where: { departmentCode } });
-      const fulfilledUnitsRes: any = await client.orderLine.aggregate({ _sum: { quantity: true }, where: { departmentCode, status: 'fulfilled' } });
+      const totalUnitsRes: any = await client.orderLine.aggregate({ _sum: { quantity: true }, where });
+      const fulfilledUnitsRes: any = await client.orderLine.aggregate({ _sum: { quantity: true }, where: { ...where, status: 'fulfilled' } });
       
       // Amount fulfilled: ALL fulfilled items regardless of payment status
       const amountFulfilledRes: any = await client.orderLine.aggregate({ 
         _sum: { lineTotal: true }, 
-        where: { departmentCode, status: 'fulfilled' } 
+        where: { ...where, status: 'fulfilled' } 
       });
       
       // Amount paid: Only fulfilled items where payment is made (paid or partial)
       const amountPaidRes: any = await client.orderLine.aggregate({ 
         _sum: { lineTotal: true }, 
         where: { 
-          departmentCode, 
+          ...where,
           status: 'fulfilled', 
           orderHeader: { 
             status: { in: ['fulfilled', 'completed'] }, 
@@ -288,8 +296,8 @@ export class DepartmentService extends BaseService<IDepartment> {
       const amountPaid = amountPaidRes._sum.lineTotal || 0;
 
       // Validate amounts are in cents (integers)
-      validatePrice(amountFulfilled, `departmentStats amountFulfilled for ${departmentCode}`);
-      validatePrice(amountPaid, `departmentStats amountPaid for ${departmentCode}`);
+      validatePrice(amountFulfilled, `${sectionId ? 'sectionStats' : 'deptStats'} amountFulfilled for ${departmentCode}`);
+      validatePrice(amountPaid, `${sectionId ? 'sectionStats' : 'deptStats'} amountPaid for ${departmentCode}`);
 
       const stats = {
         totalOrders,
@@ -305,15 +313,27 @@ export class DepartmentService extends BaseService<IDepartment> {
         updatedAt: new Date(),
       };
 
-      // Find department row by code and merge metadata
-      const dept = await client.department.findUnique({ where: { code: departmentCode } });
-      if (!dept) return stats;
+      // If sectionId provided, update the SECTION's metadata
+      if (sectionId) {
+        const section = await client.departmentSection.findUnique({ where: { id: sectionId } });
+        if (!section) return stats;
 
-      const existingMeta = (dept.metadata as any) || {};
-      // Write stats into both `sectionStats` (section-aware key) and `stats` (legacy key)
-      const merged = { ...existingMeta, sectionStats: stats, stats };
+        const existingMeta = (section.metadata as any) || {};
+        // Write stats into section's sectionStats key
+        const merged = { ...existingMeta, sectionStats: stats };
 
-      await client.department.update({ where: { id: dept.id }, data: { metadata: merged } });
+        await client.departmentSection.update({ where: { id: sectionId }, data: { metadata: merged } });
+      } else {
+        // If no sectionId, update parent department's stats (for backward compatibility)
+        const dept = await client.department.findUnique({ where: { code: departmentCode } });
+        if (!dept) return stats;
+
+        const existingMeta = (dept.metadata as any) || {};
+        // Write stats into both `sectionStats` and `stats` for backward compatibility
+        const merged = { ...existingMeta, sectionStats: stats, stats };
+
+        await client.department.update({ where: { id: dept.id }, data: { metadata: merged } });
+      }
 
       return stats;
     } catch (error) {
