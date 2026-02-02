@@ -4,6 +4,7 @@ import { Separator } from "@/components/ui/separator"
 import OrganisationEditor from "@/components/admin/settings/organisation-editor"
 // Ensure the file exists at the specified path, or update the import path if necessary
 import ExchangeRateManager from "@/components/admin/settings/exchange-rate-manager"
+import { TaxSettingsForm } from "@/components/admin/tax-settings-form"
 import { CurrencyProvider } from '@/context/CurrencyClientContext'
 
 export default function OrganisationSettingsPage() {
@@ -12,7 +13,7 @@ export default function OrganisationSettingsPage() {
       <div className="space-y-6">
         <div>
           <h3 className="text-lg font-medium">Organisation</h3>
-          <p className="text-sm text-muted-foreground">Manage organisation information and currency settings.</p>
+          <p className="text-sm text-muted-foreground">Manage organisation information, currency, and tax settings.</p>
         </div>
         <Separator />
 
@@ -23,6 +24,17 @@ export default function OrganisationSettingsPage() {
           <div>
             <ExchangeRateManager />
           </div>
+        </div>
+
+        <Separator />
+
+        <div>
+          <h3 className="text-lg font-medium">Tax Settings</h3>
+          <p className="text-sm text-muted-foreground">Configure tax rates and settings for your organisation.</p>
+        </div>
+
+        <div>
+          <TaxSettingsForm />
         </div>
       </div>
     </CurrencyProvider>

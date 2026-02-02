@@ -276,6 +276,9 @@ export function Sidebar({ onMobileClose }: SidebarProps) {
 	const [expandedGroups, setExpandedGroups] = useState<Record<string, boolean>>(
 		Object.fromEntries(sidebarGroups.map(g => [g.title, true]))
 	);
+	const [expandedItems, setExpandedItems] = useState<Record<string, boolean>>({
+		'/employees': true, // Employees section expanded by default
+	});
 	const { user } = useAuth();
 
 	// Filter sidebar items based on user permissions
@@ -294,6 +297,13 @@ export function Sidebar({ onMobileClose }: SidebarProps) {
 		setExpandedGroups(prev => ({
 			...prev,
 			[title]: !prev[title]
+		}));
+	};
+
+	const toggleItemExpanded = (href: string) => {
+		setExpandedItems(prev => ({
+			...prev,
+			[href]: !prev[href]
 		}));
 	};
 
@@ -376,35 +386,54 @@ export function Sidebar({ onMobileClose }: SidebarProps) {
 
 									if ('children' in item && Array.isArray((item as any).children)) {
 										const isParentActive = pathname === item.href || pathname.startsWith(item.href + "/");
+										const isItemExpanded = expandedItems[item.href] !== false;
 										return (
 											<div key={item.href}>
-												<Link
-													href={item.href}
-													onClick={handleLinkClick}
-													className={cn(
-														"group flex items-center gap-3 rounded-xl px-3 py-3 text-sm font-medium transition-all duration-200 hover:bg-muted",
-														isParentActive
-															? "bg-primary text-primary-foreground shadow-md hover:bg-primary/90"
-															: "text-muted-foreground hover:text-foreground",
-														isCollapsed && "justify-center px-3 py-4",
+												<div className="flex items-center gap-2">
+													<Link
+														href={item.href}
+														onClick={handleLinkClick}
+														className={cn(
+															"group flex-1 flex items-center gap-3 rounded-xl px-3 py-3 text-sm font-medium transition-all duration-200 hover:bg-muted",
+															isParentActive
+																? "bg-primary text-primary-foreground shadow-md hover:bg-primary/90"
+																: "text-muted-foreground hover:text-foreground",
+															isCollapsed && "justify-center px-3 py-4",
+														)}
+														title={isCollapsed ? item.title : undefined}
+													>
+														{Icon && (
+															<Icon
+																className={cn(
+																	"transition-all duration-200",
+																	isCollapsed ? "h-5 w-5" : "h-4 w-4",
+																	isParentActive && !isCollapsed && "text-primary-foreground",
+																)}
+															/>
+														)}
+														{!isCollapsed && <span className="group-hover:translate-x-0.5 transition-transform duration-200">{item.title}</span>}
+													</Link>
+													
+													{/* Expand/Collapse Toggle for Children */}
+													{!isCollapsed && (item as any).children && (item as any).children.length > 0 && (
+														<button
+															onClick={() => toggleItemExpanded(item.href)}
+															className="p-1 rounded hover:bg-muted/50 transition-colors"
+															title={isItemExpanded ? "Collapse" : "Expand"}
+														>
+															<ChevronDown
+																className={cn(
+																	"h-4 w-4 transition-transform duration-200",
+																	!isItemExpanded && "-rotate-90"
+																)}
+															/>
+														</button>
 													)}
-													title={isCollapsed ? item.title : undefined}
-												>
-													{Icon && (
-														<Icon
-															className={cn(
-																"transition-all duration-200",
-																isCollapsed ? "h-5 w-5" : "h-4 w-4",
-																isParentActive && !isCollapsed && "text-primary-foreground",
-															)}
-														/>
-													)}
-													{!isCollapsed && <span className="group-hover:translate-x-0.5 transition-transform duration-200">{item.title}</span>}
-												</Link>
+												</div>
 
-												{/* Children links */}
-												{!isCollapsed && (
-													<div className="mt-2 space-y-1 pl-8">
+												{/* Children links - Collapsible */}
+												{!isCollapsed && isItemExpanded && (
+													<div className="mt-2 space-y-1 pl-8 animate-in slide-in-from-top-2 fade-in duration-200">
 														{(item as any).children.map((child: any) => {
 															const isActiveChild = pathname === child.href;
 															const ChildIcon = child.icon;

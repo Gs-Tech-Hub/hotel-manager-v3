@@ -1,6 +1,6 @@
 import { prisma } from '@/lib/auth/prisma'
 import { stockService } from './stock.service'
-import { buildDateFilter } from '@/lib/date-filter'
+import { buildDateFilter, getTodayDate } from '@/lib/date-filter'
 
 type ProductParams = {
   departmentCode: string
@@ -140,7 +140,12 @@ export class SectionService {
           const ids = mapped.map((m: any) => m.id)
           const allPossibleIds = [...ids, ...ids.map((id) => `menu-${id}`)]
 
-          const dateWhere = buildDateFilter(params.fromDate, params.toDate)
+          // Build date filter - use today if no dates provided
+          let dateWhere = buildDateFilter(params.fromDate, params.toDate)
+          if (!params.fromDate && !params.toDate) {
+            const today = getTodayDate()
+            dateWhere = buildDateFilter(today, today)
+          }
 
           const soldGroups = await prisma.orderLine.groupBy({
             by: ['productId'],
@@ -148,7 +153,7 @@ export class SectionService {
               productId: { in: allPossibleIds },
               status: 'fulfilled',
               orderHeader: { 
-                status: { in: ['fulfilled', 'completed'] },
+                status: { in: ['processing', 'fulfilled', 'completed'] },
                 paymentStatus: { in: ['paid', 'partial'] },
                 ...dateWhere,
               },
@@ -203,12 +208,12 @@ export class SectionService {
         const ids = mapped.map((m: any) => m.id)
         const allPossibleIds = [...ids, ...ids.map((id) => `menu-${id}`)]
 
-        // Only count items as sold if:
-        // 1. Line status is 'fulfilled' (fulfillment requirement)
-        // 2. Order header status is 'fulfilled' or 'completed'
-        // 3. Payment status is 'paid' or 'partial' (payment was made)
-        // 4. Order created within date range (if provided)
-        const dateWhere = buildDateFilter(params.fromDate, params.toDate)
+        // Build date filter - use today if no dates provided
+        let dateWhere = buildDateFilter(params.fromDate, params.toDate)
+        if (!params.fromDate && !params.toDate) {
+          const today = getTodayDate()
+          dateWhere = buildDateFilter(today, today)
+        }
 
         const soldGroups = await prisma.orderLine.groupBy({
           by: ['productId'],
@@ -216,7 +221,7 @@ export class SectionService {
             productId: { in: allPossibleIds },
             status: 'fulfilled',
             orderHeader: { 
-              status: { in: ['fulfilled', 'completed'] },
+              status: { in: ['processing', 'fulfilled', 'completed'] },
               paymentStatus: { in: ['paid', 'partial'] },
               ...dateWhere,
             },
@@ -373,8 +378,12 @@ export class SectionService {
         // 1. Line status is 'fulfilled' (fulfillment requirement)
         // 2. Order header status is 'fulfilled' or 'completed'
         // 3. Payment status is 'paid' or 'partial' (payment was made)
-        // 4. Order created within date range (if provided)
-        const dateWhere = buildDateFilter(params.fromDate, params.toDate)
+        // 4. Order created within date range (by default today)
+        let dateWhere = buildDateFilter(params.fromDate, params.toDate)
+        if (!params.fromDate && !params.toDate) {
+          const today = getTodayDate()
+          dateWhere = buildDateFilter(today, today)
+        }
 
         const soldGroups = await prisma.orderLine.groupBy({
           by: ['productId'],
@@ -382,7 +391,8 @@ export class SectionService {
             productId: { in: allPossibleIds },
             status: 'fulfilled',
             orderHeader: { 
-              status: { in: ['fulfilled', 'completed'] },
+              status: { in: ['processing', 'fulfilled', 'completed'] },
+              paymentStatus: { in: ['paid', 'partial'] },
               ...dateWhere,
             },
             ...(resolvedSectionId ? { departmentSectionId: resolvedSectionId } : {}),
@@ -503,20 +513,26 @@ export class SectionService {
         const ids = mapped.map((m: any) => m.id)
         const allPossibleIds = [...ids, ...ids.map((id) => `menu-${id}`)]
 
+        // Build date filter - use today if no dates provided
+        let dateWhere = buildDateFilter(params.fromDate, params.toDate)
+        if (!params.fromDate && !params.toDate) {
+          // Use today's date by default
+          const today = getTodayDate()
+          dateWhere = buildDateFilter(today, today)
+        }
+
         // Only count items as sold if:
         // 1. Line status is 'fulfilled' (fulfillment requirement)
-        // 2. Order header status is 'fulfilled' or 'completed'
+        // 2. Order header status is 'processing', 'fulfilled' or 'completed' (after payment, order moves to processing)
         // 3. Payment status is 'paid' or 'partial' (payment was made)
-        // 4. Order created within date range (if provided)
-        const dateWhere = buildDateFilter(params.fromDate, params.toDate)
-
+        // 4. Order created within date range (today by default)
         const soldGroups = await prisma.orderLine.groupBy({
           by: ['productId'],
           where: {
             productId: { in: allPossibleIds },
             status: 'fulfilled',
             orderHeader: { 
-              status: { in: ['fulfilled', 'completed'] },
+              status: { in: ['processing', 'fulfilled', 'completed'] },
               paymentStatus: { in: ['paid', 'partial'] },
               ...dateWhere,
             },

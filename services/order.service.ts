@@ -116,6 +116,24 @@ export class OrderService extends BaseService<IOrderHeader> {
       // Validate subtotal
       validatePrice(subtotal, 'subtotal');
 
+      // Fetch tax settings to determine initial total
+      // If TaxSettings table doesn't exist yet, use defaults
+      let taxEnabled = true;
+      let taxRate = 10;
+      try {
+        const taxSettings = await (prisma as any).taxSettings.findFirst();
+        if (taxSettings) {
+          taxEnabled = taxSettings.enabled ?? true;
+          taxRate = taxSettings.taxRate ?? 10;
+        }
+      } catch (err) {
+        // TaxSettings table may not exist yet - use defaults
+        console.warn('TaxSettings fetch failed (table may not exist), using defaults:', err);
+      }
+
+      const initialTax = taxEnabled ? calculateTax(subtotal, taxRate) : 0;
+      const initialTotal = calculateTotal(subtotal, 0, initialTax);
+
       // Create order header first (keep this operation minimal and fast)
       const header = await prisma.orderHeader.create({
         data: {
@@ -123,8 +141,8 @@ export class OrderService extends BaseService<IOrderHeader> {
           customerId: data.customerId,
           subtotal,
           discountTotal: 0,
-          tax: 0,
-          total: subtotal,
+          tax: initialTax,
+          total: initialTotal,
           status: 'pending',
           paymentStatus: 'unpaid', // Initialize as unpaid
           notes: data.notes,
@@ -327,8 +345,22 @@ export class OrderService extends BaseService<IOrderHeader> {
         }
 
         // Update order totals to account for applied discounts
-        // Note: tax is 10% of (subtotal - discounts) 
-        const taxAmount = calculateTax(subtotal - accumulatedDiscount, 10);
+        // Fetch tax settings to determine if tax should be applied
+        let taxEnabled = true;
+        let taxRate = 10;
+        try {
+          const taxSettings = await (prisma as any).taxSettings.findFirst();
+          if (taxSettings) {
+            taxEnabled = taxSettings.enabled ?? true;
+            taxRate = taxSettings.taxRate ?? 10;
+          }
+        } catch (err) {
+          // TaxSettings table may not exist yet - use defaults
+          console.warn('TaxSettings fetch failed during discount (table may not exist), using defaults:', err);
+        }
+        
+        // Calculate tax only if enabled
+        const taxAmount = taxEnabled ? calculateTax(subtotal - accumulatedDiscount, taxRate) : 0;
         const totalAmount = calculateTotal(subtotal, accumulatedDiscount, taxAmount);
         
         validatePrice(accumulatedDiscount, 'discountTotal');

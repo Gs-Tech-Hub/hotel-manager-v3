@@ -285,7 +285,25 @@ export class DepartmentService extends BaseService<IDepartment> {
       const totalUnits = totalUnitsRes._sum.quantity || 0;
       const fulfilledUnits = fulfilledUnitsRes._sum.quantity || 0;
       const amountFulfilled = amountFulfilledRes._sum.lineTotal || 0;
-      const amountPaid = 0; // Only updated when payment is made, not during fulfillment
+      
+      // Amount paid: sum of all payments made today for orders that have lines in this department/section
+      // Find all orders that have lines for this department
+      const orderIdsForDept = await client.orderLine.findMany({
+        where,
+        distinct: ['orderHeaderId'],
+        select: { orderHeaderId: true },
+      });
+      
+      const amountPaidRes: any = await client.orderPayment.aggregate({
+        _sum: { amount: true },
+        where: {
+          orderHeaderId: { in: orderIdsForDept.map((o: any) => o.orderHeaderId) },
+          paymentStatus: 'completed',
+          createdAt: dateFilter.createdAt || { gte: new Date() }, // Filter by payment creation date (today)
+        },
+      });
+      
+      const amountPaid = amountPaidRes._sum.amount || 0;
 
       // Validate amounts are in cents (integers)
       validatePrice(amountFulfilled, `${sectionId ? 'sectionStats' : 'deptStats'} amountFulfilled for ${departmentCode}`);

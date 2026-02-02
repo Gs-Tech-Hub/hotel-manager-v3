@@ -132,11 +132,11 @@ export async function POST(request: NextRequest) {
       userWithRoles // Pass user context with userId for audit trail
     );
 
-    // Check if result is error response
-    if ('error' in orderResult) {
+    // Check if result is error response (createOrder returns errorResponse object when it fails)
+    if (orderResult && typeof orderResult === 'object' && 'success' in orderResult && orderResult.success === false) {
       return NextResponse.json(
         orderResult,
-        { status: getStatusCode(orderResult.error.code) }
+        { status: getStatusCode((orderResult as any).code) }
       );
     }
 
@@ -153,7 +153,7 @@ export async function POST(request: NextRequest) {
         } else {
           // Immediate payment - record payment and move to processing
           // payment.amount should be in cents
-          if (payment.amount && payment.amount > 0) {
+          if (payment.amount && payment.amount > 0 && (orderResult as any).id) {
             const paymentPayload = {
               amount: payment.amount, // Already in cents from POS checkout
               paymentMethod: payment.paymentMethod || payment.method || payment.paymentMethodId || 'unknown',
