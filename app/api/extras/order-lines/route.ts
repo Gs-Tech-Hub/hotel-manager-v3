@@ -7,6 +7,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { extractUserContext, loadUserWithRoles, hasAnyRole } from '@/lib/user-context';
 import { successResponse, errorResponse, ErrorCodes, getStatusCode } from '@/lib/api-response';
 import { extrasService } from '@/services/extras.service';
+import { prisma } from '@/lib/auth/prisma';
 
 /**
  * POST /api/extras/order-lines
@@ -75,6 +76,26 @@ export async function POST(request: NextRequest) {
 
     if ('error' in orderExtras) {
       return NextResponse.json(orderExtras, { status: getStatusCode(ErrorCodes.INVALID_INPUT) });
+    }
+
+    // AFTER adding extras, reset payment status from 'paid' to 'partial' (if was paid)
+    try {
+      const order = await (prisma as any).orderHeader.findUnique({
+        where: { id: body.orderHeaderId }
+      });
+
+      if (order && order.paymentStatus === 'paid') {
+        // Extras increased the total, so reset status to 'partial'
+        await (prisma as any).orderHeader.update({
+          where: { id: body.orderHeaderId },
+          data: { paymentStatus: 'partial' },
+        });
+
+        console.log(`[Extras] Order ${body.orderHeaderId} payment status reset to 'partial' (was 'paid')`);
+      }
+    } catch (updateErr) {
+      console.error('[Extras] Failed to update order payment status:', updateErr);
+      // Don't fail the request - extras were added successfully
     }
 
     return NextResponse.json(

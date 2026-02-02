@@ -37,6 +37,7 @@ export default function POSCheckoutShell({ terminalId }: { terminalId?: string }
   const [summaryError, setSummaryError] = useState<string | null>(null)
   const [summaryRefreshKey, setSummaryRefreshKey] = useState(0)
   const [loadingTerminal, setLoadingTerminal] = useState(false)
+  const [isProcessingPayment, setIsProcessingPayment] = useState(false)
 
   const [departmentSection, setDepartmentSection] = useState<SelectedSection | null>(null)
   const [appliedDiscountIds, setAppliedDiscountIds] = useState<string[]>([])
@@ -119,11 +120,20 @@ export default function POSCheckoutShell({ terminalId }: { terminalId?: string }
 
   const handlePaymentComplete = (payment: any) => {
     ;(async () => {
+      // Prevent duplicate payment submissions
+      if (isProcessingPayment) {
+        setTerminalError('Payment is being processed. Please wait...')
+        return
+      }
+      
+      setIsProcessingPayment(true)
+      
       try {
         // Ensure a section is selected
         if (!departmentSection?.departmentCode) {
           console.log('[POS] aborting payment - no section selected')
           setTerminalError('No section selected. Cannot complete payment.')
+          setIsProcessingPayment(false)
           return
         }
 
@@ -313,6 +323,7 @@ export default function POSCheckoutShell({ terminalId }: { terminalId?: string }
       } finally {
         console.log('[POS] handlePaymentComplete - finished')
         setShowPayment(false)
+        setIsProcessingPayment(false)
       }
     })()
   }
@@ -750,15 +761,15 @@ export default function POSCheckoutShell({ terminalId }: { terminalId?: string }
               <>
                 <button 
                   onClick={() => setShowPayment(true)} 
-                  disabled={!canProceedToPayment}
+                  disabled={!canProceedToPayment || isProcessingPayment}
                   className={`w-full py-2 rounded font-medium transition-colors ${
-                    canProceedToPayment
-                      ? 'bg-emerald-600 text-white hover:bg-emerald-700 cursor-pointer'
-                      : 'bg-gray-300 text-gray-500 cursor-not-allowed'
+                    !canProceedToPayment || isProcessingPayment
+                      ? 'bg-gray-300 text-gray-500 cursor-not-allowed'
+                      : 'bg-emerald-600 text-white hover:bg-emerald-700 cursor-pointer'
                   }`}
-                  title={hasUnvalidatedCodes ? `Please wait for discounts to validate` : cart.length === 0 ? 'Add items to proceed' : ''}
+                  title={isProcessingPayment ? 'Payment is being processed...' : hasUnvalidatedCodes ? `Please wait for discounts to validate` : cart.length === 0 ? 'Add items to proceed' : ''}
                 >
-                  Proceed to Payment
+                  {isProcessingPayment ? 'Processing...' : 'Proceed to Payment'}
                 </button>
                 {hasUnvalidatedCodes && (
                   <p className="text-xs text-red-600 mt-2">

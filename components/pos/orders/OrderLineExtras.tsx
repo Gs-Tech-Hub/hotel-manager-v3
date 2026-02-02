@@ -10,7 +10,7 @@ import {
 } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from '@/components/ui/dialog';
-import { formatPrice } from '@/lib/price';
+import { formatCents } from '@/lib/price';
 
 interface Extra {
   id: string;
@@ -162,9 +162,9 @@ export function OrderLineExtras({
                 <div className="flex items-center gap-3 mt-1 text-xs text-muted-foreground">
                   <span>Qty: {orderExtra.quantity}</span>
                   <span>×</span>
-                  <span>{formatPrice(orderExtra.unitPrice / 100)}</span>
+                  <span>{formatCents(orderExtra.unitPrice)}</span>
                   <span className="font-medium text-foreground">
-                    = {formatPrice(orderExtra.lineTotal / 100)}
+                    = {formatCents(orderExtra.lineTotal)}
                   </span>
                 </div>
 
@@ -212,7 +212,7 @@ export function OrderLineExtras({
             <div className="flex justify-between items-center font-semibold">
               <span>Extras Subtotal</span>
               <span className="text-amber-900">
-                {formatPrice(totalExtrasPrice / 100)}
+                {formatCents(totalExtrasPrice)}
               </span>
             </div>
           </div>

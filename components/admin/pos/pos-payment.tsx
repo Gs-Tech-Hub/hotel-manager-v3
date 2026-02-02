@@ -11,8 +11,25 @@ export function POSPayment({ total, onComplete, onCancel, allowDeferred = true }
   const [paymentType, setPaymentType] = useState<'immediate'|'deferred'>(allowDeferred ? 'immediate' : 'immediate')
   const [method, setMethod] = useState<'cash'|'card'>('cash')
   const [tenderedCents, setTenderedCents] = useState<number>(totalCents)
+  const [isProcessing, setIsProcessing] = useState(false)
 
   const changeCents = tenderedCents - totalCents
+
+  const handleComplete = async () => {
+    if (isProcessing) return
+    
+    setIsProcessing(true)
+    try {
+      if (paymentType === 'deferred') {
+        onComplete({ method: 'deferred', isDeferred: true })
+      } else {
+        // Send amount in cents (isMinor: true) for consistency with backend
+        onComplete({ method, amount: tenderedCents, isMinor: true })
+      }
+    } finally {
+      setIsProcessing(false)
+    }
+  }
 
   return (
     <div className="fixed inset-0 bg-black bg-opacity-40 flex items-center justify-center z-50">
@@ -77,20 +94,13 @@ export function POSPayment({ total, onComplete, onCancel, allowDeferred = true }
 
         {/* Action Buttons */}
         <div className="flex gap-2">
-          <button onClick={onCancel} className="flex-1 px-4 py-2 border rounded hover:bg-slate-50 transition">Cancel</button>
+          <button onClick={onCancel} disabled={isProcessing} className="flex-1 px-4 py-2 border rounded hover:bg-slate-50 transition disabled:opacity-50 disabled:cursor-not-allowed">Cancel</button>
           <button 
-            onClick={() => {
-              if (paymentType === 'deferred') {
-                onComplete({ method: 'deferred', isDeferred: true })
-              } else {
-                // Send amount in cents (isMinor: true) for consistency with backend
-                onComplete({ method, amount: tenderedCents, isMinor: true })
-              }
-            }} 
-            disabled={paymentType === 'immediate' && tenderedCents < totalCents} 
-            className="flex-1 px-4 py-2 bg-emerald-600 text-white rounded hover:bg-emerald-700 disabled:opacity-60 transition"
+            onClick={handleComplete}
+            disabled={isProcessing || (paymentType === 'immediate' && tenderedCents < totalCents)} 
+            className="flex-1 px-4 py-2 bg-emerald-600 text-white rounded hover:bg-emerald-700 disabled:opacity-60 disabled:cursor-not-allowed transition"
           >
-            {paymentType === 'deferred' ? 'Create Deferred Order' : 'Complete Payment'}
+            {isProcessing ? 'Processing...' : (paymentType === 'deferred' ? 'Create Deferred Order' : 'Complete Payment')}
           </button>
         </div>
       </div>

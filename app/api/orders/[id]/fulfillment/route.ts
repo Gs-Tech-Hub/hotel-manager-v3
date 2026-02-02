@@ -250,6 +250,14 @@ export async function PUT(
       );
     }
 
+    // PREVENT MULTI-FULFILLMENT: Reject if line item is already fulfilled
+    if (lineItem.status === 'fulfilled') {
+      return NextResponse.json(
+        errorResponse(ErrorCodes.VALIDATION_ERROR, 'This line item is already fulfilled. Cannot re-fulfill.'),
+        { status: getStatusCode(ErrorCodes.VALIDATION_ERROR) }
+      );
+    }
+
     // PRE-FULFILLMENT: Look up department OUTSIDE transaction (move expensive lookups out)
     let deptId: string | null = null;
     const fulfilledQty = quantity || lineItem.quantity;

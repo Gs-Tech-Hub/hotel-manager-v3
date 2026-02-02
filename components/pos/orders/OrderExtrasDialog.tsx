@@ -13,7 +13,7 @@ import {
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { Switch } from '@/components/ui/switch';
-import { formatPrice } from '@/lib/price';
+import { formatCents } from '@/lib/price';
 
 interface DepartmentExtra {
   id: string;
@@ -293,7 +293,7 @@ export function OrderExtrasDialog({
                           </p>
                         )}
                         <p className="text-sm font-semibold text-amber-900 mt-1">
-                          {formatPrice(extra.price / 100)} each
+                          {formatCents(extra.price)} each
                         </p>
                       </div>
                     </div>
@@ -307,7 +307,7 @@ export function OrderExtrasDialog({
                 <div className="flex justify-between items-center font-semibold">
                   <span>Total for {selectedExtras.size} Extra(s)</span>
                   <span className="text-lg text-amber-900">
-                    {formatPrice(totalPrice / 100)}
+                    {formatCents(totalPrice)}
                   </span>
                 </div>
               </div>

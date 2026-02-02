@@ -690,6 +690,11 @@ export class OrderService extends BaseService<IOrderHeader> {
         return errorResponse(ErrorCodes.NOT_FOUND, 'Order not found');
       }
 
+      // PREVENT MULTI-PAYMENT: Reject if order is already fully paid
+      if (order.paymentStatus === 'paid') {
+        return errorResponse(ErrorCodes.VALIDATION_ERROR, 'Order is already fully paid. No additional payments allowed.');
+      }
+
       // Normalize incoming amount to cents to keep DB consistent
   const amount = normalizeToCents(paymentData.amount);
 
@@ -725,6 +730,7 @@ export class OrderService extends BaseService<IOrderHeader> {
 
       if (totalPayments >= order.total) {
         // Fully paid: move to processing and consume reserved inventory for inventory-based departments
+        // Use extended timeout for complex transaction (15 seconds)
         await prisma.$transaction(async (tx: any) => {
           // Update order status and payment status, sync department rows atomically
           await tx.orderHeader.update({ 
@@ -735,7 +741,6 @@ export class OrderService extends BaseService<IOrderHeader> {
             } 
           });
           await tx.orderDepartment.updateMany({ where: { orderHeaderId: orderId }, data: { status: 'processing' } });
-
 
           // Find order lines that require inventory consumption
           const lines = await tx.orderLine.findMany({ where: { orderHeaderId: orderId } });
@@ -798,41 +803,11 @@ export class OrderService extends BaseService<IOrderHeader> {
 
           // mark reservations as consumed
           await tx.inventoryReservation.updateMany({ where: { orderHeaderId: orderId, status: 'reserved' }, data: { status: 'consumed', consumedAt: new Date() } });
+        }, { maxWait: 15000, timeout: 15000 }); // Increased from default 5000ms to 15000ms
 
-          // Recalculate section stats for involved departments using the same transaction client
-          try {
-            // Build map of department codes with their section IDs
-            const deptCodesWithSections = new Map<string, Set<string | undefined>>();
-            for (const line of lines) {
-              if (line.departmentCode) {
-                if (!deptCodesWithSections.has(line.departmentCode)) {
-                  deptCodesWithSections.set(line.departmentCode, new Set());
-                }
-                deptCodesWithSections.get(line.departmentCode)?.add(line.departmentSectionId || undefined);
-              }
-            }
-            
-            // Recalculate stats for each department and section combo
-            for (const [code, sectionIds] of deptCodesWithSections.entries()) {
-              for (const sectionId of sectionIds) {
-                await departmentService.recalculateSectionStats(code, sectionId, tx);
-              }
-            }
-          } catch (e) {
-            try { const logger = await import('@/lib/logger'); logger.error(e, { context: 'recalculateSectionStats.recordPayment' }); } catch {}
-          }
-        });
-
-        // After transaction completes, roll up parent stats (outside of transaction)
-        try {
-          const involvedDeptCodes = Array.from(new Set((await prisma.orderLine.findMany({ where: { orderHeaderId: orderId } })).map((l: any) => l.departmentCode)));
-          for (const code of involvedDeptCodes) {
-            if (!code) continue;
-            await departmentService.rollupParentStats(code);
-          }
-        } catch (e) {
-          try { const logger = await import('@/lib/logger'); logger.error(e, { context: 'rollupParentStats.recordPayment' }); } catch {}
-        }
+        // NOTE: Stats are NOT recalculated on payment
+        // Stats only update when items are actually FULFILLED (via fulfillment endpoint)
+        // This ensures amountPaid and amountFulfilled metrics only reflect completed items
       } else if (totalPayments > 0) {
         // Partially paid: update payment status to 'partial'
         await prisma.orderHeader.update({

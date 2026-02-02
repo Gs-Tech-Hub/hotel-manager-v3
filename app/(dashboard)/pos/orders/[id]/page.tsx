@@ -243,7 +243,7 @@ export default function OrderDetailPage() {
                 </div>
                 <div className="flex gap-2 flex-wrap">
                     <Button variant="outline" onClick={() => router.push('/pos/orders')}>Back</Button>
-                    <Button onClick={fulfillAll} disabled={isUpdating || order.status === 'cancelled' || order.status === 'refunded'}>
+                    <Button onClick={fulfillAll} disabled={isUpdating || order.status === 'cancelled' || order.status === 'refunded' || (order.lines && order.lines.every((l: any) => l.status === 'fulfilled'))}>
                         {isUpdating ? 'Working...' : 'Mark All Fulfilled'}
                     </Button>
                     {canCancel && (
@@ -389,7 +389,8 @@ export default function OrderDetailPage() {
                                                         setSelectedSectionId(line.sectionId || null);
                                                         setExtrasDialogOpen(true);
                                                     }}
-                                                    disabled={isUpdating}
+                                                    disabled={isUpdating || line.status === 'fulfilled'}
+                                                    title={line.status === 'fulfilled' ? 'Cannot add extras to fulfilled items' : ''}
                                                 >
                                                     <Plus className="h-4 w-4 mr-1" />
                                                     Add Extras
@@ -418,7 +419,10 @@ export default function OrderDetailPage() {
                                                     </>
                                                 )}
                                                 {line.status === 'fulfilled' && (
-                                                    <CheckCircle2 className="h-5 w-5 text-green-600" />
+                                                    <div className="flex items-center gap-2 text-sm text-green-600">
+                                                        <CheckCircle2 className="h-5 w-5" />
+                                                        <span className="font-medium">Fulfilled</span>
+                                                    </div>
                                                 )}
                                             </div>
                                         </div>
