@@ -42,6 +42,8 @@ export default function POSCheckoutShell({ terminalId }: { terminalId?: string }
   const [appliedDiscountIds, setAppliedDiscountIds] = useState<string[]>([])
   const [validatedDiscounts, setValidatedDiscounts] = useState<any[]>([])
   const [discountMap, setDiscountMap] = useState<Map<string, any>>(new Map())
+  const [taxEnabled, setTaxEnabled] = useState(true)
+  const [taxRate, setTaxRate] = useState(10)
 
   const categories = [
     { id: 'foods', name: 'Foods' },
@@ -107,7 +109,8 @@ export default function POSCheckoutShell({ terminalId }: { terminalId?: string }
   // Calculate total discount from applied codes
   const totalDiscountAmount = validatedDiscounts.reduce((sum, d) => sum + (d.discountAmount || 0), 0)
   const discountedSubtotal = Math.max(0, subtotal - totalDiscountAmount)
-  const estimatedTax = Math.round(discountedSubtotal * 0.1) // 10% tax (on discounted amount)
+  // Only apply tax if enabled in settings
+  const estimatedTax = taxEnabled ? Math.round(discountedSubtotal * (taxRate / 100)) : 0
   const estimatedTotal = discountedSubtotal + estimatedTax
 
   // Check if all applied discount IDs are validated
@@ -313,6 +316,23 @@ export default function POSCheckoutShell({ terminalId }: { terminalId?: string }
       }
     })()
   }
+
+  // Fetch tax settings on mount
+  useEffect(() => {
+    const fetchTaxSettings = async () => {
+      try {
+        const response = await fetch('/api/settings/tax')
+        const data = await response.json()
+        if (data.success && data.data?.settings) {
+          setTaxEnabled(data.data.settings.enabled ?? true)
+          setTaxRate(data.data.settings.taxRate ?? 10)
+        }
+      } catch (err) {
+        console.warn('Failed to fetch tax settings, using defaults:', err)
+      }
+    }
+    fetchTaxSettings()
+  }, [])
 
   // Load terminal data from query parameter
   useEffect(() => {

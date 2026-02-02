@@ -4,7 +4,8 @@ import { useState } from 'react';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { TaxSettingsForm } from '@/components/admin/tax-settings-form';
-import { Settings, DollarSign } from 'lucide-react';
+import { TaxCollectionsReport } from '@/components/admin/tax-collections-report';
+import { Settings, DollarSign, BarChart3 } from 'lucide-react';
 
 export default function AdminSettingsPage() {
   return (
@@ -19,17 +20,26 @@ export default function AdminSettingsPage() {
       </div>
 
       {/* Tabs for different settings sections */}
-      <Tabs defaultValue="tax" className="space-y-6">
+      <Tabs defaultValue="tax-settings" className="space-y-6">
         <TabsList>
-          <TabsTrigger value="tax" className="flex items-center gap-2">
+          <TabsTrigger value="tax-settings" className="flex items-center gap-2">
             <DollarSign className="h-4 w-4" />
             Tax Settings
+          </TabsTrigger>
+          <TabsTrigger value="tax-collections" className="flex items-center gap-2">
+            <BarChart3 className="h-4 w-4" />
+            Tax Collections
           </TabsTrigger>
         </TabsList>
 
         {/* Tax Settings Tab */}
-        <TabsContent value="tax" className="space-y-6">
+        <TabsContent value="tax-settings" className="space-y-6">
           <TaxSettingsForm />
+        </TabsContent>
+
+        {/* Tax Collections Report Tab */}
+        <TabsContent value="tax-collections" className="space-y-6">
+          <TaxCollectionsReport />
         </TabsContent>
       </Tabs>
     </div>
