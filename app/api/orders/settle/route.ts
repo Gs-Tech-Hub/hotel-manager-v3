@@ -176,6 +176,45 @@ export async function POST(request: NextRequest) {
       });
     }
 
+    // Step: Recalculate stats for all affected departments/sections
+    // Now that payment is made, amountSold should be updated
+    try {
+      const { departmentService } = await import('@/services/department.service');
+
+      // Get all unique department codes and section IDs from order lines
+      const deptCodesWithSections = new Map<string, Set<string | undefined>>();
+      
+      for (const line of order.lines) {
+        if (line.departmentCode) {
+          if (!deptCodesWithSections.has(line.departmentCode)) {
+            deptCodesWithSections.set(line.departmentCode, new Set());
+          }
+          deptCodesWithSections.get(line.departmentCode)?.add(line.departmentSectionId || undefined);
+        }
+      }
+
+      // Batch all stat calculations in parallel for all affected departments and sections
+      await Promise.all(
+        Array.from(deptCodesWithSections.entries()).flatMap(([code, sectionIds]) =>
+          Array.from(sectionIds).map(async (sectionId) => {
+            try {
+              await Promise.all([
+                // Update section stats if sectionId exists, otherwise update parent department stats
+                departmentService.recalculateSectionStats(code, sectionId),
+                // Only rollup to parent if we have a section (to avoid duplicate parent updates)
+                sectionId ? departmentService.rollupParentStats(code) : Promise.resolve(),
+              ]);
+            } catch (e) {
+              console.error(`Error updating stats for department ${code}${sectionId ? ` section ${sectionId}` : ''}:`, e);
+            }
+          })
+        )
+      );
+    } catch (e) {
+      console.error('Error in post-payment stats recalculation:', e);
+      // Don't fail the request, just log the error
+    }
+
     // Return settlement response
     return NextResponse.json(
       successResponse(

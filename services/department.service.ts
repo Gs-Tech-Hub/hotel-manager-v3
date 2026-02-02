@@ -276,24 +276,11 @@ export class DepartmentService extends BaseService<IDepartment> {
         _sum: { lineTotal: true }, 
         where: { ...where, status: 'fulfilled' } 
       });
-      
-      // Amount paid: Only fulfilled items where payment is made (paid or partial)
-      const amountPaidRes: any = await client.orderLine.aggregate({ 
-        _sum: { lineTotal: true }, 
-        where: { 
-          ...where,
-          status: 'fulfilled', 
-          orderHeader: { 
-            status: { in: ['fulfilled', 'completed'] }, 
-            paymentStatus: { in: ['paid', 'partial'] } 
-          } 
-        } 
-      });
 
       const totalUnits = totalUnitsRes._sum.quantity || 0;
       const fulfilledUnits = fulfilledUnitsRes._sum.quantity || 0;
       const amountFulfilled = amountFulfilledRes._sum.lineTotal || 0;
-      const amountPaid = amountPaidRes._sum.lineTotal || 0;
+      const amountPaid = 0; // Only updated when payment is made, not during fulfillment
 
       // Validate amounts are in cents (integers)
       validatePrice(amountFulfilled, `${sectionId ? 'sectionStats' : 'deptStats'} amountFulfilled for ${departmentCode}`);
