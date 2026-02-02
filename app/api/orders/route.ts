@@ -121,7 +121,7 @@ export async function POST(request: NextRequest) {
 
     // Create order using service
     const orderService = new OrderService();
-    const order = await orderService.createOrder(
+    let orderResult = await orderService.createOrder(
       {
         customerId,
         items,
@@ -133,23 +133,23 @@ export async function POST(request: NextRequest) {
     );
 
     // Check if result is error response
-    if ('error' in order) {
+    if ('error' in orderResult) {
       return NextResponse.json(
-        order,
-        { status: getStatusCode(order.error.code) }
+        orderResult,
+        { status: getStatusCode(orderResult.error.code) }
       );
     }
 
     // Handle payment processing
     // If client provided a payment object in the payload, process it
-    if (order && !(order as any).error && body.payment) {
+    if (orderResult && !(orderResult as any).error && body.payment) {
       try {
         const payment = body.payment as any;
         
         // Check if this is a deferred payment (pay later)
         if (payment.isDeferred || payment.method === 'deferred') {
           // Deferred order - leave status as 'pending', no payment recorded
-          console.log(`Order ${(order as any).id} created with deferred payment status`);
+          console.log(`Order ${(orderResult as any).id} created with deferred payment status`);
         } else {
           // Immediate payment - record payment and move to processing
           // payment.amount should be in cents
@@ -161,8 +161,25 @@ export async function POST(request: NextRequest) {
               transactionReference: payment.transactionReference,
             };
             // record payment (orderService.recordPayment will validate and move order to processing)
-            console.log(`[Order API] Recording payment for order ${(order as any).id}:`, paymentPayload);
-            await orderService.recordPayment((order as any).id, paymentPayload, userWithRoles);
+            console.log(`[Order API] Recording payment for order ${(orderResult as any).id}:`, paymentPayload);
+            await orderService.recordPayment((orderResult as any).id, paymentPayload, userWithRoles);
+            
+            // Fetch updated order to get the new paymentStatus and status
+            const updatedOrder = await prisma.orderHeader.findUnique({
+              where: { id: (orderResult as any).id },
+              include: { 
+                customer: true, 
+                lines: true, 
+                departments: { include: { department: true } },
+                discounts: { include: { discountRule: true } },
+                payments: { include: { paymentType: true } },
+                fulfillments: true,
+                reservations: true,
+              },
+            });
+            if (updatedOrder) {
+              orderResult = updatedOrder;
+            }
           }
         }
       } catch (err) {
@@ -171,9 +188,9 @@ export async function POST(request: NextRequest) {
       }
     }
 
-    // Return created order
+    // Return created order (with updated paymentStatus if payment was processed)
     return NextResponse.json(
-      successResponse({data : order, message : 'Order created successfully'}),
+      successResponse({data : orderResult, message : 'Order created successfully'}),
       { status: 201 }
     );
   } catch (error) {

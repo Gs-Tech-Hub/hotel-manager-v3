@@ -164,15 +164,23 @@ export async function POST(request: NextRequest) {
 
     // If fully paid, move order to "processing" status
     let newStatus = order.status;
+    let newPaymentStatus = order.paymentStatus;
+    
     if (newAmountDue <= 0) {
       newStatus = 'processing';
+      newPaymentStatus = 'paid';
+    } else if (newTotalPaid > 0) {
+      newPaymentStatus = 'partial';
     }
 
-    // Update order status if needed
-    if (newStatus !== order.status) {
+    // Update order status and payment status if needed
+    if (newStatus !== order.status || newPaymentStatus !== order.paymentStatus) {
       await prisma.orderHeader.update({
         where: { id: orderId },
-        data: { status: newStatus },
+        data: { 
+          status: newStatus,
+          paymentStatus: newPaymentStatus,
+        },
       });
     }
 

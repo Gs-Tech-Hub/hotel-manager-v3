@@ -769,10 +769,22 @@ export class OrderService extends BaseService<IOrderHeader> {
 
           // Recalculate section stats for involved departments using the same transaction client
           try {
-            const involvedDeptCodes = Array.from(new Set(lines.map((l: any) => l.departmentCode)));
-            for (const code of involvedDeptCodes) {
-              if (!code) continue;
-              await departmentService.recalculateSectionStats(code as string, tx);
+            // Build map of department codes with their section IDs
+            const deptCodesWithSections = new Map<string, Set<string | undefined>>();
+            for (const line of lines) {
+              if (line.departmentCode) {
+                if (!deptCodesWithSections.has(line.departmentCode)) {
+                  deptCodesWithSections.set(line.departmentCode, new Set());
+                }
+                deptCodesWithSections.get(line.departmentCode)?.add(line.departmentSectionId || undefined);
+              }
+            }
+            
+            // Recalculate stats for each department and section combo
+            for (const [code, sectionIds] of deptCodesWithSections.entries()) {
+              for (const sectionId of sectionIds) {
+                await departmentService.recalculateSectionStats(code, sectionId, tx);
+              }
             }
           } catch (e) {
             try { const logger = await import('@/lib/logger'); logger.error(e, { context: 'recalculateSectionStats.recordPayment' }); } catch {}

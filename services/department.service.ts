@@ -15,6 +15,7 @@ import { prisma } from '@/lib/auth/prisma';
 import { UserContext, requireRole } from '@/lib/auth/authorization';
 import { errorResponse, ErrorCodes } from '@/lib/api-response';
 import { validatePrice } from '@/lib/price';
+import { buildDateFilter, getTodayDate } from '@/lib/date-filter';
 
 export class DepartmentService extends BaseService<IDepartment> {
   constructor() {
@@ -243,9 +244,13 @@ export class DepartmentService extends BaseService<IDepartment> {
     try {
       const client = tx || prisma;
 
+      // Filter to current date only
+      const today = getTodayDate();
+      const dateFilter = buildDateFilter(today, today);
+
       // If sectionId provided, calculate stats for that specific section
       // Otherwise, calculate for department level (for backward compatibility)
-      const where: any = { departmentCode };
+      const where: any = { departmentCode, orderHeader: dateFilter };
       if (sectionId) {
         where.departmentSectionId = sectionId;
       }
