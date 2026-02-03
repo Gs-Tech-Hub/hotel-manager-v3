@@ -157,8 +157,7 @@ export async function GET(
     }
 
     // Compute order stats for section from department metadata
-    // The recalculateSectionStats service already aggregates these,
-    // so we just use the cached values in department.metadata.sectionStats
+    // Always apply date filters if provided, even if cached stats exist
     let stats = {
       totalOrders: 0,
       pendingOrders: 0,
@@ -170,15 +169,14 @@ export async function GET(
       amountPaid: 0,
     }
 
-    // Use cached stats from department metadata if available
-    if (dept.metadata?.sectionStats) {
-      stats = dept.metadata.sectionStats;
-    } else {
-      // Fallback: compute stats on the fly by querying through OrderLine
+    // If date filters are provided, always compute fresh stats
+    // Otherwise use cached stats from department metadata if available
+    if (fromDate || toDate) {
+      // Compute stats on the fly when date filters are active
       try {
         if (sectionRow && sectionRow.id) {
           // Section: find orders via orderLine.departmentCode (which contains section ID)
-          const dateFilter = (fromDate || toDate) ? buildDateFilter(fromDate, toDate) : {}
+          const dateFilter = buildDateFilter(fromDate, toDate)
           
           // Get distinct order header IDs for this section
           const sectionLines = await (prisma as any).orderLine.findMany({
@@ -195,6 +193,76 @@ export async function GET(
           const headerWhere: any = {
             id: { in: orderHeaderIds },
             ...dateFilter,
+          }
+          
+          // Count orders by status
+          const [
+            pendingOrders,
+            fulfilledOrders,
+            totalOrders,
+            amountSoldRes,
+          ] = await Promise.all([
+            (prisma as any).orderHeader.count({
+              where: {
+                ...headerWhere,
+                status: 'pending',
+              }
+            }),
+            (prisma as any).orderHeader.count({
+              where: {
+                ...headerWhere,
+                status: 'fulfilled',
+              }
+            }),
+            (prisma as any).orderHeader.count({
+              where: headerWhere
+            }),
+            (prisma as any).orderHeader.aggregate({
+              where: {
+                ...headerWhere,
+                status: 'fulfilled',
+              },
+              _sum: { total: true }
+            })
+          ]);
+
+          stats = {
+            totalOrders,
+            pendingOrders,
+            processingOrders: 0,
+            fulfilledOrders,
+            totalUnits: 0,
+            fulfilledUnits: 0,
+            amountFulfilled: 0,
+            amountPaid: amountSoldRes._sum?.total || 0,
+          };
+        }
+      } catch (e) {
+        console.error('Failed to compute order stats with date filter:', e)
+      }
+    } else if (dept.metadata?.sectionStats) {
+      // Use cached stats from department metadata if no date filters
+      stats = dept.metadata.sectionStats;
+    } else {
+      // Fallback: compute stats on the fly by querying through OrderLine (no date filter)
+      try {
+        if (sectionRow && sectionRow.id) {
+          // Section: find orders via orderLine.departmentCode (which contains section ID)
+          
+          // Get distinct order header IDs for this section
+          const sectionLines = await (prisma as any).orderLine.findMany({
+            where: {
+              departmentCode: sectionRow.id,
+            },
+            distinct: ['orderHeaderId'],
+            select: { orderHeaderId: true },
+          })
+          
+          const orderHeaderIds = sectionLines.map((l: any) => l.orderHeaderId)
+          
+          // Build where clause for headers without date filter
+          const headerWhere: any = {
+            id: { in: orderHeaderIds },
           }
           
           // Count orders by status
