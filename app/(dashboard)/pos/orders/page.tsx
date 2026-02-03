@@ -67,6 +67,7 @@ export default function PosOrdersPage() {
     const [showPaymentModal, setShowPaymentModal] = useState(false);
     const [selectedOrderForPayment, setSelectedOrderForPayment] = useState<Order | null>(null);
     const [paymentTotalCents, setPaymentTotalCents] = useState(0);
+    const [isPaymentProcessing, setIsPaymentProcessing] = useState(false);
     
     // Add items state
     const [showAddItemsModal, setShowAddItemsModal] = useState(false);
@@ -125,6 +126,7 @@ export default function PosOrdersPage() {
     const handlePaymentComplete = async (payment: any) => {
         if (!selectedOrderForPayment) return;
         
+        setIsPaymentProcessing(true);
         try {
             // payment.amount is in cents (isMinor: true)
             const amountCents = payment.isMinor ? payment.amount : normalizeToCents(payment.amount);
@@ -151,6 +153,8 @@ export default function PosOrdersPage() {
             setRefreshTrigger(t => t + 1);
         } catch (error) {
             alert(error instanceof Error ? error.message : "Payment failed");
+        } finally {
+            setIsPaymentProcessing(false);
         }
     };
 
@@ -527,6 +531,7 @@ export default function PosOrdersPage() {
                         setSelectedOrderForPayment(null);
                     }}
                     allowDeferred={false}
+                    isProcessing={isPaymentProcessing}
                 />
             )}
 

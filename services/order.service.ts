@@ -802,7 +802,7 @@ export class OrderService extends BaseService<IOrderHeader> {
           }
 
           // mark reservations as consumed
-          await tx.inventoryReservation.updateMany({ where: { orderHeaderId: orderId, status: 'reserved' }, data: { status: 'consumed', consumedAt: new Date() } });
+          await tx.inventoryReservation.updateMany({ where: { orderHeaderId: orderId, status: 'reserved' }, data: { status: 'consumed', confirmedAt: new Date() } });
         }, { maxWait: 15000, timeout: 15000 }); // Increased from default 5000ms to 15000ms
 
         // NOTE: Stats are NOT recalculated on payment
@@ -927,7 +927,7 @@ export class OrderService extends BaseService<IOrderHeader> {
   /**
    * Cancel order and release reservations
    * Only pending orders can be cancelled.
-   * For fulfilled orders with payment, use refundOrder() instead.
+   * For orders with payments, a refund must be explicitly processed first.
    */
   async cancelOrder(id: string, reason?: string, ctx?: UserContext) {
     try {
@@ -947,14 +947,18 @@ export class OrderService extends BaseService<IOrderHeader> {
         return errorResponse(ErrorCodes.VALIDATION_ERROR, `Cannot cancel ${order.status} orders. Use refund for fulfilled orders with payment.`);
       }
 
+      // Check if there are unrefunded payments
+      const unpaidPayments = order.payments && order.payments.filter((p: any) => p.paymentStatus === 'completed');
+      if (unpaidPayments && unpaidPayments.length > 0) {
+        return errorResponse(ErrorCodes.VALIDATION_ERROR, 'Cannot cancel order with active payments. Please process a refund first.');
+      }
+
       await prisma.$transaction(async (tx: any) => {
         // Mark order as cancelled and propagate to department rows
         await tx.orderHeader.update({
           where: { id },
           data: { 
             status: 'cancelled',
-            // If there are payments, mark them as refunded (auto-refund on cancellation)
-            paymentStatus: (order.payments && order.payments.length > 0) ? 'refunded' : order.paymentStatus
           },
         });
         await tx.orderDepartment.updateMany({ where: { orderHeaderId: id }, data: { status: 'cancelled' } });
@@ -976,15 +980,7 @@ export class OrderService extends BaseService<IOrderHeader> {
           where: { orderHeaderId: id, status: { not: 'fulfilled' } },
           data: { status: 'cancelled' },
         });
-
-        // If there are any payments, mark them as refunded (auto-refund on cancel)
-        if (order.payments && order.payments.length > 0) {
-          await tx.orderPayment.updateMany({
-            where: { orderHeaderId: id },
-            data: { status: 'refunded' },
-          });
-        }
-      });
+      }, { maxWait: 15000, timeout: 15000 }); // Increased timeout for cancel operations
 
       // Recalculate section stats for departments involved in the order
       try {
@@ -1000,7 +996,7 @@ export class OrderService extends BaseService<IOrderHeader> {
         try { const logger = await import('@/lib/logger'); logger.error(e, { context: 'recalculateSectionStats.cancelOrder' }); } catch {}
       }
 
-      return { success: true, message: 'Order cancelled and any payments refunded' };
+      return { success: true, message: 'Order cancelled and inventory released' };
     } catch (error) {
       console.error('Error cancelling order:', error);
       return errorResponse(ErrorCodes.INTERNAL_ERROR, 'Failed to cancel order');
@@ -1030,8 +1026,10 @@ export class OrderService extends BaseService<IOrderHeader> {
         return errorResponse(ErrorCodes.VALIDATION_ERROR, `Cannot refund ${order.status} orders. Only pending orders can be refunded.`);
       }
 
-      if (!['paid', 'partial'].includes(order.paymentStatus)) {
-        return errorResponse(ErrorCodes.VALIDATION_ERROR, `Order payment status is ${order.paymentStatus}. Only paid/partial orders can be refunded.`);
+      // Check if order has any completed payments
+      const hasCompletedPayments = order.payments && order.payments.some((p: any) => p.paymentStatus === 'completed');
+      if (!hasCompletedPayments) {
+        return errorResponse(ErrorCodes.VALIDATION_ERROR, `Order has no completed payments. Only orders with completed payments can be refunded.`);
       }
 
       await prisma.$transaction(async (tx: any) => {
@@ -1066,10 +1064,10 @@ export class OrderService extends BaseService<IOrderHeader> {
         if (order.payments && order.payments.length > 0) {
           await tx.orderPayment.updateMany({
             where: { orderHeaderId: id },
-            data: { status: 'refunded' },
+            data: { paymentStatus: 'refunded' },
           });
         }
-      });
+      }, { maxWait: 15000, timeout: 15000 }); // Increased from default 5000ms to handle complex refund operations
 
       // Recalculate section stats - refunded items should no longer count as sold
       try {

@@ -27,10 +27,12 @@ export default function OrderDetailPage() {
     const [isLoading, setIsLoading] = useState(true);
     const [isUpdating, setIsUpdating] = useState(false);
     const [cancelDialogOpen, setCancelDialogOpen] = useState(false);
+    const [refundConfirmDialogOpen, setRefundConfirmDialogOpen] = useState(false);
     const [refundDialogOpen, setRefundDialogOpen] = useState(false);
     const [cancelError, setCancelError] = useState<string | null>(null);
     const [refundError, setRefundError] = useState<string | null>(null);
     const [refundReason, setRefundReason] = useState("");
+    const [pendingCancellation, setPendingCancellation] = useState(false);
     const [extrasDialogOpen, setExtrasDialogOpen] = useState(false);
     const [selectedLineId, setSelectedLineId] = useState<string | null>(null);
     const [selectedSectionId, setSelectedSectionId] = useState<string | null>(null);
@@ -125,6 +127,19 @@ export default function OrderDetailPage() {
 
     const handleCancelOrder = async () => {
         if (!order) return;
+        
+        // Check if order has payments that need refunding
+        const hasPaidPayments = order.payments && order.payments.length > 0 && 
+                                order.payments.some((p: any) => p.paymentStatus === 'completed');
+        
+        if (hasPaidPayments && !pendingCancellation) {
+            // Show refund confirmation dialog first
+            setCancelDialogOpen(false);
+            setRefundConfirmDialogOpen(true);
+            return;
+        }
+        
+        // Proceed with cancellation
         setIsUpdating(true);
         setCancelError(null);
         try {
@@ -136,12 +151,12 @@ export default function OrderDetailPage() {
             const data = await res.json();
             if (res.ok && data && data.success) {
                 setCancelDialogOpen(false);
-                // Refresh order
-                const r = await fetch(`/api/orders/${order.id}`, { credentials: 'same-origin' });
-                const d = await r.json();
-                if (r.ok && d && d.success) {
-                    setOrder(d.data);
-                }
+                setRefundConfirmDialogOpen(false);
+                setPendingCancellation(false);
+                // Redirect to orders list after successful cancellation
+                setTimeout(() => {
+                    router.push('/pos/orders');
+                }, 500);
             } else {
                 setCancelError(data?.error?.message || 'Failed to cancel order');
             }
@@ -168,11 +183,17 @@ export default function OrderDetailPage() {
             if (res.ok && data && data.success) {
                 setRefundDialogOpen(false);
                 setRefundReason("");
+                // If this refund was initiated from cancel, proceed with cancellation
+                setPendingCancellation(true);
                 // Refresh order
                 const r = await fetch(`/api/orders/${order.id}`, { credentials: 'same-origin' });
                 const d = await r.json();
                 if (r.ok && d && d.success) {
                     setOrder(d.data);
+                    // Auto-proceed with cancellation after successful refund
+                    setTimeout(() => {
+                        setCancelDialogOpen(true);
+                    }, 500);
                 }
             } else {
                 setRefundError(data?.error?.message || 'Failed to refund order');
@@ -494,6 +515,51 @@ export default function OrderDetailPage() {
                             disabled={isUpdating}
                         >
                             {isUpdating ? 'Cancelling...' : 'Cancel Order'}
+                        </Button>
+                    </DialogFooter>
+                </DialogContent>
+            </Dialog>
+
+            {/* Refund Confirmation Dialog - Required before cancelling paid orders */}
+            <Dialog open={refundConfirmDialogOpen} onOpenChange={setRefundConfirmDialogOpen}>
+                <DialogContent>
+                    <DialogHeader>
+                        <DialogTitle>Refund Required</DialogTitle>
+                        <DialogDescription>
+                            This order has a paid payment. You must process a refund before cancelling the order.
+                        </DialogDescription>
+                    </DialogHeader>
+                    <div className="space-y-4 py-4">
+                        <div className="bg-amber-50 border border-amber-200 rounded p-4">
+                            <h4 className="font-semibold text-amber-900 mb-2">Payment Details</h4>
+                            <div className="text-sm text-amber-800 space-y-1">
+                                {order?.payments?.map((p: any, i: number) => (
+                                    <div key={i}>
+                                        {p.paymentMethod} - {formatCents(p.amount)} ({p.paymentStatus})
+                                    </div>
+                                ))}
+                            </div>
+                        </div>
+                        <p className="text-sm text-gray-600">
+                            Please complete the refund process in the refund dialog below before cancelling this order.
+                        </p>
+                    </div>
+                    <DialogFooter>
+                        <Button 
+                            variant="outline"
+                            onClick={() => setRefundConfirmDialogOpen(false)}
+                            disabled={isUpdating}
+                        >
+                            Close
+                        </Button>
+                        <Button 
+                            onClick={() => {
+                                setRefundConfirmDialogOpen(false);
+                                setRefundDialogOpen(true);
+                            }}
+                            disabled={isUpdating}
+                        >
+                            Process Refund
                         </Button>
                     </DialogFooter>
                 </DialogContent>

@@ -782,7 +782,7 @@ export default function POSCheckoutShell({ terminalId }: { terminalId?: string }
         </div>
       </div>
 
-      {showPayment && <POSPayment total={estimatedTotal} onComplete={handlePaymentComplete} onCancel={() => setShowPayment(false)} />}
+      {showPayment && <POSPayment total={estimatedTotal} onComplete={handlePaymentComplete} onCancel={() => setShowPayment(false)} isProcessing={isProcessingPayment} />}
       {receipt && <POSReceipt receipt={receipt} onClose={() => setReceipt(null)} />}
     </div>
   )

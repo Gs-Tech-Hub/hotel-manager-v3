@@ -4,7 +4,7 @@ import { useState } from "react"
 import Price from '@/components/ui/Price'
 import { normalizeToCents, centsToDollars } from '@/lib/price'
 
-export function POSPayment({ total, onComplete, onCancel, allowDeferred = true }: { total: number; onComplete: (r: { method: string; amount?: number; isMinor?: boolean; isDeferred?: boolean }) => void; onCancel?: () => void; allowDeferred?: boolean }) {
+export function POSPayment({ total, onComplete, onCancel, allowDeferred = true, isProcessing: externalIsProcessing = false }: { total: number; onComplete: (r: { method: string; amount?: number; isMinor?: boolean; isDeferred?: boolean }) => void; onCancel?: () => void; allowDeferred?: boolean; isProcessing?: boolean }) {
   // total is expected to come in as cents from POS checkout
   const totalCents = total
   
@@ -12,11 +12,14 @@ export function POSPayment({ total, onComplete, onCancel, allowDeferred = true }
   const [method, setMethod] = useState<'cash'|'card'>('cash')
   const [tenderedCents, setTenderedCents] = useState<number>(totalCents)
   const [isProcessing, setIsProcessing] = useState(false)
+  
+  // Use external processing state if provided (from parent), otherwise use internal state
+  const isTransacting = externalIsProcessing || isProcessing
 
   const changeCents = tenderedCents - totalCents
 
   const handleComplete = async () => {
-    if (isProcessing) return
+    if (isTransacting) return
     
     setIsProcessing(true)
     try {
@@ -94,13 +97,13 @@ export function POSPayment({ total, onComplete, onCancel, allowDeferred = true }
 
         {/* Action Buttons */}
         <div className="flex gap-2">
-          <button onClick={onCancel} disabled={isProcessing} className="flex-1 px-4 py-2 border rounded hover:bg-slate-50 transition disabled:opacity-50 disabled:cursor-not-allowed">Cancel</button>
+          <button onClick={onCancel} disabled={isTransacting} className="flex-1 px-4 py-2 border rounded hover:bg-slate-50 transition disabled:opacity-50 disabled:cursor-not-allowed">Cancel</button>
           <button 
             onClick={handleComplete}
-            disabled={isProcessing || (paymentType === 'immediate' && tenderedCents < totalCents)} 
+            disabled={isTransacting || (paymentType === 'immediate' && tenderedCents < totalCents)} 
             className="flex-1 px-4 py-2 bg-emerald-600 text-white rounded hover:bg-emerald-700 disabled:opacity-60 disabled:cursor-not-allowed transition"
           >
-            {isProcessing ? 'Processing...' : (paymentType === 'deferred' ? 'Create Deferred Order' : 'Complete Payment')}
+            {isTransacting ? 'Processing...' : (paymentType === 'deferred' ? 'Create Deferred Order' : 'Complete Payment')}
           </button>
         </div>
       </div>
