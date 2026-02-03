@@ -250,16 +250,23 @@ export class DepartmentService extends BaseService<IDepartment> {
 
       // If sectionId provided, calculate stats for that specific section
       // Otherwise, calculate for department level (for backward compatibility)
-      const where: any = { departmentCode, orderHeader: dateFilter };
+      const where: any = { 
+        departmentCode, 
+        orderHeader: {
+          ...dateFilter,
+          // Exclude cancelled and refunded orders from stats
+          status: { notIn: ['cancelled', 'refunded'] }
+        }
+      };
       if (sectionId) {
         where.departmentSectionId = sectionId;
       }
 
       // Basic aggregates scoped to this department section (by sectionId or departmentCode)
-      // Count DISTINCT orders that have lines for this department section
+      // Count DISTINCT orders that have lines for this department section (excluding cancelled/refunded lines)
       const [totalOrderIds, pendingLineIds, processingLineIds, fulfilledLineIds] = await Promise.all([
         client.orderLine.findMany({
-          where,
+          where: { ...where, status: { notIn: ['cancelled', 'refunded'] } },
           distinct: ['orderHeaderId'],
           select: { orderHeaderId: true },
         }),
@@ -273,7 +280,7 @@ export class DepartmentService extends BaseService<IDepartment> {
       const processingOrders = processingLineIds;
       const fulfilledOrders = fulfilledLineIds;
 
-      const totalUnitsRes: any = await client.orderLine.aggregate({ _sum: { quantity: true }, where });
+      const totalUnitsRes: any = await client.orderLine.aggregate({ _sum: { quantity: true }, where: { ...where, status: { notIn: ['cancelled', 'refunded'] } } });
       const fulfilledUnitsRes: any = await client.orderLine.aggregate({ _sum: { quantity: true }, where: { ...where, status: 'fulfilled' } });
       
       // Amount fulfilled: ALL fulfilled items regardless of payment status
@@ -287,9 +294,9 @@ export class DepartmentService extends BaseService<IDepartment> {
       const amountFulfilled = amountFulfilledRes._sum.lineTotal || 0;
       
       // Amount paid: sum of all payments made today for orders that have lines in this department/section
-      // Find all orders that have lines for this department
+      // Find all orders that have lines for this department (excluding cancelled/refunded)
       const orderIdsForDept = await client.orderLine.findMany({
-        where,
+        where: { ...where, status: { notIn: ['cancelled', 'refunded'] } },
         distinct: ['orderHeaderId'],
         select: { orderHeaderId: true },
       });

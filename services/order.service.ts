@@ -936,29 +936,39 @@ export class OrderService extends BaseService<IOrderHeader> {
 
       const order = await (prisma as any).orderHeader.findUnique({ 
         where: { id },
-        include: { payments: true }
+        include: { 
+          payments: true,
+          lines: { include: { extras: true } }
+        }
       });
       if (!order) {
         return errorResponse(ErrorCodes.NOT_FOUND, 'Order not found');
       }
 
-      // Only allow cancellation of pending orders
-      if (order.status !== 'pending') {
-        return errorResponse(ErrorCodes.VALIDATION_ERROR, `Cannot cancel ${order.status} orders. Use refund for fulfilled orders with payment.`);
-      }
-
-      // Check if there are unrefunded payments
-      const unpaidPayments = order.payments && order.payments.filter((p: any) => p.paymentStatus === 'completed');
-      if (unpaidPayments && unpaidPayments.length > 0) {
-        return errorResponse(ErrorCodes.VALIDATION_ERROR, 'Cannot cancel order with active payments. Please process a refund first.');
+      // Allow cancellation of pending, processing, fulfilled, and completed orders
+      const cancellableStatuses = ['pending', 'processing', 'fulfilled', 'completed'];
+      if (!cancellableStatuses.includes(order.status)) {
+        return errorResponse(ErrorCodes.VALIDATION_ERROR, `Cannot cancel ${order.status} orders. Only pending, processing, fulfilled, or completed orders can be cancelled.`);
       }
 
       await prisma.$transaction(async (tx: any) => {
+        // Refund any due/completed payments
+        if (order.payments && order.payments.length > 0) {
+          await tx.orderPayment.updateMany({
+            where: { 
+              orderHeaderId: id,
+              paymentStatus: { in: ['completed', 'partial'] }
+            },
+            data: { paymentStatus: 'refunded' },
+          });
+        }
+
         // Mark order as cancelled and propagate to department rows
         await tx.orderHeader.update({
           where: { id },
           data: { 
             status: 'cancelled',
+            paymentStatus: 'refunded',
           },
         });
         await tx.orderDepartment.updateMany({ where: { orderHeaderId: id }, data: { status: 'cancelled' } });
@@ -969,17 +979,26 @@ export class OrderService extends BaseService<IOrderHeader> {
           data: { status: 'released', releasedAt: new Date() },
         });
 
-        // Mark fulfillments as cancelled
+        // Mark all fulfillments as cancelled
         await tx.orderFulfillment.updateMany({
-          where: { orderHeaderId: id, status: { not: 'fulfilled' } },
+          where: { orderHeaderId: id },
           data: { status: 'cancelled' },
         });
 
         // Mark order lines as cancelled
         await tx.orderLine.updateMany({
-          where: { orderHeaderId: id, status: { not: 'fulfilled' } },
+          where: { orderHeaderId: id },
           data: { status: 'cancelled' },
         });
+
+        // Deactivate all extras associated with order lines
+        if (order.lines && order.lines.length > 0) {
+          const lineIds = order.lines.map((l: any) => l.id);
+          await tx.orderLineExtra.updateMany({
+            where: { orderLineId: { in: lineIds } },
+            data: { active: false },
+          });
+        }
       }, { maxWait: 15000, timeout: 15000 }); // Increased timeout for cancel operations
 
       // Recalculate section stats for departments involved in the order
@@ -996,7 +1015,7 @@ export class OrderService extends BaseService<IOrderHeader> {
         try { const logger = await import('@/lib/logger'); logger.error(e, { context: 'recalculateSectionStats.cancelOrder' }); } catch {}
       }
 
-      return { success: true, message: 'Order cancelled and inventory released' };
+      return { success: true, message: 'Order cancelled, payments refunded, extras deactivated, and inventory released' };
     } catch (error) {
       console.error('Error cancelling order:', error);
       return errorResponse(ErrorCodes.INTERNAL_ERROR, 'Failed to cancel order');
@@ -1004,8 +1023,9 @@ export class OrderService extends BaseService<IOrderHeader> {
   }
 
   /**
-   * Refund a pending order with payment
-   * Only pending orders with paid/partial payment can be refunded.
+   * Refund an order with payment
+   * Orders can be refunded at any status (pending, processing, fulfilled, completed) if they have payments
+   * Processing status is initiated when fulfillment starts, not payment
    * Sets order status to 'refunded' and payment status to 'refunded'.
    */
   async refundOrder(id: string, reason?: string, ctx?: UserContext) {
@@ -1021,9 +1041,10 @@ export class OrderService extends BaseService<IOrderHeader> {
         return errorResponse(ErrorCodes.NOT_FOUND, 'Order not found');
       }
 
-      // Only allow refunds for pending orders
-      if (order.status !== 'pending') {
-        return errorResponse(ErrorCodes.VALIDATION_ERROR, `Cannot refund ${order.status} orders. Only pending orders can be refunded.`);
+      // Allow refunds for pending, processing, fulfilled, and completed orders
+      const refundableStatuses = ['pending', 'processing', 'fulfilled', 'completed'];
+      if (!refundableStatuses.includes(order.status)) {
+        return errorResponse(ErrorCodes.VALIDATION_ERROR, `Cannot refund ${order.status} orders. Only pending, processing, fulfilled, or completed orders can be refunded.`);
       }
 
       // Check if order has any completed payments

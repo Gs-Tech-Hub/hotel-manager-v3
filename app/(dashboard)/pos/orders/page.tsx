@@ -98,16 +98,23 @@ export default function PosOrdersPage() {
                 if (data.success) {
                     // Calculate amountDue for each order (total - totalPaid, all in cents)
                     const processedOrders = (data.data.items || []).map((order: any) => {
-                        // Calculate totalPaid from payments array
-                        const totalPaid = (order.payments || []).reduce((sum: number, p: any) => {
+                        // Calculate totalPaid from payments array, but respect refunded status
+                        let totalPaid = (order.payments || []).reduce((sum: number, p: any) => {
                             return sum + (p.amount || 0);
                         }, 0);
+                        
+                        // If order is refunded, amountDue should be 0
+                        let amountDue = (order.total ?? 0) - totalPaid;
+                        if (order.paymentStatus === 'refunded' || order.status === 'refunded') {
+                            amountDue = 0;
+                            totalPaid = order.total ?? 0; // Mark as fully paid when refunded
+                        }
                         
                         return {
                             ...order,
                             total: order.total ?? 0, // in cents
                             totalPaid, // calculated in cents
-                            amountDue: (order.total ?? 0) - totalPaid, // in cents
+                            amountDue, // in cents
                         };
                     });
                     setOrders(processedOrders);
@@ -329,16 +336,21 @@ export default function PosOrdersPage() {
                 width: "w-28",
             },
             {
-                key: "amountDue",
-                label: "Due",
-                render: (_v, item) => {
-                    const due = item.amountDue ?? (item.total ?? 0);
-                    const isPaid = due <= 0;
-                    return (
-                        <span className={isPaid ? "text-green-600 font-semibold" : "text-red-600 font-semibold"}>
-                            {isPaid ? "✓ Paid" : formatCents(due, undefined, 'NGN')}
-                        </span>
-                    );
+                key: "paymentStatus",
+                label: "Payment",
+                render: (v) => {
+                    const status = String(v || "unpaid");
+                    const cls =
+                        status === "unpaid"
+                            ? "bg-red-100 text-red-800"
+                            : status === "partial"
+                            ? "bg-yellow-100 text-yellow-800"
+                            : status === "paid"
+                            ? "bg-green-100 text-green-800"
+                            : status === "refunded"
+                            ? "bg-purple-100 text-purple-800"
+                            : "bg-gray-100 text-gray-800";
+                    return <Badge className={cls}>{status}</Badge>;
                 },
                 width: "w-28",
             },
@@ -349,13 +361,14 @@ export default function PosOrdersPage() {
                     // amountDue is calculated in cents
                     const amountDueCents = item.amountDue ?? ((item.total ?? 0) - (item.totalPaid ?? 0));
                     const isUnpaid = amountDueCents > 0;
-                    const isPaid = item.paymentStatus === 'paid' || item.paymentStatus === 'partial';
+                    const isPaid = item.paymentStatus === 'paid' || item.paymentStatus === 'partial' || item.paymentStatus === 'completed';
+                    const isRefunded = item.paymentStatus === 'refunded' || item.status === 'refunded';
                     const isCancelledOrRefunded = item.status === 'cancelled' || item.status === 'refunded';
                     
                     // Determine which buttons to show
-                    const canPay = isUnpaid && !isCancelledOrRefunded;
+                    const canPay = isUnpaid && !isCancelledOrRefunded && !isRefunded;
                     const canAddItem = !isCancelledOrRefunded && item.status === 'pending';
-                    const canRefund = item.status === 'pending' && isPaid;
+                    const canRefund = item.status === 'pending' && isPaid && !isRefunded;
                     
                     return (
                         <div className="flex gap-2">

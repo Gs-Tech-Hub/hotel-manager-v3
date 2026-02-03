@@ -247,9 +247,9 @@ export default function OrderDetailPage() {
                         'bg-gray-100 text-gray-800';
     
     // Determine available actions
-    const canCancel = order.status === 'pending';
-    const canRefund = order.status === 'pending' && 
-                      (order.paymentStatus === 'paid' || order.paymentStatus === 'partial');
+    const canCancel = order.status === 'pending' || order.status === 'processing';
+    const canRefund = (order.status === 'pending' || order.status === 'processing' || order.status === 'fulfilled' || order.status === 'completed') && 
+                      (order.paymentStatus === 'paid' || order.paymentStatus === 'partial' || order.paymentStatus === 'completed');
 
     return (
         <div className="space-y-8">
