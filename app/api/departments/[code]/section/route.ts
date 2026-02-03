@@ -175,13 +175,18 @@ export async function GET(
       // Compute stats on the fly when date filters are active
       try {
         if (sectionRow && sectionRow.id) {
-          // Section: find orders via orderLine.departmentCode (which contains section ID)
+          // Section: find orders via orderLine.departmentSectionId (section ID field)
           const dateFilter = buildDateFilter(fromDate, toDate)
           
-          // Get distinct order header IDs for this section
+          // Get distinct order header IDs for this section (use departmentSectionId, not departmentCode)
           const sectionLines = await (prisma as any).orderLine.findMany({
             where: {
-              departmentCode: sectionRow.id,
+              departmentSectionId: sectionRow.id,
+              orderHeader: {
+                ...dateFilter,
+                // Exclude cancelled and refunded orders
+                status: { notIn: ['cancelled', 'refunded'] }
+              }
             },
             distinct: ['orderHeaderId'],
             select: { orderHeaderId: true },
@@ -193,6 +198,8 @@ export async function GET(
           const headerWhere: any = {
             id: { in: orderHeaderIds },
             ...dateFilter,
+            // Exclude cancelled and refunded orders
+            status: { notIn: ['cancelled', 'refunded'] }
           }
           
           // Count orders by status
@@ -247,12 +254,16 @@ export async function GET(
       // Fallback: compute stats on the fly by querying through OrderLine (no date filter)
       try {
         if (sectionRow && sectionRow.id) {
-          // Section: find orders via orderLine.departmentCode (which contains section ID)
+          // Section: find orders via orderLine.departmentSectionId (section ID field)
           
-          // Get distinct order header IDs for this section
+          // Get distinct order header IDs for this section (use departmentSectionId, not departmentCode)
           const sectionLines = await (prisma as any).orderLine.findMany({
             where: {
-              departmentCode: sectionRow.id,
+              departmentSectionId: sectionRow.id,
+              // Exclude cancelled and refunded orders
+              orderHeader: {
+                status: { notIn: ['cancelled', 'refunded'] }
+              }
             },
             distinct: ['orderHeaderId'],
             select: { orderHeaderId: true },

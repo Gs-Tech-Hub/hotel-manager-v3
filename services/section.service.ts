@@ -181,7 +181,7 @@ export class SectionService {
             return {
               ...m,
               unitsSold: sold?.quantity || 0,
-              amountSold: sold?.lineTotal ? Number(sold.lineTotal) : 0,
+              amountSold: (m.unitPrice * (sold?.quantity || 0)),
               pendingQuantity: (pendingMap.get(m.id) as any)?.quantity || (pendingMap.get(`menu-${m.id}`) as any)?.quantity || 0,
             }
           })
@@ -246,11 +246,10 @@ export class SectionService {
 
         mapped = mapped.map((m: any) => {
           const sold = (soldMap.get(m.id) as any) || (soldMap.get(`menu-${m.id}`) as any)
-          // amountSold is lineTotal from database (Decimal type)
           return {
             ...m,
             unitsSold: sold?.quantity || 0,
-            amountSold: sold?.lineTotal ? Number(sold.lineTotal) : 0,
+            amountSold: (m.unitPrice * (sold?.quantity || 0)),
             pendingQuantity: (pendingMap.get(m.id) as any)?.quantity || (pendingMap.get(`menu-${m.id}`) as any)?.quantity || 0,
           }
         })
@@ -347,7 +346,7 @@ export class SectionService {
             return {
               ...m,
               unitsSold: sold?.quantity || 0,
-              amountSold: sold?.lineTotal ? Number(sold.lineTotal) : 0,
+              amountSold: (m.unitPrice * (sold?.quantity || 0)),
               pendingQuantity: (pendingMap.get(m.id) as any)?.quantity || (pendingMap.get(`menu-${m.id}`) as any)?.quantity || 0,
             }
           })
@@ -416,11 +415,10 @@ export class SectionService {
 
         mapped = mapped.map((m: any) => {
           const sold = (soldMap.get(m.id) as any) || (soldMap.get(`menu-${m.id}`) as any)
-          // amountSold is lineTotal from database (Decimal type)
           return {
             ...m,
             unitsSold: sold?.quantity || 0,
-            amountSold: sold?.lineTotal ? Number(sold.lineTotal) : 0,
+            amountSold: (m.unitPrice * (sold?.quantity || 0)),
             pendingQuantity: (pendingMap.get(m.id) as any)?.quantity || (pendingMap.get(`menu-${m.id}`) as any)?.quantity || 0,
           }
         })
@@ -579,7 +577,7 @@ export class SectionService {
           return {
             ...m,
             unitsSold: sold?.quantity || 0,
-            amountSold: sold?.lineTotal ? Number(sold.lineTotal) : 0,
+            amountSold: (m.unitPrice * (sold?.quantity || 0)),
             pendingQuantity: pending?.quantity || 0,
             reservedQuantity: totalReserved,
           }
