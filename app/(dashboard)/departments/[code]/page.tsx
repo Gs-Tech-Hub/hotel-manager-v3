@@ -27,10 +27,13 @@ export default function DepartmentDetail() {
   // Date filter state - default to today
   const [sectionFromDate, setSectionFromDate] = useState<string | null>(getTodayDate())
   const [sectionToDate, setSectionToDate] = useState<string | null>(getTodayDate())
+  const [sectionStats, setSectionStats] = useState<any>(null)
+  const [statsLoading, setStatsLoading] = useState(false)
 
   // Modal states
   const [showCreateSection, setShowCreateSection] = useState(false)
   const [incomingModalOpen, setIncomingModalOpen] = useState(false)
+  const [showStatsModal, setShowStatsModal] = useState(false)
   const [pendingTransfers, setPendingTransfers] = useState<any[] | null>(null)
   const [loadingTransfers, setLoadingTransfers] = useState(false)
 
@@ -98,6 +101,36 @@ export default function DepartmentDetail() {
       fetchPendingTransfers(decodedCode)
     }
   }, [decodedCode])
+
+  // Fetch stats for selected date range
+  const fetchSectionStats = async (code: string, fromDate: string | null, toDate: string | null) => {
+    if (!fromDate || !toDate) return
+
+    setStatsLoading(true)
+    try {
+      const url = `/api/departments/${encodeURIComponent(code)}/stats?fromDate=${fromDate}&toDate=${toDate}`
+      const res = await fetch(url)
+      if (!res.ok) {
+        console.error('Failed to fetch stats:', res.statusText)
+        setSectionStats(null)
+        return
+      }
+      const j = await res.json() as any
+      setSectionStats(j.data?.stats || null)
+    } catch (e) {
+      console.error('fetchSectionStats error', e)
+      setSectionStats(null)
+    } finally {
+      setStatsLoading(false)
+    }
+  }
+
+  // Fetch stats when code or dates change
+  useEffect(() => {
+    if (decodedCode && decodedCode.includes(':') && sectionFromDate && sectionToDate) {
+      fetchSectionStats(decodedCode, sectionFromDate, sectionToDate)
+    }
+  }, [decodedCode, sectionFromDate, sectionToDate])
 
   const markReceived = async (id: string) => {
     try {
@@ -179,32 +212,27 @@ export default function DepartmentDetail() {
       {/* Section/sub-department view */}
       {decodedCode.includes(':') && !error && (
         <>
-          {/* Date Range Filter */}
-          <div className="mb-4">
-            <DateRangeFilter
-              onDateChange={(from, to) => {
-                setSectionFromDate(from)
-                setSectionToDate(to)
-              }}
-              defaultFromDate={sectionFromDate}
-              defaultToDate={sectionToDate}
-            />
+          {/* Date Range Filter + Stats Button */}
+          <div className="mb-4 flex items-center justify-between gap-4">
+            <div className="flex-1">
+              <DateRangeFilter
+                onDateChange={(from, to) => {
+                  setSectionFromDate(from)
+                  setSectionToDate(to)
+                }}
+                defaultFromDate={sectionFromDate}
+                defaultToDate={sectionToDate}
+              />
+            </div>
+            {sectionStats && (
+              <button
+                onClick={() => setShowStatsModal(true)}
+                className="px-4 py-2 bg-blue-600 text-white rounded hover:bg-blue-700 text-sm font-medium"
+              >
+                📊 View Stats
+              </button>
+            )}
           </div>
-
-          {/* Order Stats Card */}
-          {department?.metadata?.sectionStats && (
-            <OrderStatsCard
-              totalOrders={department.metadata.sectionStats.totalOrders ?? 0}
-              pendingOrders={department.metadata.sectionStats.pendingOrders ?? 0}
-              processingOrders={
-                department.metadata.sectionStats.processingOrders ?? 0
-              }
-              fulfilledOrders={department.metadata.sectionStats.fulfilledOrders ?? 0}
-              amountFulfilled={department.metadata.sectionStats.amountFulfilled ?? 0}
-              amountPaid={department.metadata.sectionStats.amountPaid ?? 0}
-              totalAmount={department.metadata.sectionStats.totalAmount ?? 0}
-            />
-          )}
 
           {/* Products Section */}
           <SectionProductsView
@@ -253,6 +281,29 @@ export default function DepartmentDetail() {
         onClose={() => setShowCreateSection(false)}
         onSubmit={handleCreateSection}
       />
+
+      {/* Stats Modal */}
+      {showStatsModal && sectionStats && (
+        <div className="fixed inset-0 z-50 bg-black/50 flex items-center justify-center p-4">
+          <div className="bg-white rounded-lg max-w-2xl w-full max-h-[90vh] overflow-auto">
+            <div className="sticky top-0 bg-white border-b p-4 flex items-center justify-between">
+              <h2 className="text-lg font-semibold">Order Statistics</h2>
+              <button
+                onClick={() => setShowStatsModal(false)}
+                className="text-gray-400 hover:text-gray-600 text-xl"
+              >
+                ✕
+              </button>
+            </div>
+            <div className="p-6">
+              <OrderStatsCard
+                unpaidStats={sectionStats.unpaid}
+                paidStats={sectionStats.paid}
+              />
+            </div>
+          </div>
+        </div>
+      )}
 
       <IncomingTransfersModal
         isOpen={incomingModalOpen}

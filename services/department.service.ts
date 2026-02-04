@@ -236,21 +236,27 @@ export class DepartmentService extends BaseService<IDepartment> {
   }
 
   /**
-  /**
    * Recalculate stats for a section (scoped by departmentSectionId)
    * Updates the section's metadata with stats, and parent's with aggregated rollup
+   * @param departmentCode - Department code
+   * @param sectionId - Optional section ID (if provided, calculates for section; else for department)
+   * @param fromDate - Optional start date (YYYY-MM-DD format); defaults to today
+   * @param toDate - Optional end date (YYYY-MM-DD format); defaults to today
+   * @param tx - Optional transaction client
    */
-  async recalculateSectionStats(departmentCode: string, sectionId?: string, tx?: any) {
+  async recalculateSectionStats(departmentCode: string, sectionId?: string, fromDate?: string, toDate?: string, tx?: any) {
     try {
       const client = tx || prisma;
 
-      // Filter to current date only
-      const today = getTodayDate();
-      const dateFilter = buildDateFilter(today, today);
+      // Use provided dates or default to today
+      const defaultDate = getTodayDate();
+      const dateFrom = fromDate || defaultDate;
+      const dateTo = toDate || defaultDate;
+      const dateFilter = buildDateFilter(dateFrom, dateTo);
 
       // If sectionId provided, calculate stats for that specific section
       // Otherwise, calculate for department level (for backward compatibility)
-      const where: any = { 
+      const baseWhere: any = { 
         departmentCode, 
         orderHeader: {
           ...dateFilter,
@@ -259,103 +265,144 @@ export class DepartmentService extends BaseService<IDepartment> {
         }
       };
       if (sectionId) {
-        where.departmentSectionId = sectionId;
+        baseWhere.departmentSectionId = sectionId;
       }
 
-      // Basic aggregates scoped to this department section (by sectionId or departmentCode)
-      // Count DISTINCT orders that have lines for this department section (excluding cancelled/refunded lines)
-      const [totalOrderIds, pendingLineIds, processingLineIds, fulfilledLineIds] = await Promise.all([
-        client.orderLine.findMany({
-          where: { ...where, status: { notIn: ['cancelled', 'refunded'] } },
-          distinct: ['orderHeaderId'],
-          select: { orderHeaderId: true },
-        }),
-        client.orderLine.count({ where: { ...where, status: 'pending' } }),
-        client.orderLine.count({ where: { ...where, status: 'processing' } }),
-        client.orderLine.count({ where: { ...where, status: 'fulfilled' } }),
-      ]);
-
-      const totalOrders = totalOrderIds.length;
-      const pendingOrders = pendingLineIds;
-      const processingOrders = processingLineIds;
-      const fulfilledOrders = fulfilledLineIds;
-
-      const totalUnitsRes: any = await client.orderLine.aggregate({ _sum: { quantity: true }, where: { ...where, status: { notIn: ['cancelled', 'refunded'] } } });
-      const fulfilledUnitsRes: any = await client.orderLine.aggregate({ _sum: { quantity: true }, where: { ...where, status: 'fulfilled' } });
-      
-      // Amount fulfilled: ALL fulfilled items regardless of payment status
-      const amountFulfilledRes: any = await client.orderLine.aggregate({ 
-        _sum: { lineTotal: true }, 
-        where: { ...where, status: 'fulfilled' } 
-      });
-
-      const totalUnits = totalUnitsRes._sum.quantity || 0;
-      const fulfilledUnits = fulfilledUnitsRes._sum.quantity || 0;
-      const amountFulfilled = amountFulfilledRes._sum.lineTotal || 0;
-      
-      // Amount paid: sum of all payments made TODAY for orders that have lines in this department/section
-      // First, find ALL orders (past and present) that have lines for this department/section (excluding cancelled/refunded lines)
-      const departmentLineWhere: any = {
-        departmentCode,
-        status: { notIn: ['cancelled', 'refunded'] },
+      // ============ UNPAID ORDERS (paymentStatus = 'unpaid') ============
+      const unpaidWhere = {
+        ...baseWhere,
         orderHeader: {
-          status: { notIn: ['cancelled', 'refunded'] }
+          ...baseWhere.orderHeader,
+          paymentStatus: 'unpaid'
         }
       };
-      if (sectionId) {
-        departmentLineWhere.departmentSectionId = sectionId;
-      }
 
-      const orderIdsForDept = await client.orderLine.findMany({
-        where: departmentLineWhere,
+      const unpaidTotalOrderIds = await client.orderLine.findMany({
+        where: { ...unpaidWhere, status: { notIn: ['cancelled', 'refunded'] } },
         distinct: ['orderHeaderId'],
         select: { orderHeaderId: true },
       });
       
-      // Build payment where clause: payments made TODAY for any orders in this department
-      const paymentWhere: any = {
-        orderHeaderId: { in: orderIdsForDept.map((o: any) => o.orderHeaderId) },
-        paymentStatus: 'completed',
-      };
-      
-      // Filter payments by date created TODAY (regardless of when order was created)
-      if (dateFilter.createdAt) {
-        paymentWhere.createdAt = dateFilter.createdAt;
-      } else {
-        // No date filter: use today's date
-        const todayStart = getTodayDate();
-        const { getEndOfLocalDay } = await import('@/lib/date-filter');
-        const todayEnd = getEndOfLocalDay(todayStart);
-        paymentWhere.createdAt = {
-          gte: new Date(todayStart),
-          lte: todayEnd,
-        };
-      }
-      
-      const amountPaidRes: any = await client.orderPayment.aggregate({
-        _sum: { amount: true },
-        where: paymentWhere,
+      const unpaidPendingCount = await client.orderLine.count({ where: { ...unpaidWhere, status: 'pending' } });
+      const unpaidProcessingCount = await client.orderLine.count({ where: { ...unpaidWhere, status: 'processing' } });
+      const unpaidFulfilledCount = await client.orderLine.count({ where: { ...unpaidWhere, status: 'fulfilled' } });
+
+      const unpaidTotalUnitsRes: any = await client.orderLine.aggregate({ 
+        _sum: { quantity: true }, 
+        where: { ...unpaidWhere, status: { notIn: ['cancelled', 'refunded'] } } 
       });
-      
-      const amountPaid = amountPaidRes._sum.amount || 0;
+      const unpaidFulfilledUnitsRes: any = await client.orderLine.aggregate({ 
+        _sum: { quantity: true }, 
+        where: { ...unpaidWhere, status: 'fulfilled' } 
+      });
+      const unpaidAmountRes: any = await client.orderLine.aggregate({ 
+        _sum: { lineTotal: true }, 
+        where: { ...unpaidWhere, status: { notIn: ['cancelled', 'refunded'] } } 
+      });
 
-      // Validate amounts are in cents (integers)
-      validatePrice(amountFulfilled, `${sectionId ? 'sectionStats' : 'deptStats'} amountFulfilled for ${departmentCode}`);
-      validatePrice(amountPaid, `${sectionId ? 'sectionStats' : 'deptStats'} amountPaid for ${departmentCode}`);
-
-      const stats = {
-        totalOrders,
-        pendingOrders,
-        processingOrders,
-        fulfilledOrders,
-        totalUnits,
-        fulfilledUnits,
-        amountFulfilled,      // All fulfilled items regardless of payment
-        amountPaid,             // Only items with payment made
-        totalAmount: amountPaid, // Legacy key for backward compatibility
-        fulfillmentRate: totalUnits > 0 ? Math.round((fulfilledUnits / totalUnits) * 100) : 0,
+      const unpaidStats = {
+        totalOrders: unpaidTotalOrderIds.length,
+        pendingOrders: unpaidPendingCount,
+        processingOrders: unpaidProcessingCount,
+        fulfilledOrders: unpaidFulfilledCount,
+        totalUnits: unpaidTotalUnitsRes._sum.quantity || 0,
+        fulfilledUnits: unpaidFulfilledUnitsRes._sum.quantity || 0,
+        totalAmount: unpaidAmountRes._sum.lineTotal || 0, // Total amount for unpaid orders
+        fulfillmentRate: (unpaidTotalUnitsRes._sum.quantity || 0) > 0 
+          ? Math.round(((unpaidFulfilledUnitsRes._sum.quantity || 0) / (unpaidTotalUnitsRes._sum.quantity || 0)) * 100) 
+          : 0,
         updatedAt: new Date(),
       };
+
+      validatePrice(unpaidStats.totalAmount, `${sectionId ? 'sectionStats.unpaid' : 'deptStats.unpaid'} totalAmount for ${departmentCode}`);
+
+      // ============ PAID ORDERS (paymentStatus = 'paid' OR 'partial') ============
+      const paidWhere = {
+        ...baseWhere,
+        orderHeader: {
+          ...baseWhere.orderHeader,
+          paymentStatus: { in: ['paid', 'partial'] }
+        }
+      };
+
+      const paidTotalOrderIds = await client.orderLine.findMany({
+        where: { ...paidWhere, status: { notIn: ['cancelled', 'refunded'] } },
+        distinct: ['orderHeaderId'],
+        select: { orderHeaderId: true },
+      });
+
+      const paidPendingCount = await client.orderLine.count({ where: { ...paidWhere, status: 'pending' } });
+      const paidProcessingCount = await client.orderLine.count({ where: { ...paidWhere, status: 'processing' } });
+      const paidFulfilledCount = await client.orderLine.count({ where: { ...paidWhere, status: 'fulfilled' } });
+
+      const paidTotalUnitsRes: any = await client.orderLine.aggregate({ 
+        _sum: { quantity: true }, 
+        where: { ...paidWhere, status: { notIn: ['cancelled', 'refunded'] } } 
+      });
+      const paidFulfilledUnitsRes: any = await client.orderLine.aggregate({ 
+        _sum: { quantity: true }, 
+        where: { ...paidWhere, status: 'fulfilled' } 
+      });
+      const paidAmountRes: any = await client.orderLine.aggregate({ 
+        _sum: { lineTotal: true }, 
+        where: { ...paidWhere, status: { notIn: ['cancelled', 'refunded'] } } 
+      });
+
+      const paidStats = {
+        totalOrders: paidTotalOrderIds.length,
+        pendingOrders: paidPendingCount,
+        processingOrders: paidProcessingCount,
+        fulfilledOrders: paidFulfilledCount,
+        totalUnits: paidTotalUnitsRes._sum.quantity || 0,
+        fulfilledUnits: paidFulfilledUnitsRes._sum.quantity || 0,
+        totalAmount: paidAmountRes._sum.lineTotal || 0, // Total amount for paid orders
+        amountFulfilled: paidFulfilledUnitsRes._sum.quantity || 0, // Fulfilled units in paid orders
+        fulfillmentRate: (paidTotalUnitsRes._sum.quantity || 0) > 0 
+          ? Math.round(((paidFulfilledUnitsRes._sum.quantity || 0) / (paidTotalUnitsRes._sum.quantity || 0)) * 100) 
+          : 0,
+        updatedAt: new Date(),
+      };
+
+      validatePrice(paidStats.totalAmount, `${sectionId ? 'sectionStats.paid' : 'deptStats.paid'} totalAmount for ${departmentCode}`);
+
+      const stats = {
+        unpaid: unpaidStats,
+        paid: paidStats,
+        updatedAt: new Date(),
+      };
+
+      // Log aggregated data for verification
+      console.log(`[recalculateSectionStats] ${sectionId ? `Section ${sectionId}` : `Department ${departmentCode}`} Stats:`, {
+        unpaid: {
+          totalOrders: unpaidStats.totalOrders,
+          pendingOrders: unpaidStats.pendingOrders,
+          processingOrders: unpaidStats.processingOrders,
+          fulfilledOrders: unpaidStats.fulfilledOrders,
+          totalUnits: unpaidStats.totalUnits,
+          fulfilledUnits: unpaidStats.fulfilledUnits,
+          totalAmount: unpaidStats.totalAmount,
+          fulfillmentRate: unpaidStats.fulfillmentRate,
+        },
+        paid: {
+          totalOrders: paidStats.totalOrders,
+          pendingOrders: paidStats.pendingOrders,
+          processingOrders: paidStats.processingOrders,
+          fulfilledOrders: paidStats.fulfilledOrders,
+          totalUnits: paidStats.totalUnits,
+          fulfilledUnits: paidStats.fulfilledUnits,
+          totalAmount: paidStats.totalAmount,
+          fulfillmentRate: paidStats.fulfillmentRate,
+        },
+        aggregated: {
+          totalOrders: unpaidStats.totalOrders + paidStats.totalOrders,
+          totalPending: unpaidStats.pendingOrders + paidStats.pendingOrders,
+          totalProcessing: unpaidStats.processingOrders + paidStats.processingOrders,
+          totalFulfilled: unpaidStats.fulfilledOrders + paidStats.fulfilledOrders,
+          totalUnits: unpaidStats.totalUnits + paidStats.totalUnits,
+          totalFulfilledUnits: unpaidStats.fulfilledUnits + paidStats.fulfilledUnits,
+          totalAmount: unpaidStats.totalAmount + paidStats.totalAmount,
+        },
+      });
 
       // If sectionId provided, update the SECTION's metadata
       if (sectionId) {
@@ -423,8 +470,18 @@ export class DepartmentService extends BaseService<IDepartment> {
         if (stats) sectionStatsList.push({ code: s.code, id: s.id, stats });
       }
 
-      // Sum stats across sections
-      const rollup = {
+      // Sum stats across sections, separating unpaid and paid
+      const unpaidRollup = {
+        totalOrders: 0,
+        pendingOrders: 0,
+        processingOrders: 0,
+        fulfilledOrders: 0,
+        totalUnits: 0,
+        fulfilledUnits: 0,
+        totalAmount: 0,
+      };
+
+      const paidRollup = {
         totalOrders: 0,
         pendingOrders: 0,
         processingOrders: 0,
@@ -436,32 +493,104 @@ export class DepartmentService extends BaseService<IDepartment> {
 
       for (const s of sectionStatsList) {
         const st = s.stats as any;
-        rollup.totalOrders += Number(st.totalOrders || st.total || 0);
-        rollup.pendingOrders += Number(st.pendingOrders || st.pending || 0);
-        rollup.processingOrders += Number(st.processingOrders || st.processing || 0);
-        rollup.fulfilledOrders += Number(st.fulfilledOrders || st.fulfilled || 0);
-        rollup.totalUnits += Number(st.totalUnits || 0);
-        rollup.fulfilledUnits += Number(st.fulfilledUnits || 0);
-        rollup.totalAmount += Number(st.totalAmount || st.amount || 0);
+        
+        // Aggregate unpaid stats
+        if (st.unpaid) {
+          const u = st.unpaid;
+          unpaidRollup.totalOrders += Number(u.totalOrders || 0);
+          unpaidRollup.pendingOrders += Number(u.pendingOrders || 0);
+          unpaidRollup.processingOrders += Number(u.processingOrders || 0);
+          unpaidRollup.fulfilledOrders += Number(u.fulfilledOrders || 0);
+          unpaidRollup.totalUnits += Number(u.totalUnits || 0);
+          unpaidRollup.fulfilledUnits += Number(u.fulfilledUnits || 0);
+          unpaidRollup.totalAmount += Number(u.totalAmount || 0);
+        }
+
+        // Aggregate paid stats
+        if (st.paid) {
+          const p = st.paid;
+          paidRollup.totalOrders += Number(p.totalOrders || 0);
+          paidRollup.pendingOrders += Number(p.pendingOrders || 0);
+          paidRollup.processingOrders += Number(p.processingOrders || 0);
+          paidRollup.fulfilledOrders += Number(p.fulfilledOrders || 0);
+          paidRollup.totalUnits += Number(p.totalUnits || 0);
+          paidRollup.fulfilledUnits += Number(p.fulfilledUnits || 0);
+          paidRollup.totalAmount += Number(p.totalAmount || 0);
+        }
+
+        // Backward compatibility: if old format stats exist
+        if (st.totalOrders !== undefined && !st.unpaid && !st.paid) {
+          // Assume old format is paid stats
+          paidRollup.totalOrders += Number(st.totalOrders || 0);
+          paidRollup.pendingOrders += Number(st.pendingOrders || 0);
+          paidRollup.processingOrders += Number(st.processingOrders || 0);
+          paidRollup.fulfilledOrders += Number(st.fulfilledOrders || 0);
+          paidRollup.totalUnits += Number(st.totalUnits || 0);
+          paidRollup.fulfilledUnits += Number(st.fulfilledUnits || 0);
+          paidRollup.totalAmount += Number(st.totalAmount || st.amount || 0);
+        }
       }
 
-      const fulfillmentRate = rollup.totalUnits > 0 ? Math.round((rollup.fulfilledUnits / rollup.totalUnits) * 100) : 0;
+      const unpaidFulfillmentRate = unpaidRollup.totalUnits > 0 ? Math.round((unpaidRollup.fulfilledUnits / unpaidRollup.totalUnits) * 100) : 0;
+      const paidFulfillmentRate = paidRollup.totalUnits > 0 ? Math.round((paidRollup.fulfilledUnits / paidRollup.totalUnits) * 100) : 0;
 
-      const parentStats = {
-        total: rollup.totalOrders,
-        pending: rollup.pendingOrders,
-        processing: rollup.processingOrders,
-        fulfilled: rollup.fulfilledOrders,
-        totalUnits: rollup.totalUnits,
-        fulfilledUnits: rollup.fulfilledUnits,
-        totalAmount: rollup.totalAmount,
-        fulfillmentRate,
+      const unpaidParentStats = {
+        ...unpaidRollup,
+        fulfillmentRate: unpaidFulfillmentRate,
         updatedAt: new Date(),
       };
 
-      // Merge into parent metadata
+      const paidParentStats = {
+        ...paidRollup,
+        fulfillmentRate: paidFulfillmentRate,
+        updatedAt: new Date(),
+      };
+
+      // Log rollup results for verification
+      console.log(`[rollupParentStats] Department ${departmentCode} Rollup:`, {
+        sectionCount: sectionStatsList.length,
+        unpaidRollup: {
+          totalOrders: unpaidRollup.totalOrders,
+          pendingOrders: unpaidRollup.pendingOrders,
+          processingOrders: unpaidRollup.processingOrders,
+          fulfilledOrders: unpaidRollup.fulfilledOrders,
+          totalUnits: unpaidRollup.totalUnits,
+          fulfilledUnits: unpaidRollup.fulfilledUnits,
+          totalAmount: unpaidRollup.totalAmount,
+          fulfillmentRate: unpaidFulfillmentRate,
+        },
+        paidRollup: {
+          totalOrders: paidRollup.totalOrders,
+          pendingOrders: paidRollup.pendingOrders,
+          processingOrders: paidRollup.processingOrders,
+          fulfilledOrders: paidRollup.fulfilledOrders,
+          totalUnits: paidRollup.totalUnits,
+          fulfilledUnits: paidRollup.fulfilledUnits,
+          totalAmount: paidRollup.totalAmount,
+          fulfillmentRate: paidFulfillmentRate,
+        },
+        combined: {
+          totalOrders: unpaidRollup.totalOrders + paidRollup.totalOrders,
+          totalPending: unpaidRollup.pendingOrders + paidRollup.pendingOrders,
+          totalProcessing: unpaidRollup.processingOrders + paidRollup.processingOrders,
+          totalFulfilled: unpaidRollup.fulfilledOrders + paidRollup.fulfilledOrders,
+          totalUnits: unpaidRollup.totalUnits + paidRollup.totalUnits,
+          totalFulfilledUnits: unpaidRollup.fulfilledUnits + paidRollup.fulfilledUnits,
+          totalAmount: unpaidRollup.totalAmount + paidRollup.totalAmount,
+        },
+      });
+
+      // Merge into parent metadata with split stats
       const existingMeta = (parent.metadata as any) || {};
-      const merged = { ...existingMeta, stats: parentStats, sectionRollups: sectionStatsList };
+      const merged = { 
+        ...existingMeta, 
+        stats: {
+          unpaid: unpaidParentStats,
+          paid: paidParentStats,
+          updatedAt: new Date(),
+        },
+        sectionRollups: sectionStatsList 
+      };
       await client.department.update({ where: { id: parent.id }, data: { metadata: merged } });
     } catch (error) {
       try { const logger = await import('@/lib/logger'); logger.error(error, { context: 'rollupParentStats' }); } catch {}
