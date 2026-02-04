@@ -747,22 +747,38 @@ export class OrderService extends BaseService<IOrderHeader> {
 
           // Update department section metadata for departments that initiated this transaction
           try {
-            const involvedDeptCodes = Array.from(new Set(lines.map((l: any) => l.departmentCode)));
-            for (const deptCode of involvedDeptCodes) {
-              if (!deptCode) continue;
+            // Map department codes to their sections for accurate tracking
+            const deptSectionsMap = new Map<string, Set<string | null>>();
+            for (const line of lines) {
+              if (line.departmentCode) {
+                if (!deptSectionsMap.has(line.departmentCode)) {
+                  deptSectionsMap.set(line.departmentCode, new Set());
+                }
+                deptSectionsMap.get(line.departmentCode)?.add(line.departmentSectionId);
+              }
+            }
+
+            for (const [deptCode, sectionIds] of deptSectionsMap.entries()) {
               const dept = await tx.department.findUnique({ where: { code: deptCode } });
               if (!dept) continue;
 
               const existingMeta = (dept.metadata as any) || {};
+              const lastTransactionData: any = {
+                orderId: orderId,
+                paymentId: payment.id,
+                amount: amount,
+                initiatedBy: (ctx as any)?.userId || null,
+                at: new Date(),
+              };
+
+              // Include section information if sections are involved
+              if (sectionIds.size > 0 && Array.from(sectionIds).some(s => s !== null)) {
+                lastTransactionData.sections = Array.from(sectionIds).filter(s => s !== null);
+              }
+
               const mergedMeta = {
                 ...existingMeta,
-                lastTransaction: {
-                  orderId: orderId,
-                  paymentId: payment.id,
-                  amount: amount,
-                  initiatedBy: (ctx as any)?.userId || null,
-                  at: new Date(),
-                },
+                lastTransaction: lastTransactionData,
               };
 
               await tx.department.update({ where: { id: dept.id }, data: { metadata: mergedMeta } });
@@ -805,9 +821,40 @@ export class OrderService extends BaseService<IOrderHeader> {
           await tx.inventoryReservation.updateMany({ where: { orderHeaderId: orderId, status: 'reserved' }, data: { status: 'consumed', confirmedAt: new Date() } });
         }, { maxWait: 15000, timeout: 15000 }); // Increased from default 5000ms to 15000ms
 
-        // NOTE: Stats are NOT recalculated on payment
-        // Stats only update when items are actually FULFILLED (via fulfillment endpoint)
-        // This ensures amountPaid and amountFulfilled metrics only reflect completed items
+        // Recalculate section stats OUTSIDE transaction - happens after payment is committed
+        // This keeps the transaction fast while ensuring stats are updated asynchronously
+        // Add 100ms delay to ensure payment record is fully committed to DB before stats recalc
+        setImmediate(async () => {
+          try {
+            // Small delay to ensure DB write is complete
+            await new Promise(resolve => setTimeout(resolve, 100));
+            
+            const lines = await prisma.orderLine.findMany({ where: { orderHeaderId: orderId } });
+            // Map department codes to their sections to ensure section-level stats are updated
+            const deptSectionsMap = new Map<string, Set<string | null>>();
+            for (const line of lines) {
+              if (line.departmentCode) {
+                if (!deptSectionsMap.has(line.departmentCode)) {
+                  deptSectionsMap.set(line.departmentCode, new Set());
+                }
+                deptSectionsMap.get(line.departmentCode)?.add(line.departmentSectionId);
+              }
+            }
+
+            // Update stats for each department and its sections
+            for (const [code, sectionIds] of deptSectionsMap.entries()) {
+              for (const sectionId of sectionIds) {
+                // Convert null to undefined for function signature compatibility
+                const sectionIdArg = sectionId === null ? undefined : sectionId;
+                await departmentService.recalculateSectionStats(code as string, sectionIdArg);
+              }
+              // Roll up to parent after all sections are updated
+              await departmentService.rollupParentStats(code);
+            }
+          } catch (e) {
+            try { const logger = await import('@/lib/logger'); logger.error(e, { context: 'recalculateSectionStats.recordPayment' }); } catch {}
+          }
+        });
       } else if (totalPayments > 0) {
         // Partially paid: update payment status to 'partial'
         await prisma.orderHeader.update({

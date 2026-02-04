@@ -293,21 +293,48 @@ export class DepartmentService extends BaseService<IDepartment> {
       const fulfilledUnits = fulfilledUnitsRes._sum.quantity || 0;
       const amountFulfilled = amountFulfilledRes._sum.lineTotal || 0;
       
-      // Amount paid: sum of all payments made today for orders that have lines in this department/section
-      // Find all orders that have lines for this department (excluding cancelled/refunded)
+      // Amount paid: sum of all payments made TODAY for orders that have lines in this department/section
+      // First, find ALL orders (past and present) that have lines for this department/section (excluding cancelled/refunded lines)
+      const departmentLineWhere: any = {
+        departmentCode,
+        status: { notIn: ['cancelled', 'refunded'] },
+        orderHeader: {
+          status: { notIn: ['cancelled', 'refunded'] }
+        }
+      };
+      if (sectionId) {
+        departmentLineWhere.departmentSectionId = sectionId;
+      }
+
       const orderIdsForDept = await client.orderLine.findMany({
-        where: { ...where, status: { notIn: ['cancelled', 'refunded'] } },
+        where: departmentLineWhere,
         distinct: ['orderHeaderId'],
         select: { orderHeaderId: true },
       });
       
+      // Build payment where clause: payments made TODAY for any orders in this department
+      const paymentWhere: any = {
+        orderHeaderId: { in: orderIdsForDept.map((o: any) => o.orderHeaderId) },
+        paymentStatus: 'completed',
+      };
+      
+      // Filter payments by date created TODAY (regardless of when order was created)
+      if (dateFilter.createdAt) {
+        paymentWhere.createdAt = dateFilter.createdAt;
+      } else {
+        // No date filter: use today's date
+        const todayStart = getTodayDate();
+        const { getEndOfLocalDay } = await import('@/lib/date-filter');
+        const todayEnd = getEndOfLocalDay(todayStart);
+        paymentWhere.createdAt = {
+          gte: new Date(todayStart),
+          lte: todayEnd,
+        };
+      }
+      
       const amountPaidRes: any = await client.orderPayment.aggregate({
         _sum: { amount: true },
-        where: {
-          orderHeaderId: { in: orderIdsForDept.map((o: any) => o.orderHeaderId) },
-          paymentStatus: 'completed',
-          createdAt: dateFilter.createdAt || { gte: new Date() }, // Filter by payment creation date (today)
-        },
+        where: paymentWhere,
       });
       
       const amountPaid = amountPaidRes._sum.amount || 0;
