@@ -25,31 +25,6 @@ export default function PosIndexPage() {
                         </div>
                     </CardContent>
                 </Card>
-
-                <Card>
-                    <CardHeader>
-                        <CardTitle className="flex items-center gap-2"><Utensils className="h-4 w-4" /> Food Menu</CardTitle>
-                    </CardHeader>
-                    <CardContent>
-                        <p className="text-sm text-muted-foreground">Manage food items and inventory for the restaurant.</p>
-                        <div className="mt-4">
-                            <Link href="/pos/food"><Button>Food Menu</Button></Link>
-                        </div>
-                    </CardContent>
-                </Card>
-
-                <Card>
-                    <CardHeader>
-                        <CardTitle className="flex items-center gap-2"><Coffee className="h-4 w-4" /> Drinks</CardTitle>
-                    </CardHeader>
-                    <CardContent>
-                        <p className="text-sm text-muted-foreground">Manage drinks, bar menus and inventory.</p>
-                        <div className="mt-4">
-                            <Link href="/pos/drinks"><Button>Drinks</Button></Link>
-                        </div>
-                    </CardContent>
-                </Card>
-
                 <Card>
                     <CardHeader>
                         <CardTitle className="flex items-center gap-2"><BarChart3 className="h-4 w-4" /> Reports</CardTitle>

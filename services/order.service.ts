@@ -746,24 +746,31 @@ export class OrderService extends BaseService<IOrderHeader> {
           const lines = await tx.orderLine.findMany({ where: { orderHeaderId: orderId } });
 
           // Update department section metadata for departments that initiated this transaction
-          try {
-            // Map department codes to their sections for accurate tracking
-            const deptSectionsMap = new Map<string, Set<string | null>>();
-            for (const line of lines) {
-              if (line.departmentCode) {
-                if (!deptSectionsMap.has(line.departmentCode)) {
-                  deptSectionsMap.set(line.departmentCode, new Set());
-                }
-                deptSectionsMap.get(line.departmentCode)?.add(line.departmentSectionId);
+          // CRITICAL: Section metadata updates MUST succeed; transaction fails if any section update fails
+          const deptSectionsMap = new Map<string, Set<string | null>>();
+          for (const line of lines) {
+            if (line.departmentCode) {
+              if (!deptSectionsMap.has(line.departmentCode)) {
+                deptSectionsMap.set(line.departmentCode, new Set());
               }
+              deptSectionsMap.get(line.departmentCode)?.add(line.departmentSectionId);
             }
+          }
 
-            for (const [deptCode, sectionIds] of deptSectionsMap.entries()) {
-              const dept = await tx.department.findUnique({ where: { code: deptCode } });
-              if (!dept) continue;
+          // Update each section with transaction metadata; fail if any section cannot be updated
+          for (const [deptCode, sectionIds] of deptSectionsMap.entries()) {
+            for (const sectionId of sectionIds) {
+              if (!sectionId) {
+                throw new Error(`Payment cannot be processed: order has line items without section assignment in department ${deptCode}`);
+              }
 
-              const existingMeta = (dept.metadata as any) || {};
-              const lastTransactionData: any = {
+              const section = await tx.departmentSection.findUnique({ where: { id: sectionId } });
+              if (!section) {
+                throw new Error(`Section not found for ID ${sectionId} in department ${deptCode}`);
+              }
+
+              const existingMeta = (section.metadata as any) || {};
+              const lastTransactionData = {
                 orderId: orderId,
                 paymentId: payment.id,
                 amount: amount,
@@ -771,21 +778,17 @@ export class OrderService extends BaseService<IOrderHeader> {
                 at: new Date(),
               };
 
-              // Include section information if sections are involved
-              if (sectionIds.size > 0 && Array.from(sectionIds).some(s => s !== null)) {
-                lastTransactionData.sections = Array.from(sectionIds).filter(s => s !== null);
-              }
-
               const mergedMeta = {
                 ...existingMeta,
                 lastTransaction: lastTransactionData,
               };
 
-              await tx.department.update({ where: { id: dept.id }, data: { metadata: mergedMeta } });
+              // Update section metadata; failure here fails the entire transaction
+              await tx.departmentSection.update({
+                where: { id: sectionId },
+                data: { metadata: mergedMeta },
+              });
             }
-          } catch (metaErr) {
-            // Do not fail the whole payment processing if metadata update fails; log and continue
-            try { const logger = await import('@/lib/logger'); logger.error(metaErr, { context: 'updateDepartmentMetadata' }); } catch {}
           }
 
           const movementRows: any[] = [];
@@ -831,9 +834,9 @@ export class OrderService extends BaseService<IOrderHeader> {
             
             const lines = await prisma.orderLine.findMany({ where: { orderHeaderId: orderId } });
             // Map department codes to their sections to ensure section-level stats are updated
-            const deptSectionsMap = new Map<string, Set<string | null>>();
+            const deptSectionsMap = new Map<string, Set<string>>();
             for (const line of lines) {
-              if (line.departmentCode) {
+              if (line.departmentCode && line.departmentSectionId) {
                 if (!deptSectionsMap.has(line.departmentCode)) {
                   deptSectionsMap.set(line.departmentCode, new Set());
                 }
@@ -841,12 +844,10 @@ export class OrderService extends BaseService<IOrderHeader> {
               }
             }
 
-            // Update stats for each department and its sections
+            // Update stats for each department's sections only (no parent fallback)
             for (const [code, sectionIds] of deptSectionsMap.entries()) {
               for (const sectionId of sectionIds) {
-                // Convert null to undefined for function signature compatibility
-                const sectionIdArg = sectionId === null ? undefined : sectionId;
-                await departmentService.recalculateSectionStats(code as string, sectionIdArg);
+                await departmentService.recalculateSectionStats(code as string, sectionId);
               }
               // Roll up to parent after all sections are updated
               await departmentService.rollupParentStats(code);
