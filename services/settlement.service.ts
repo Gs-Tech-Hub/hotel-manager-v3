@@ -76,6 +76,8 @@ export class SettlementService extends BaseService<any> {
 
   /**
    * Record payment for a deferred order
+   * CRITICAL: Section metadata updates MUST succeed; payment fails if any section update fails
+   * Order status only moves to "processing" if BOTH payment AND section updates succeed
    */
   async recordPayment(orderId: string, payment: {
     amount: number;
@@ -84,12 +86,13 @@ export class SettlementService extends BaseService<any> {
     notes?: string;
   }) {
     try {
-      // Fetch order
+      // Fetch order with all related data including lines for section mapping
       const order = await prisma.orderHeader.findUnique({
         where: { id: orderId },
         include: {
           payments: true,
           customer: true,
+          lines: true,
         },
       });
 
@@ -113,6 +116,22 @@ export class SettlementService extends BaseService<any> {
         throw new Error(`Payment exceeds amount due: ${payment.amount} > ${amountDue}`);
       }
 
+      // Map order lines to sections; FAIL if any line lacks section assignment
+      const deptSectionsMap = new Map<string, Set<string>>();
+      for (const line of order.lines) {
+        if (!line.departmentCode) {
+          throw new Error(`Order line ${line.id} missing department assignment`);
+        }
+        if (!line.departmentSectionId) {
+          throw new Error(`Payment cannot be processed: order line ${line.id} in ${line.departmentCode} lacks section assignment`);
+        }
+
+        if (!deptSectionsMap.has(line.departmentCode)) {
+          deptSectionsMap.set(line.departmentCode, new Set());
+        }
+        deptSectionsMap.get(line.departmentCode)?.add(line.departmentSectionId);
+      }
+
       // Find or create payment type
       let paymentType = await prisma.paymentType.findUnique({
         where: { type: payment.paymentMethod.toLowerCase() },
@@ -127,39 +146,93 @@ export class SettlementService extends BaseService<any> {
         });
       }
 
-      // Record the payment
-      const newPayment = await prisma.orderPayment.create({
-        data: {
-          orderHeaderId: orderId,
-          amount: payment.amount,
-          paymentMethod: payment.paymentMethod,
-          paymentTypeId: paymentType.id,
-          paymentStatus: 'completed',
-          transactionReference: payment.transactionReference,
-          processedAt: new Date(),
-        },
-      });
-
-      // Check if order is now fully paid
-      const newTotalPaid = totalPaid + payment.amount;
-      const newAmountDue = order.total - newTotalPaid;
-
-      // If fully paid, move to processing
-      if (newAmountDue <= 0) {
-        await prisma.orderHeader.update({
-          where: { id: orderId },
-          data: { status: 'processing' },
+      // Record the payment in transaction; ensure section updates succeed
+      const result = await prisma.$transaction(async (tx: any) => {
+        // Record the payment
+        const newPayment = await tx.orderPayment.create({
+          data: {
+            orderHeaderId: orderId,
+            amount: payment.amount,
+            paymentMethod: payment.paymentMethod,
+            paymentTypeId: paymentType.id,
+            paymentStatus: 'completed',
+            transactionReference: payment.transactionReference,
+            processedAt: new Date(),
+          },
         });
-      }
+
+        // Check if order is now fully paid
+        const newTotalPaid = totalPaid + payment.amount;
+        const newAmountDue = order.total - newTotalPaid;
+
+        // Update section metadata for all sections involved; FAIL if any fails
+        for (const [deptCode, sectionIds] of deptSectionsMap.entries()) {
+          for (const sectionId of sectionIds) {
+            const section = await tx.departmentSection.findUnique({ where: { id: sectionId } });
+            if (!section) {
+              throw new Error(`Section ${sectionId} not found in department ${deptCode}`);
+            }
+
+            const existingMeta = (section.metadata as any) || {};
+            const lastTransactionData = {
+              orderId: orderId,
+              paymentId: newPayment.id,
+              amount: payment.amount,
+              paymentMethod: payment.paymentMethod,
+              at: new Date(),
+            };
+
+            const mergedMeta = {
+              ...existingMeta,
+              lastTransaction: lastTransactionData,
+            };
+
+            // Update section metadata; failure here fails entire transaction
+            await tx.departmentSection.update({
+              where: { id: sectionId },
+              data: { metadata: mergedMeta },
+            });
+          }
+        }
+
+        // Only update order status to processing if FULLY PAID and sections updated successfully
+        if (newAmountDue <= 0) {
+          await tx.orderHeader.update({
+            where: { id: orderId },
+            data: { 
+              status: 'processing',
+              paymentStatus: 'paid',
+            },
+          });
+          // Update department order statuses too
+          await tx.orderDepartment.updateMany({
+            where: { orderHeaderId: orderId },
+            data: { status: 'processing' },
+          });
+        } else {
+          // Partial payment: update order payment status but keep as pending
+          await tx.orderHeader.update({
+            where: { id: orderId },
+            data: { paymentStatus: 'partial' },
+          });
+        }
+
+        return {
+          paymentId: newPayment.id,
+          newTotalPaid,
+          newAmountDue: Math.max(0, newAmountDue),
+          isFullyPaid: newAmountDue <= 0,
+        };
+      }, { maxWait: 15000, timeout: 15000 });
 
       return {
-        paymentId: newPayment.id,
+        paymentId: result.paymentId,
         orderId,
         orderNumber: order.orderNumber,
         paymentAmount: payment.amount,
-        totalPaid: newTotalPaid,
-        amountDue: Math.max(0, newAmountDue),
-        isFullyPaid: newAmountDue <= 0,
+        totalPaid: result.newTotalPaid,
+        amountDue: result.newAmountDue,
+        isFullyPaid: result.isFullyPaid,
         customer: `${order.customer.firstName} ${order.customer.lastName}`,
       };
     } catch (error) {

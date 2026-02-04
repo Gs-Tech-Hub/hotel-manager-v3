@@ -280,15 +280,36 @@ export class OrderService extends BaseService<IOrderHeader> {
       const order = header
 
       // Recalculate and persist section stats for involved department sections
+      // CRITICAL: If any section update fails, the order creation FAILS
       try {
-        for (const code of deptCodes) {
-          if (!code) continue;
-          await departmentService.recalculateSectionStats(code);
-          // Also roll up to parent if this is a section code
+        // Map lines to sections to ensure all have assignments
+        const deptSectionsMap = new Map<string, Set<string>>();
+        for (const line of linesData) {
+          if (!line.departmentCode) {
+            throw new Error(`Order creation failed: line item missing department assignment`);
+          }
+          if (!line.departmentSectionId) {
+            throw new Error(`Order creation failed: line item in ${line.departmentCode} requires section assignment`);
+          }
+          
+          if (!deptSectionsMap.has(line.departmentCode)) {
+            deptSectionsMap.set(line.departmentCode, new Set());
+          }
+          deptSectionsMap.get(line.departmentCode)?.add(line.departmentSectionId);
+        }
+
+        // Update section stats for all sections (no department fallback)
+        for (const [code, sectionIds] of deptSectionsMap.entries()) {
+          for (const sectionId of sectionIds) {
+            await departmentService.recalculateSectionStats(code, sectionId);
+          }
+          // Roll up to parent after all sections updated
           await departmentService.rollupParentStats(code);
         }
       } catch (e) {
+        // CRITICAL: If section stats fail to update, the order creation FAILS
         try { const logger = await import('@/lib/logger'); logger.error(e, { context: 'recalculateSectionStats.createOrder' }); } catch {}
+        return errorResponse(ErrorCodes.INTERNAL_ERROR, `Failed to initialize section stats: ${(e as any)?.message || 'Unknown error'}`);
       }
 
       // If discounts were provided at creation time, attempt to apply them now

@@ -143,48 +143,57 @@ export async function POST(request: NextRequest) {
     // Handle payment processing
     // If client provided a payment object in the payload, process it
     if (orderResult && !(orderResult as any).error && body.payment) {
-      try {
-        const payment = body.payment as any;
-        
-        // Check if this is a deferred payment (pay later)
-        if (payment.isDeferred || payment.method === 'deferred') {
-          // Deferred order - leave status as 'pending', no payment recorded
-          console.log(`Order ${(orderResult as any).id} created with deferred payment status`);
-        } else {
-          // Immediate payment - record payment and move to processing
-          // payment.amount should be in cents
-          if (payment.amount && payment.amount > 0 && (orderResult as any).id) {
-            const paymentPayload = {
-              amount: payment.amount, // Already in cents from POS checkout
-              paymentMethod: payment.paymentMethod || payment.method || payment.paymentMethodId || 'unknown',
-              paymentTypeId: payment.paymentTypeId,
-              transactionReference: payment.transactionReference,
-            };
-            // record payment (orderService.recordPayment will validate and move order to processing)
-            console.log(`[Order API] Recording payment for order ${(orderResult as any).id}:`, paymentPayload);
-            await orderService.recordPayment((orderResult as any).id, paymentPayload, userWithRoles);
-            
-            // Fetch updated order to get the new paymentStatus and status
-            const updatedOrder = await prisma.orderHeader.findUnique({
-              where: { id: (orderResult as any).id },
-              include: { 
-                customer: true, 
-                lines: true, 
-                departments: { include: { department: true } },
-                discounts: { include: { discountRule: true } },
-                payments: { include: { paymentType: true } },
-                fulfillments: true,
-                reservations: true,
-              },
-            });
-            if (updatedOrder) {
-              orderResult = updatedOrder;
-            }
+      const payment = body.payment as any;
+      
+      // Check if this is a deferred payment (pay later)
+      if (payment.isDeferred || payment.method === 'deferred') {
+        // Deferred order - leave status as 'pending', no payment recorded
+        console.log(`Order ${(orderResult as any).id} created with deferred payment status`);
+      } else if (payment.amount && payment.amount > 0 && (orderResult as any).id) {
+        // Immediate payment - record payment and move to processing
+        // CRITICAL: If payment processing fails, order creation FAILS (no partial order returned)
+        try {
+          const paymentPayload = {
+            amount: payment.amount, // Already in cents from POS checkout
+            paymentMethod: payment.paymentMethod || payment.method || payment.paymentMethodId || 'unknown',
+            paymentTypeId: payment.paymentTypeId,
+            transactionReference: payment.transactionReference,
+          };
+          
+          console.log(`[Order API] Recording payment for order ${(orderResult as any).id}:`, paymentPayload);
+          await orderService.recordPayment((orderResult as any).id, paymentPayload, userWithRoles);
+          
+          // Fetch updated order to get the new paymentStatus and status
+          const updatedOrder = await prisma.orderHeader.findUnique({
+            where: { id: (orderResult as any).id },
+            include: { 
+              customer: true, 
+              lines: true, 
+              departments: { include: { department: true } },
+              discounts: { include: { discountRule: true } },
+              payments: { include: { paymentType: true } },
+              fulfillments: true,
+              reservations: true,
+            },
+          });
+          if (updatedOrder) {
+            orderResult = updatedOrder;
           }
+        } catch (err) {
+          // CRITICAL: Payment failure means order creation FAILS
+          // Delete the order and return error to prevent receipt printing
+          try {
+            await prisma.orderHeader.delete({ where: { id: (orderResult as any).id } });
+            console.error(`Deleted order ${(orderResult as any).id} due to payment failure:`, err);
+          } catch (delErr) {
+            console.error(`Failed to cleanup order ${(orderResult as any).id}:`, delErr);
+          }
+          
+          return NextResponse.json(
+            errorResponse(ErrorCodes.INTERNAL_ERROR, `Payment processing failed: ${(err as any)?.message || 'Unknown error'}`),
+            { status: getStatusCode(ErrorCodes.INTERNAL_ERROR) }
+          );
         }
-      } catch (err) {
-        console.error('Failed to record payment during order creation:', err);
-        // continue — order was created, but payment recording failed; client can retry via payments endpoint
       }
     }
 
