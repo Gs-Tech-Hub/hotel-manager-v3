@@ -2,17 +2,17 @@
  * Order Settlement API Route
  * 
  * POST /api/orders/settle - Record payment for pending/deferred order
+ * Delegates all payment logic to unified PaymentService for consistency
  */
 
 import { NextRequest, NextResponse } from 'next/server';
-import { prisma } from '@/lib/auth/prisma';
 import { extractUserContext, loadUserWithRoles, hasAnyRole } from '@/lib/user-context';
 import { successResponse, errorResponse, ErrorCodes, getStatusCode } from '@/lib/api-response';
-import { OrderService } from '@/services/order.service';
+import { paymentService } from '@/services/payment.service';
 
 /**
  * POST /api/orders/settle
- * Record payment for one or more pending orders
+ * Record payment for pending orders (deferred payments without inventory consumption)
  * 
  * Request body:
  * {
@@ -78,176 +78,41 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    // Fetch order with current payment state
-    const order = await prisma.orderHeader.findUnique({
-      where: { id: orderId },
-      include: {
-        customer: true,
-        lines: true,
-        payments: true,
-        departments: {
-          include: {
-            department: true,
-          },
-        },
+    // Delegate payment recording to unified PaymentService
+    const result = await paymentService.recordDeferredOrderPayment(orderId, {
+      amount,
+      paymentMethod,
+      transactionReference,
+      context: {
+        userId: ctx.userId,
+        notes,
       },
     });
 
-    if (!order) {
-      return NextResponse.json(
-        errorResponse(ErrorCodes.NOT_FOUND, 'Order not found'),
-        { status: getStatusCode(ErrorCodes.NOT_FOUND) }
-      );
-    }
-
-    // Check payment status, not fulfillment status
-    // Orders can be fulfilled but still need payment - these are independent concerns
-    if (order.paymentStatus === 'paid' || order.paymentStatus === 'refunded') {
-      return NextResponse.json(
-        errorResponse(
-          ErrorCodes.VALIDATION_ERROR,
-          `Cannot settle order with payment status: ${order.paymentStatus}. Only unpaid or partially paid orders can be settled.`
-        ),
-        { status: getStatusCode(ErrorCodes.VALIDATION_ERROR) }
-      );
-    }
-
-    // Calculate amount already paid
-    const totalPaid = order.payments
-      .filter((p) => p.paymentStatus === 'completed')
-      .reduce((sum, p) => sum + p.amount, 0);
-
-    const amountDue = order.total - totalPaid;
-
-    // Validate payment amount doesn't exceed due amount
-    if (amount > amountDue) {
-      return NextResponse.json(
-        errorResponse(
-          ErrorCodes.VALIDATION_ERROR,
-          `Payment amount (${amount}) exceeds amount due (${amountDue})`
-        ),
-        { status: getStatusCode(ErrorCodes.VALIDATION_ERROR) }
-      );
-    }
-
-    // Find or create payment type
-    let paymentType = await prisma.paymentType.findUnique({
-      where: { type: paymentMethod.toLowerCase() },
-    });
-
-    if (!paymentType) {
-      // Create payment type if it doesn't exist
-      paymentType = await prisma.paymentType.create({
-        data: {
-          type: paymentMethod.toLowerCase(),
-          description: `Auto-created payment method: ${paymentMethod}`,
-        },
-      });
-    }
-
-    // Record the payment
-    const payment = await prisma.orderPayment.create({
-      data: {
-        orderHeaderId: orderId,
-        amount,
-        paymentMethod,
-        paymentTypeId: paymentType.id,
-        paymentStatus: 'completed',
-        transactionReference,
-        processedAt: new Date(),
-      },
-    });
-
-    // Calculate new state
-    const newTotalPaid = totalPaid + amount;
-    const newAmountDue = order.total - newTotalPaid;
-
-    // If fully paid, move order to "processing" status
-    let newStatus = order.status;
-    let newPaymentStatus = order.paymentStatus;
-    
-    if (newAmountDue <= 0) {
-      newStatus = 'processing';
-      newPaymentStatus = 'paid';
-    } else if (newTotalPaid > 0) {
-      newPaymentStatus = 'partial';
-    }
-
-    // Update order status and payment status if needed
-    if (newStatus !== order.status || newPaymentStatus !== order.paymentStatus) {
-      await prisma.orderHeader.update({
-        where: { id: orderId },
-        data: { 
-          status: newStatus,
-          paymentStatus: newPaymentStatus,
-        },
-      });
-    }
-
-    // Step: Recalculate stats for all affected departments/sections
-    // Now that payment is made, amountSold should be updated
-    try {
-      const { departmentService } = await import('@/services/department.service');
-
-      // Get all unique department codes and section IDs from order lines
-      const deptCodesWithSections = new Map<string, Set<string | undefined>>();
-      
-      for (const line of order.lines) {
-        if (line.departmentCode) {
-          if (!deptCodesWithSections.has(line.departmentCode)) {
-            deptCodesWithSections.set(line.departmentCode, new Set());
-          }
-          deptCodesWithSections.get(line.departmentCode)?.add(line.departmentSectionId || undefined);
-        }
-      }
-
-      // Batch all stat calculations in parallel for all affected departments and sections
-      await Promise.all(
-        Array.from(deptCodesWithSections.entries()).flatMap(([code, sectionIds]) =>
-          Array.from(sectionIds).map(async (sectionId) => {
-            try {
-              await Promise.all([
-                // Update section stats if sectionId exists, otherwise update parent department stats
-                departmentService.recalculateSectionStats(code, sectionId),
-                // Only rollup to parent if we have a section (to avoid duplicate parent updates)
-                sectionId ? departmentService.rollupParentStats(code) : Promise.resolve(),
-              ]);
-            } catch (e) {
-              console.error(`Error updating stats for department ${code}${sectionId ? ` section ${sectionId}` : ''}:`, e);
-            }
-          })
-        )
-      );
-    } catch (e) {
-      console.error('Error in post-payment stats recalculation:', e);
-      // Don't fail the request, just log the error
+    // Check if result is an error response
+    if (result && typeof result === 'object' && 'success' in result && !result.success) {
+      const statusCode = result.code ? getStatusCode(result.code) : 400;
+      return NextResponse.json(result, { status: statusCode });
     }
 
     // Return settlement response
     return NextResponse.json(
-      successResponse(
-       { 
+      successResponse({
         data: {
-          orderId,
-          orderNumber: order.orderNumber,
-          paymentId: payment.id,
-          paymentAmount: amount,
-          totalPaid: newTotalPaid,
-          amountDue: Math.max(0, newAmountDue),
-          orderStatus: newStatus,
-          isFullyPaid: newAmountDue <= 0,
-          customer: {
-            name: `${order.customer.firstName} ${order.customer.lastName}`,
-            email: order.customer.email,
-            phone: order.customer.phone,
-          },
-          orderTotal: order.total,
+          orderId: result.orderId,
+          orderNumber: result.orderNumber,
+          paymentId: result.paymentId,
+          paymentAmount: result.paymentAmount,
+          totalPaid: result.totalPaid,
+          amountDue: result.amountDue,
+          isFullyPaid: result.isFullyPaid,
+          customer: result.customer,
           timestamp: new Date().toISOString(),
         },
-        message:
-        newAmountDue <= 0 ? 'Order fully paid - moving to processing' : 'Partial payment recorded'
-      }
-      ),
+        message: result.isFullyPaid
+          ? 'Order fully paid - moving to processing'
+          : 'Partial payment recorded',
+      }),
       { status: 201 }
     );
   } catch (error) {

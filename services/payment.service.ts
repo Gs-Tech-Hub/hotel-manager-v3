@@ -1,31 +1,322 @@
 /**
- * Payment Service
- * Handles all payment-related operations
+ * Unified Payment Service
+ * 
+ * Single source of truth for FINANCIAL payment handling across the system.
+ * Responsible for: payment record creation, payment status updates, finance-related stats.
+ * NOT responsible for: order status, inventory, section metadata, fulfillment state.
+ * 
+ * ARCHITECTURAL BOUNDARY:
+ * PaymentService (this module):
+ *   ✅ Create payment records
+ *   ✅ Update payment status (unpaid → partial → paid)
+ *   ✅ Track total amounts paid (finance stats only)
+ *   ✅ Record transaction references
+ * 
+ * Fulfillment Pipeline (separate):
+ *   ✅ Update order status (pending → processing → completed)
+ *   ✅ Consume inventory when payment made
+ *   ✅ Update department/section metadata & stats
+ *   ✅ Handle order completion
+ * 
+ * PAYMENT FLOW:
+ * - Payment request validated (amount, permissions)
+ * - PaymentType resolved (find or create)
+ * - OrderPayment record created (FAST 5-second transaction)
+ * - Payment status calculated (unpaid → partial → paid)
+ * - Finance-related metadata updated (totalPaidAmount, lastPaymentAt)
+ * - Return payment record
+ * 
+ * PRICE CONSISTENCY:
+ * - All amounts stored as integers in cents
+ * - Input amounts normalized via normalizeToCents()
+ * - Database fields: amount (INT in cents)
  */
 
 import { BaseService } from './base.service';
 import { IPayment } from '@/types/entities';
 import { prisma } from '@/lib/auth/prisma';
+import { normalizeToCents, validatePrice } from '@/lib/price';
+import { errorResponse, ErrorCodes } from '@/lib/api-response';
+
+/**
+ * Payment request interface for unified payment recording
+ */
+export interface PaymentRequest {
+  amount: number;                    // In cents or decimal
+  paymentMethod: string;             // cash, card, bank_transfer, mobile_payment
+  paymentTypeId?: string;
+  transactionReference?: string;
+  context?: {
+    userId?: string;
+    departmentCode?: string;
+    sectionIds?: string[];
+    consumeInventory?: boolean;  // For order payments
+    notes?: string;
+  };
+}
+
+/**
+ * Unified payment result
+ */
+export interface PaymentResult {
+  paymentId: string;
+  entityId: string;
+  entityType: 'order' | 'booking' | 'expense';
+  amount: number;                    // In cents
+  paymentStatus: 'unpaid' | 'partial' | 'paid';
+  totalPaid: number;
+  amountDue: number;
+  isFullyPaid: boolean;
+  transactionData?: any;
+}
 
 export class PaymentService extends BaseService<IPayment> {
   constructor() {
-    super('payment');
+    super('orderPayment');
   }
 
-  private mapPayment(p: any): IPayment {
-    return {
-      id: p.id,
-      transactionID: p.transactionID,
-      paymentMethod: p.paymentMethod,
-      paymentStatus: (p.paymentStatus as any) as 'pending' | 'completed' | 'failed',
-      totalPrice: p.totalPrice,
-      createdAt: p.createdAt,
-      updatedAt: p.updatedAt,
-    };
+  // ==================== CORE PAYMENT METHODS ====================
+
+  /**
+   * Record payment for an order
+   * FINANCIAL ONLY: Creates payment record and updates payment status
+   * 
+   * NOTE: Order status transitions, inventory consumption, and stats recalculation
+   * are handled by the fulfillment pipeline, NOT by this payment service.
+   * This keeps payment transactions fast and prevents timeout issues.
+   */
+  async recordOrderPayment(
+    orderId: string,
+    paymentRequest: PaymentRequest
+  ): Promise<PaymentResult | any> {
+    try {
+      const amount = normalizeToCents(paymentRequest.amount);
+      validatePrice(amount, 'payment amount');
+
+      // Fetch order with minimal relations (payments only)
+      const order = await (prisma as any).orderHeader.findUnique({
+        where: { id: orderId },
+        include: { payments: true },
+      });
+
+      if (!order) {
+        return errorResponse(ErrorCodes.NOT_FOUND, 'Order not found');
+      }
+
+      // Prevent payment on already fully paid orders
+      if (order.paymentStatus === 'paid') {
+        return errorResponse(
+          ErrorCodes.VALIDATION_ERROR,
+          'Order is already fully paid. No additional payments allowed.'
+        );
+      }
+
+      // Calculate current payment state
+      const totalPaid = order.payments.reduce((sum: number, p: any) => sum + p.amount, 0);
+      if (totalPaid + amount > order.total) {
+        return errorResponse(ErrorCodes.VALIDATION_ERROR, 'Payment amount exceeds order total');
+      }
+
+      // Ensure payment type exists
+      const paymentType = await this.ensurePaymentType(paymentRequest.paymentMethod);
+
+      // ==================== FAST FINANCIAL TRANSACTION ====================
+      // ONLY: Create payment record + update payment status
+      // Order status & inventory are handled by fulfillment pipeline
+      const payment = await prisma.$transaction(
+        async (tx: any) => {
+          // Create payment record
+          const newPayment = await tx.orderPayment.create({
+            data: {
+              orderHeaderId: orderId,
+              amount,
+              paymentMethod: paymentRequest.paymentMethod,
+              paymentStatus: 'completed',
+              paymentTypeId: paymentType.id,
+              transactionReference: paymentRequest.transactionReference,
+              processedAt: new Date(),
+            },
+          });
+
+          // Calculate new payment state
+          const newTotalPaid = totalPaid + amount;
+          const newAmountDue = order.total - newTotalPaid;
+
+          // Determine payment status
+          let paymentStatus = 'unpaid';
+          if (newTotalPaid >= order.total) {
+            paymentStatus = 'paid';
+          } else if (newTotalPaid > 0) {
+            paymentStatus = 'partial';
+          }
+
+          // Update ONLY payment status on OrderHeader
+          // Order status (pending → processing) is handled by fulfillment pipeline
+          if (paymentStatus !== order.paymentStatus) {
+            await tx.orderHeader.update({
+              where: { id: orderId },
+              data: { paymentStatus },
+            });
+          }
+
+          return newPayment;
+        },
+        { maxWait: 5000, timeout: 5000 } // Fast timeout - only financial operations
+      );
+
+      return payment;
+    } catch (error) {
+      console.error('Error recording order payment:', error);
+      return errorResponse(ErrorCodes.INTERNAL_ERROR, 'Failed to record payment');
+    }
   }
 
   /**
-   * Get payment by transaction ID
+   * Record payment for a deferred (pending) order
+   * FINANCIAL ONLY: Creates payment record and updates payment status
+   * 
+   * NOTE: Order status transitions and other business logic are handled by
+   * the fulfillment pipeline. This keeps transactions fast and focused.
+   */
+  async recordDeferredOrderPayment(
+    orderId: string,
+    paymentRequest: PaymentRequest
+  ): Promise<PaymentResult | any> {
+    try {
+      const amount = normalizeToCents(paymentRequest.amount);
+      validatePrice(amount, 'payment amount');
+
+      // Fetch order with minimal relations
+      const order = await (prisma as any).orderHeader.findUnique({
+        where: { id: orderId },
+        include: { payments: true },
+      });
+
+      if (!order) {
+        return errorResponse(ErrorCodes.NOT_FOUND, 'Order not found');
+      }
+
+      // Prevent payment on already fully paid orders
+      if (order.paymentStatus === 'paid') {
+        return errorResponse(
+          ErrorCodes.VALIDATION_ERROR,
+          'Order is already fully paid. No additional payments allowed.'
+        );
+      }
+
+      // Calculate current payment state
+      const totalPaid = order.payments.reduce((sum: number, p: any) => sum + p.amount, 0);
+      if (totalPaid + amount > order.total) {
+        return errorResponse(ErrorCodes.VALIDATION_ERROR, 'Payment amount exceeds order total');
+      }
+
+      // Ensure payment type exists
+      const paymentType = await this.ensurePaymentType(paymentRequest.paymentMethod);
+
+      // ==================== FAST FINANCIAL TRANSACTION ====================
+      // ONLY: Create payment record + update payment status + finance-related stats
+      const payment = await prisma.$transaction(
+        async (tx: any) => {
+          // Create payment record
+          const newPayment = await tx.orderPayment.create({
+            data: {
+              orderHeaderId: orderId,
+              amount,
+              paymentMethod: paymentRequest.paymentMethod,
+              paymentStatus: 'completed',
+              paymentTypeId: paymentType.id,
+              transactionReference: paymentRequest.transactionReference,
+              processedAt: new Date(),
+            },
+          });
+
+          // Calculate new payment state
+          const newTotalPaid = totalPaid + amount;
+
+          // Determine payment status
+          let paymentStatus = 'unpaid';
+          if (newTotalPaid >= order.total) {
+            paymentStatus = 'paid';
+          } else if (newTotalPaid > 0) {
+            paymentStatus = 'partial';
+          }
+
+          // Update ONLY payment status + finance-related metadata
+          if (paymentStatus !== order.paymentStatus) {
+            await tx.orderHeader.update({
+              where: { id: orderId },
+              data: { 
+                paymentStatus,
+                metadata: {
+                  ...(order.metadata as any) || {},
+                  totalPaidAmount: newTotalPaid,
+                  lastPaymentAt: new Date(),
+                  lastPaymentMethod: paymentRequest.paymentMethod,
+                },
+              },
+            });
+          }
+
+          return newPayment;
+        },
+        { maxWait: 5000, timeout: 5000 } // Fast timeout - only financial operations
+      );
+
+      return payment;
+    } catch (error) {
+      console.error('Error recording deferred payment:', error);
+      return errorResponse(ErrorCodes.INTERNAL_ERROR, 'Failed to record payment');
+    }
+  }
+
+  // ==================== HELPER METHODS ====================
+
+  /**
+   * Find or create payment type
+   */
+  async ensurePaymentType(paymentMethod: string): Promise<any> {
+    const type = paymentMethod.toLowerCase();
+    
+    let paymentType = await prisma.paymentType.findUnique({
+      where: { type },
+    });
+
+    if (!paymentType) {
+      paymentType = await prisma.paymentType.create({
+        data: {
+          type,
+          description: `Payment method: ${paymentMethod}`,
+        },
+      });
+    }
+
+    return paymentType;
+  }
+
+  /**
+   * Calculate payment status from amounts
+   */
+  calculatePaymentStatus(totalPaid: number, totalAmount: number): 'unpaid' | 'partial' | 'paid' {
+    if (totalPaid >= totalAmount) return 'paid';
+    if (totalPaid > 0) return 'partial';
+    return 'unpaid';
+  }
+
+  /**
+   * Get all payments for an order
+   */
+  async getOrderPayments(orderId: string): Promise<any[]> {
+    return prisma.orderPayment.findMany({
+      where: { orderHeaderId: orderId },
+      include: { paymentType: true },
+      orderBy: { createdAt: 'asc' },
+    });
+  }
+
+  // ==================== LEGACY METHODS (DEPRECATED) ====================
+
+  /**
+   * Get payment by transaction ID (legacy)
    */
   async getByTransactionID(transactionID: string): Promise<IPayment | null> {
     try {
@@ -35,7 +326,15 @@ export class PaymentService extends BaseService<IPayment> {
       });
 
       if (!row) return null;
-      return this.mapPayment(row as any);
+      return {
+        id: row.id,
+        transactionID: row.transactionID,
+        paymentMethod: row.paymentMethod,
+        paymentStatus: row.paymentStatus as any,
+        totalPrice: row.totalPrice,
+        createdAt: row.createdAt,
+        updatedAt: row.updatedAt,
+      };
     } catch (error) {
       console.error('Error fetching payment:', error);
       return null;
@@ -43,7 +342,7 @@ export class PaymentService extends BaseService<IPayment> {
   }
 
   /**
-   * Get payments by status
+   * Get payments by status (legacy)
    */
   async getPaymentsByStatus(status: string): Promise<IPayment[]> {
     try {
@@ -52,7 +351,15 @@ export class PaymentService extends BaseService<IPayment> {
         orderBy: { createdAt: 'desc' },
       });
 
-      return rows.map((r: any) => this.mapPayment(r));
+      return rows.map((r: any) => ({
+        id: r.id,
+        transactionID: r.transactionID,
+        paymentMethod: r.paymentMethod,
+        paymentStatus: r.paymentStatus,
+        totalPrice: r.totalPrice,
+        createdAt: r.createdAt,
+        updatedAt: r.updatedAt,
+      }));
     } catch (error) {
       console.error('Error fetching payments by status:', error);
       return [];
@@ -60,7 +367,7 @@ export class PaymentService extends BaseService<IPayment> {
   }
 
   /**
-   * Calculate payment statistics
+   * Get payment stats (legacy)
    */
   async getPaymentStats(): Promise<{
     totalPayments: number;
@@ -101,59 +408,6 @@ export class PaymentService extends BaseService<IPayment> {
       return summary;
     } catch (error) {
       console.error('Error fetching payment stats:', error);
-      return null;
-    }
-  }
-
-  /**
-   * Process a payment
-   */
-  async processPayment(
-    paymentData: Record<string, any>
-  ): Promise<IPayment | null> {
-    try {
-      const row = await prisma.payment.create({
-        // casting to any to allow flexible incoming paymentData shapes
-        data: paymentData as any,
-      });
-
-      return this.mapPayment(row as any);
-    } catch (error) {
-      console.error('Error processing payment:', error);
-      return null;
-    }
-  }
-
-  /**
-   * Complete a payment
-   */
-  async completePayment(paymentId: string): Promise<IPayment | null> {
-    try {
-      const row = await prisma.payment.update({
-        where: { id: paymentId },
-        data: { paymentStatus: 'completed' },
-      });
-
-      return this.mapPayment(row as any);
-    } catch (error) {
-      console.error('Error completing payment:', error);
-      return null;
-    }
-  }
-
-  /**
-   * Fail a payment
-   */
-  async failPayment(paymentId: string): Promise<IPayment | null> {
-    try {
-      const row = await prisma.payment.update({
-        where: { id: paymentId },
-        data: { paymentStatus: 'failed' },
-      });
-
-      return this.mapPayment(row as any);
-    } catch (error) {
-      console.error('Error failing payment:', error);
       return null;
     }
   }

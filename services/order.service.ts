@@ -25,6 +25,7 @@ import {
 } from '@/lib/price';
 import { UserContext, requireRoleOrOwner, requireRole } from '@/lib/auth/authorization';
 import { departmentService } from './department.service';
+import { paymentService } from './payment.service';
 import { StockService } from './stock.service';
 import { errorResponse, ErrorCodes } from '@/lib/api-response';
 
@@ -690,7 +691,8 @@ export class OrderService extends BaseService<IOrderHeader> {
   }
 
   /**
-   * Record payment for order (supports multiple payments)
+   * Record payment for order (wrapper delegating to PaymentService)
+   * Delegates all payment logic to unified PaymentService for consistency
    */
   async recordPayment(orderId: string, paymentData: {
     amount: number;
@@ -702,192 +704,16 @@ export class OrderService extends BaseService<IOrderHeader> {
       const forbidden = requireRole(ctx, ['admin', 'manager', 'staff']);
       if (forbidden) return forbidden;
 
-      const order = await (prisma as any).orderHeader.findUnique({
-        where: { id: orderId },
-        include: { payments: true },
-      });
-
-      if (!order) {
-        return errorResponse(ErrorCodes.NOT_FOUND, 'Order not found');
-      }
-
-      // PREVENT MULTI-PAYMENT: Reject if order is already fully paid
-      if (order.paymentStatus === 'paid') {
-        return errorResponse(ErrorCodes.VALIDATION_ERROR, 'Order is already fully paid. No additional payments allowed.');
-      }
-
-      // Normalize incoming amount to cents to keep DB consistent
-  const amount = normalizeToCents(paymentData.amount);
-
-      // Check if payment exceeds order total
-  const totalPaid = order.payments.reduce((sum: number, p: any) => sum + p.amount, 0);
-      if (totalPaid + amount > order.total) {
-        return errorResponse(ErrorCodes.VALIDATION_ERROR, 'Payment amount exceeds order total');
-      }
-
-      const payment = await (prisma as any).orderPayment.create({
-        data: {
-          orderHeaderId: orderId,
-          amount,
-          paymentMethod: paymentData.paymentMethod,
-          paymentStatus: 'completed',
-          paymentTypeId: paymentData.paymentTypeId,
-          transactionReference: paymentData.transactionReference,
-          processedAt: new Date(),
+      return await paymentService.recordOrderPayment(orderId, {
+        amount: paymentData.amount,
+        paymentMethod: paymentData.paymentMethod,
+        paymentTypeId: paymentData.paymentTypeId,
+        transactionReference: paymentData.transactionReference,
+        context: {
+          userId: ctx?.userId,
+          consumeInventory: true, // OrderService always consumes inventory
         },
       });
-
-      // Update order status if fully paid
-      const allPayments = await (prisma as any).orderPayment.findMany({ where: { orderHeaderId: orderId } });
-  const totalPayments = allPayments.reduce((sum: number, p: any) => sum + p.amount, 0);
-
-      // Determine payment status based on total paid vs order total
-      let paymentStatus = 'unpaid';
-      if (totalPayments >= order.total) {
-        paymentStatus = 'paid'; // Fully paid
-      } else if (totalPayments > 0) {
-        paymentStatus = 'partial'; // Partially paid
-      }
-
-      if (totalPayments >= order.total) {
-        // Fully paid: move to processing and consume reserved inventory for inventory-based departments
-        // Use extended timeout for complex transaction (15 seconds)
-        await prisma.$transaction(async (tx: any) => {
-          // Update order status and payment status, sync department rows atomically
-          await tx.orderHeader.update({ 
-            where: { id: orderId }, 
-            data: { 
-              status: 'processing',
-              paymentStatus: 'paid', // Explicitly mark as paid
-            } 
-          });
-          await tx.orderDepartment.updateMany({ where: { orderHeaderId: orderId }, data: { status: 'processing' } });
-
-          // Find order lines that require inventory consumption
-          const lines = await tx.orderLine.findMany({ where: { orderHeaderId: orderId } });
-
-          // Update department section metadata for departments that initiated this transaction
-          // CRITICAL: Section metadata updates MUST succeed; transaction fails if any section update fails
-          const deptSectionsMap = new Map<string, Set<string | null>>();
-          for (const line of lines) {
-            if (line.departmentCode) {
-              if (!deptSectionsMap.has(line.departmentCode)) {
-                deptSectionsMap.set(line.departmentCode, new Set());
-              }
-              deptSectionsMap.get(line.departmentCode)?.add(line.departmentSectionId);
-            }
-          }
-
-          // Update each section with transaction metadata; fail if any section cannot be updated
-          for (const [deptCode, sectionIds] of deptSectionsMap.entries()) {
-            for (const sectionId of sectionIds) {
-              if (!sectionId) {
-                throw new Error(`Payment cannot be processed: order has line items without section assignment in department ${deptCode}`);
-              }
-
-              const section = await tx.departmentSection.findUnique({ where: { id: sectionId } });
-              if (!section) {
-                throw new Error(`Section not found for ID ${sectionId} in department ${deptCode}`);
-              }
-
-              const existingMeta = (section.metadata as any) || {};
-              const lastTransactionData = {
-                orderId: orderId,
-                paymentId: payment.id,
-                amount: amount,
-                initiatedBy: (ctx as any)?.userId || null,
-                at: new Date(),
-              };
-
-              const mergedMeta = {
-                ...existingMeta,
-                lastTransaction: lastTransactionData,
-              };
-
-              // Update section metadata; failure here fails the entire transaction
-              await tx.departmentSection.update({
-                where: { id: sectionId },
-                data: { metadata: mergedMeta },
-              });
-            }
-          }
-
-          const movementRows: any[] = [];
-
-          for (const line of lines) {
-            if (['RESTAURANT', 'BAR_CLUB'].includes(line.departmentCode)) {
-              // find department
-              const dept = await tx.department.findUnique({ where: { code: line.departmentCode } });
-              if (!dept) {
-                throw new Error(`Department not found for code ${line.departmentCode}`);
-              }
-
-              // attempt to decrement department inventory (must have sufficient quantity)
-              const res = await tx.departmentInventory.updateMany({
-                where: { departmentId: dept.id, inventoryItemId: line.productId, quantity: { gte: line.quantity } },
-                data: { quantity: { decrement: line.quantity } },
-              });
-
-              if (res.count === 0) {
-                throw new Error(`Insufficient inventory for product ${line.productId} in department ${dept.code}`);
-              }
-
-              movementRows.push({ movementType: 'out', quantity: line.quantity, reason: 'sale', reference: orderId, inventoryItemId: line.productId });
-            }
-          }
-
-          // create inventory movement records
-          if (movementRows.length) {
-            await tx.inventoryMovement.createMany({ data: movementRows });
-          }
-
-          // mark reservations as consumed
-          await tx.inventoryReservation.updateMany({ where: { orderHeaderId: orderId, status: 'reserved' }, data: { status: 'consumed', confirmedAt: new Date() } });
-        }, { maxWait: 15000, timeout: 15000 }); // Increased from default 5000ms to 15000ms
-
-        // Recalculate section stats OUTSIDE transaction - happens after payment is committed
-        // This keeps the transaction fast while ensuring stats are updated asynchronously
-        // Add 100ms delay to ensure payment record is fully committed to DB before stats recalc
-        setImmediate(async () => {
-          try {
-            // Small delay to ensure DB write is complete
-            await new Promise(resolve => setTimeout(resolve, 100));
-            
-            const lines = await prisma.orderLine.findMany({ where: { orderHeaderId: orderId } });
-            // Map department codes to their sections to ensure section-level stats are updated
-            const deptSectionsMap = new Map<string, Set<string>>();
-            for (const line of lines) {
-              if (line.departmentCode && line.departmentSectionId) {
-                if (!deptSectionsMap.has(line.departmentCode)) {
-                  deptSectionsMap.set(line.departmentCode, new Set());
-                }
-                deptSectionsMap.get(line.departmentCode)?.add(line.departmentSectionId);
-              }
-            }
-
-            // Update stats for each department's sections only (no parent fallback)
-            for (const [code, sectionIds] of deptSectionsMap.entries()) {
-              for (const sectionId of sectionIds) {
-                await departmentService.recalculateSectionStats(code as string, sectionId);
-              }
-              // Roll up to parent after all sections are updated
-              await departmentService.rollupParentStats(code);
-            }
-          } catch (e) {
-            try { const logger = await import('@/lib/logger'); logger.error(e, { context: 'recalculateSectionStats.recordPayment' }); } catch {}
-          }
-        });
-      } else if (totalPayments > 0) {
-        // Partially paid: update payment status to 'partial'
-        await prisma.orderHeader.update({
-          where: { id: orderId },
-          data: { 
-            paymentStatus: 'partial' 
-          } as any,
-        });
-      }
-
-      return payment;
     } catch (error) {
       console.error('Error recording payment:', error);
       return errorResponse(ErrorCodes.INTERNAL_ERROR, 'Failed to record payment');
