@@ -900,55 +900,58 @@ export class OrderService extends BaseService<IOrderHeader> {
         return errorResponse(ErrorCodes.VALIDATION_ERROR, `Cannot cancel ${order.status} orders. Only pending, processing, fulfilled, or completed orders can be cancelled.`);
       }
 
-      await prisma.$transaction(async (tx: any) => {
-        // Refund any due/completed payments
-        if (order.payments && order.payments.length > 0) {
-          await tx.orderPayment.updateMany({
-            where: { 
-              orderHeaderId: id,
-              paymentStatus: { in: ['completed', 'partial'] }
+      await prisma.$transaction(
+        async (tx: any) => {
+          // Refund any due/completed payments
+          if (order.payments && order.payments.length > 0) {
+            await tx.orderPayment.updateMany({
+              where: { 
+                orderHeaderId: id,
+                paymentStatus: { in: ['completed', 'partial'] }
+              },
+              data: { paymentStatus: 'refunded' },
+            });
+          }
+
+          // Mark order as cancelled and propagate to department rows
+          await tx.orderHeader.update({
+            where: { id },
+            data: { 
+              status: 'cancelled',
+              paymentStatus: 'refunded',
             },
-            data: { paymentStatus: 'refunded' },
           });
-        }
+          await tx.orderDepartment.updateMany({ where: { orderHeaderId: id }, data: { status: 'cancelled' } });
 
-        // Mark order as cancelled and propagate to department rows
-        await tx.orderHeader.update({
-          where: { id },
-          data: { 
-            status: 'cancelled',
-            paymentStatus: 'refunded',
-          },
-        });
-        await tx.orderDepartment.updateMany({ where: { orderHeaderId: id }, data: { status: 'cancelled' } });
-
-        // Release inventory reservations
-        await tx.inventoryReservation.updateMany({
-          where: { orderHeaderId: id, status: 'reserved' },
-          data: { status: 'released', releasedAt: new Date() },
-        });
-
-        // Mark all fulfillments as cancelled
-        await tx.orderFulfillment.updateMany({
-          where: { orderHeaderId: id },
-          data: { status: 'cancelled' },
-        });
-
-        // Mark order lines as cancelled
-        await tx.orderLine.updateMany({
-          where: { orderHeaderId: id },
-          data: { status: 'cancelled' },
-        });
-
-        // Deactivate all extras associated with order lines
-        if (order.lines && order.lines.length > 0) {
-          const lineIds = order.lines.map((l: any) => l.id);
-          await tx.orderLineExtra.updateMany({
-            where: { orderLineId: { in: lineIds } },
-            data: { active: false },
+          // Release inventory reservations
+          await tx.inventoryReservation.updateMany({
+            where: { orderHeaderId: id, status: 'reserved' },
+            data: { status: 'released', releasedAt: new Date() },
           });
-        }
-      }, { maxWait: 15000, timeout: 15000 }); // Increased timeout for cancel operations
+
+          // Mark all fulfillments as cancelled
+          await tx.orderFulfillment.updateMany({
+            where: { orderHeaderId: id },
+            data: { status: 'cancelled' },
+          });
+
+          // Mark order lines as cancelled
+          await tx.orderLine.updateMany({
+            where: { orderHeaderId: id },
+            data: { status: 'cancelled' },
+          });
+
+          // Deactivate all extras associated with order lines
+          if (order.lines && order.lines.length > 0) {
+            const lineIds = order.lines.map((l: any) => l.id);
+            await tx.orderLineExtra.updateMany({
+              where: { orderLineId: { in: lineIds } },
+              data: { active: false },
+            });
+          }
+        },
+        { maxWait: 15000, timeout: 15000 } // Increased timeout for cancel operations
+      );
 
       // Recalculate section stats for departments involved in the order
       try {

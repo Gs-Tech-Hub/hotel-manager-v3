@@ -229,7 +229,8 @@ export class PaymentService extends BaseService<IPayment> {
       const paymentType = await this.ensurePaymentType(paymentRequest.paymentMethod);
 
       // ==================== FAST FINANCIAL TRANSACTION ====================
-      // ONLY: Create payment record + update payment status + section finance stats
+      // ONLY: Create payment record + update payment status
+      // Section metadata is updated asynchronously to prevent timeout
       const payment = await prisma.$transaction(
         async (tx: any) => {
           // Create payment record
@@ -265,69 +266,25 @@ export class PaymentService extends BaseService<IPayment> {
             });
           }
 
-          // Update section metadata by RECALCULATING from ALL orders in section
-          // This ensures section stats include extras added to any order
-          for (const sectionId of affectedSectionIds) {
-            const section = await tx.departmentSection.findUnique({
-              where: { id: sectionId },
-            });
-
-            if (section) {
-              // Get ALL orders that have lines in this section
-              const sectionOrders = await tx.orderHeader.findMany({
-                where: {
-                  lines: {
-                    some: { departmentSectionId: sectionId }
-                  }
-                },
-                include: {
-                  payments: true,
-                  lines: { where: { departmentSectionId: sectionId } }
-                }
-              });
-
-              // Calculate section-wide totals (including all extras)
-              let sectionTotalAmount = 0;
-              let sectionPaidAmount = 0;
-              let sectionOwedAmount = 0;
-
-              for (const order of sectionOrders) {
-                sectionTotalAmount += order.total;
-                const orderPaid = order.payments.reduce((sum: number, p: any) => sum + p.amount, 0);
-                sectionPaidAmount += orderPaid;
-                sectionOwedAmount += Math.max(0, order.total - orderPaid);
-              }
-
-              const existingMeta = (section.metadata as any) || {};
-
-              await tx.departmentSection.update({
-                where: { id: sectionId },
-                data: {
-                  metadata: {
-                    ...existingMeta,
-                    sectionStats: {
-                      paid: {
-                        totalAmount: sectionPaidAmount,
-                        updatedAt: new Date(),
-                      },
-                      unpaid: {
-                        totalAmount: sectionOwedAmount,
-                        updatedAt: new Date(),
-                      },
-                      updatedAt: new Date(),
-                    },
-                    lastPaymentAt: new Date(),
-                    lastPaymentMethod: paymentRequest.paymentMethod,
-                  },
-                },
-              });
-            }
-          }
-
           return newPayment;
         },
-        { maxWait: 5000, timeout: 5000 } // Fast timeout - only financial operations
+        { maxWait: 15000, timeout: 15000 } // Increased timeout for payment operations
       );
+
+      // ==================== ASYNC SECTION METADATA UPDATE ====================
+      // Queue concurrent, independent section updates (no blocking)
+      // Each section is updated in parallel, completely separate from payment transaction
+      if (affectedSectionIds.size > 0) {
+        // Fire-and-forget: Start all section updates concurrently
+        // Don't await - let them run independently
+        Promise.all(
+          Array.from(affectedSectionIds).map((sectionId) =>
+            this.updateSectionMetadataAsync(sectionId, paymentRequest.paymentMethod)
+          )
+        ).catch((err) => {
+          console.error('Error in concurrent section metadata updates:', err);
+        });
+      }
 
       return payment;
     } catch (error) {
@@ -476,6 +433,77 @@ export class PaymentService extends BaseService<IPayment> {
     } catch (error) {
       console.error('Error fetching payment stats:', error);
       return null;
+    }
+  }
+
+  /**
+   * Update section metadata asynchronously and independently
+   * Runs in parallel with other sections, completely separate from payment transaction
+   * @param sectionId - The section ID to update
+   * @param paymentMethod - Payment method used for the last payment
+   */
+  private async updateSectionMetadataAsync(
+    sectionId: string,
+    paymentMethod: string
+  ): Promise<void> {
+    try {
+      const section = await prisma.departmentSection.findUnique({
+        where: { id: sectionId },
+      });
+
+      if (!section) return;
+
+      // Get ALL orders that have lines in this section
+      const sectionOrders = await prisma.orderHeader.findMany({
+        where: {
+          lines: {
+            some: { departmentSectionId: sectionId }
+          }
+        },
+        include: {
+          payments: true,
+          lines: { where: { departmentSectionId: sectionId } }
+        }
+      });
+
+      // Calculate section-wide totals (including all extras)
+      let sectionTotalAmount = 0;
+      let sectionPaidAmount = 0;
+      let sectionOwedAmount = 0;
+
+      for (const order of sectionOrders) {
+        sectionTotalAmount += order.total;
+        const orderPaid = order.payments.reduce((sum: number, p: any) => sum + p.amount, 0);
+        sectionPaidAmount += orderPaid;
+        sectionOwedAmount += Math.max(0, order.total - orderPaid);
+      }
+
+      const existingMeta = (section.metadata as any) || {};
+
+      await prisma.departmentSection.update({
+        where: { id: sectionId },
+        data: {
+          metadata: {
+            ...existingMeta,
+            sectionStats: {
+              paid: {
+                totalAmount: sectionPaidAmount,
+                updatedAt: new Date(),
+              },
+              unpaid: {
+                totalAmount: sectionOwedAmount,
+                updatedAt: new Date(),
+              },
+              updatedAt: new Date(),
+            },
+            lastPaymentAt: new Date(),
+            lastPaymentMethod: paymentMethod,
+          },
+        },
+      });
+    } catch (err) {
+      console.error(`Error updating metadata for section ${sectionId}:`, err);
+      // Fail silently - metadata updates shouldn't block payment
     }
   }
 }
