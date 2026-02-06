@@ -67,9 +67,14 @@ export default function DiscountsPage() {
     e.preventDefault()
     setFormLoading(true)
     try {
+      // For fixed discounts, multiply by 100 to store in expanded minor units
+      // For percentage discounts, keep value as-is (0-100 range)
+      const baseValue = Number(formData.value)
+      const finalValue = formData.type === 'fixed' ? Math.round(baseValue * 100) : baseValue
+
       const payload = {
         ...formData,
-        value: Number(formData.value),
+        value: finalValue,
         startDate: new Date(formData.startDate).toISOString(),
         endDate: formData.endDate ? new Date(formData.endDate).toISOString() : undefined,
         maxUsageTotal: formData.maxUsageTotal ? Number(formData.maxUsageTotal) : undefined,
@@ -173,7 +178,7 @@ export default function DiscountsPage() {
               </select>
               <input
                 type="number"
-                placeholder="Value"
+                placeholder={formData.type === 'percentage' ? 'Value (0-100)' : 'Value ($)'}
                 value={formData.value}
                 onChange={e => setFormData({ ...formData, value: parseFloat(e.target.value) })}
                 className="px-3 py-2 border rounded text-sm"
@@ -236,7 +241,7 @@ export default function DiscountsPage() {
                 <td className="p-3">{d.name || '-'}</td>
                 <td className="p-3 capitalize text-sm">{d.type}</td>
                 <td className="p-3 font-medium">
-                  {d.type === 'percentage' ? `${d.value}%` : `$${d.value}`}
+                  {d.type === 'percentage' ? `${d.value}%` : `$${(d.value / 100).toFixed(2)}`}
                 </td>
                 <td className="p-3 text-sm">{d.startDate ? new Date(d.startDate).toLocaleDateString() : '-'}</td>
                 <td className="p-3 text-sm">{d.endDate ? new Date(d.endDate).toLocaleDateString() : '-'}</td>

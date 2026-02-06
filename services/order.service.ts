@@ -337,13 +337,16 @@ export class OrderService extends BaseService<IOrderHeader> {
           if (rule.minOrderAmount && subtotal < rule.minOrderAmount) {
             return errorResponse(ErrorCodes.VALIDATION_ERROR, `Minimum order amount of ${rule.minOrderAmount} required for discount ${rule.code}`);
           }
-
-          // Calculate discount amount using utility function (handles percentage and fixed)
-          const discountAmount = calculateDiscount(
-            subtotal,
-            Number(rule.value),
-            rule.type as 'percentage' | 'fixed'
-          );
+          // Calculate discount amount - values stored in expanded minor units
+          // Percentage: apply percentage (20 means 20%)
+          // Fixed: use value directly (2000000 means $20.00)
+          let discountAmount = 0;
+          if (rule.type === 'percentage') {
+            discountAmount = Math.round((subtotal * Number(rule.value)) / 100);
+          } else {
+            // Fixed amount already in expanded minor units
+            discountAmount = Math.min(Math.round(Number(rule.value)), subtotal);
+          }
           
           validatePrice(discountAmount, `Discount ${rule.code}`);
 
@@ -352,7 +355,7 @@ export class OrderService extends BaseService<IOrderHeader> {
             return errorResponse(ErrorCodes.VALIDATION_ERROR, `Discounts exceed subtotal for code: ${rule.code}`);
           }
 
-          // Persist order discount (all in cents)
+          // Persist order discount (all in expanded minor units)
           await prisma.orderDiscount.create({
             data: {
               orderHeaderId: header.id,
@@ -440,27 +443,35 @@ export class OrderService extends BaseService<IOrderHeader> {
     discountAmount?: number; // For fixed discounts or manual entry (in cents)
   }, ctx?: UserContext) {
     try {
+      console.log('[ORDER SERVICE] applyDiscount called for orderId:', orderId, 'discountData:', discountData);
       const forbidden = requireRole(ctx, ['admin', 'manager', 'staff']);
       if (forbidden) return forbidden;
 
       // Get order
+      console.log('[ORDER SERVICE] Fetching order with discounts...');
       const order = await (prisma as any).orderHeader.findUnique({
         where: { id: orderId },
         include: { lines: true, discounts: true },
       });
 
       if (!order) {
+        console.error('[ORDER SERVICE] Order not found:', orderId);
         return errorResponse(ErrorCodes.NOT_FOUND, 'Order not found');
       }
+      console.log('[ORDER SERVICE] Order found:', { subtotal: order.subtotal, existingDiscounts: order.discounts?.length });
 
       // Validate discount code exists (if applicable)
       let discountAmount = discountData.discountAmount || 0;
+      console.log('[ORDER SERVICE] Discount type:', discountData.discountType, 'Initial amount:', discountAmount);
 
       if (discountData.discountType === 'percentage' || discountData.discountType === 'bulk') {
+        console.log('[ORDER SERVICE] Looking up discount rule:', discountData.discountCode);
         const rule = await (prisma as any).discountRule.findUnique({ where: { code: discountData.discountCode } });
         if (!rule) {
+          console.error('[ORDER SERVICE] Discount rule not found:', discountData.discountCode);
           return errorResponse(ErrorCodes.NOT_FOUND, 'Discount code not found');
         }
+        console.log('[ORDER SERVICE] Discount rule found:', { type: rule.type, value: rule.value, isActive: rule.isActive });
 
         if (!rule.isActive) {
           return errorResponse(ErrorCodes.VALIDATION_ERROR, 'Discount code is inactive');
@@ -487,18 +498,23 @@ export class OrderService extends BaseService<IOrderHeader> {
         // Calculate discount amount
         if (rule.type === 'percentage') {
           discountAmount = Math.round(order.subtotal * (Number(rule.value) / 100));
+          console.log('[ORDER SERVICE] Calculated percentage discount:', { percentage: rule.value, subtotal: order.subtotal, discountAmount });
         } else {
           // fixed amount in rule.value is Decimal (dollars); convert to cents
           discountAmount = normalizeToCents(Number(rule.value));
+          console.log('[ORDER SERVICE] Calculated fixed discount:', { fixedAmount: rule.value, discountAmount });
         }
       }
 
       // Validate discount won't result in negative total
+      console.log('[ORDER SERVICE] Validating discount constraints...');
       const allCurrentDiscounts = await (prisma as any).orderDiscount.findMany({ where: { orderHeaderId: orderId } });
       const currentTotalDiscount = allCurrentDiscounts.reduce((sum: number, d: any) => sum + d.discountAmount, 0);
       const proposedTotalDiscount = currentTotalDiscount + discountAmount;
+      console.log('[ORDER SERVICE] Discount totals:', { currentTotal: currentTotalDiscount, newAmount: discountAmount, proposedTotal: proposedTotalDiscount, subtotal: order.subtotal });
 
       if (proposedTotalDiscount > order.subtotal) {
+        console.error('[ORDER SERVICE] Discount exceeds subtotal');
         return errorResponse(
           ErrorCodes.VALIDATION_ERROR,
           `Total discount (${proposedTotalDiscount}) cannot exceed subtotal (${order.subtotal})`
@@ -506,6 +522,7 @@ export class OrderService extends BaseService<IOrderHeader> {
       }
 
       // Create OrderDiscount record
+      console.log('[ORDER SERVICE] Creating OrderDiscount record...');
       const discount = await (prisma as any).orderDiscount.create({
         data: {
           orderHeaderId: orderId,
@@ -517,20 +534,25 @@ export class OrderService extends BaseService<IOrderHeader> {
           discountAmount,
         },
       });
+      console.log('[ORDER SERVICE] ✅ OrderDiscount created:', { id: discount.id, amount: discount.discountAmount });
 
       // Update order totals - DISCOUNT IS NOW ACCOUNTED FOR
+      console.log('[ORDER SERVICE] Updating order totals...');
+      const newTotal = Math.max(0, order.subtotal - proposedTotalDiscount + order.tax);
+      console.log('[ORDER SERVICE] New order totals:', { subtotal: order.subtotal, discountTotal: proposedTotalDiscount, tax: order.tax, newTotal });
       const updatedOrder = await (prisma as any).orderHeader.update({
         where: { id: orderId },
         data: {
           discountTotal: proposedTotalDiscount,
-          total: Math.max(0, order.subtotal - proposedTotalDiscount + order.tax),
+          total: newTotal,
         },
       });
+      console.log('[ORDER SERVICE] ✅ Order updated with new totals');
 
       return { discount, updatedOrder };
     } catch (error: unknown) {
       const e = normalizeError(error);
-      console.error('Error applying discount:', e);
+      console.error('[ORDER SERVICE] ❌ Error in applyDiscount:', e);
       return errorResponse(ErrorCodes.INTERNAL_ERROR, 'Failed to apply discount');
     }
   }

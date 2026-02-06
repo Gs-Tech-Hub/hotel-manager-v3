@@ -42,8 +42,10 @@ export async function GET(
 
     return NextResponse.json(
       successResponse({
-        ...rule,
-        applicableDepts: JSON.parse(rule.applicableDepts || '[]'),
+        data: {
+          ...rule,
+          applicableDepts: JSON.parse(rule.applicableDepts || '[]'),
+        },
       })
     );
   } catch (error) {
@@ -64,8 +66,10 @@ export async function GET(
  *   name?: string
  *   description?: string
  *   type?: "percentage" | "fixed" | "tiered"
- *   value?: number
- *   minOrderAmount?: number
+ *   value?: number                   // Discount value
+ *                                    // - Percentage: 0-100 (e.g., 20 for 20% off)
+ *                                    // - Fixed: dollars in minor units (e.g., 2000 for $20.00)
+ *   minOrderAmount?: number          // Minimum order amount (in expanded minor units)
  *   maxUsagePerCustomer?: number
  *   maxTotalUsage?: number
  *   applicableDepts?: string[]

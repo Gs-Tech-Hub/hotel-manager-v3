@@ -1,0 +1,16 @@
+{
+  "name": "Hotel Manager",
+  "short_name": "Hotel Manager",
+  "description": "Hotel management system with POS, booking, inventory, and RBAC",
+  "start_url": "/",
+  "display": "standalone",
+  "background_color": "#ffffff",
+  "theme_color": "#000000",
+  "icons": [
+    {
+      "src": "/og-image.png",
+      "sizes": "1200x630",
+      "type": "image/png"
+    }
+  ]
+}

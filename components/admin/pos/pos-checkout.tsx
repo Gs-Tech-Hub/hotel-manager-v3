@@ -520,13 +520,17 @@ export default function POSCheckoutShell({ terminalId }: { terminalId?: string }
           if (json && json.success && json.data) {
             // Successfully validated
             const rule = json.data
+            // All discount values stored in expanded minor units - use directly
+            // Percentage: 20 means 20%
+            // Fixed: 2000000 means $20.00 (100x for consistent unit storage)
             let discountAmount = 0
             
             if (rule.type === 'percentage') {
+              // Apply percentage directly
               discountAmount = Math.round((subtotal * rule.value) / 100)
             } else {
-              // Fixed amount discount (already in cents)
-              discountAmount = Math.round(rule.value * (rule.minorUnit || 100))
+              // Fixed amount already in expanded minor units
+              discountAmount = Math.min(Math.round(Number(rule.value)), subtotal)
             }
             
             validated.push({

@@ -48,25 +48,34 @@ export function DiscountSection({
 
     setIsApplying(true);
     setApplyError(null);
+    console.log('[DISCOUNT SECTION] User attempting to apply discount code:', discountCode);
 
     try {
-      const res = await fetch(`/api/orders/${orderId}/apply-discount`, {
+      console.log('[DISCOUNT SECTION] Sending POST request to /api/orders/' + orderId + '/discounts');
+      const res = await fetch(`/api/orders/${orderId}/discounts`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         credentials: "include",
-        body: JSON.stringify({ code: discountCode.toUpperCase() }),
+        body: JSON.stringify({ discountCode: discountCode.toUpperCase() }),
       });
+      console.log('[DISCOUNT SECTION] Response received:', { status: res.status, ok: res.ok });
 
       const data = await res.json();
+      console.log('[DISCOUNT SECTION] Response data:', data);
 
       if (!res.ok) {
-        throw new Error(data.error?.message || "Failed to apply discount");
+        const errorMsg = data.error?.message || "Failed to apply discount";
+        console.error('[DISCOUNT SECTION] ❌ Failed to apply discount:', errorMsg);
+        throw new Error(errorMsg);
       }
 
+      console.log('[DISCOUNT SECTION] ✅ Discount applied successfully!');
       setDiscountCode("");
       onDiscountApplied();
     } catch (err: any) {
-      setApplyError(err.message || "Failed to apply discount");
+      const errorMsg = err.message || "Failed to apply discount";
+      console.error('[DISCOUNT SECTION] ❌ Exception:', errorMsg);
+      setApplyError(errorMsg);
     } finally {
       setIsApplying(false);
     }

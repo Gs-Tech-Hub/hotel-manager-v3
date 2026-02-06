@@ -880,11 +880,15 @@ model DiscountRule {
   name                String
   description         String?
   type                String    @default("percentage") // percentage, fixed, tiered
-  value               Decimal   @db.Decimal(10, 2) // percentage (0-100) or fixed amount (in cents for fixed type)
+  // VALUE STORAGE FORMAT (expanded minor units for consistency):
+  // - Percentage: 20 means 20% (applied to subtotal)
+  // - Fixed: 2000000 means $20.00 (stored as 100x cents for unit consistency)
+  // All values use same unit expansion to avoid conversion logic
+  value               Decimal   @db.Decimal(15, 2) 
   maxUsagePerCustomer Int?
   maxTotalUsage       Int?
   currentUsage        Int       @default(0)
-  minOrderAmount      Int? // minimum order total to apply (in cents)
+  minOrderAmount      Int? // minimum order total to apply (in expanded minor units)
   applicableDepts     String    @default("[]") // JSON array of department codes (empty = all depts)
   applicableSections  String    @default("[]") // JSON array of section IDs (empty = all sections within applicable depts)
   isActive            Boolean   @default(true)

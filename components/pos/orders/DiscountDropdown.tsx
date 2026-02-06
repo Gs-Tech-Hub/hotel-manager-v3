@@ -175,14 +175,13 @@ export function DiscountDropdown({
             <SelectContent>
               {availableDiscounts.map((discount) => {
                 // Format discount value display
+                // All values stored in expanded minor units
+                // Percentage: 20 means 20%
+                // Fixed: 2000000 means $20.00 (divide by 100 to get cents for display)
                 const discountDisplay = 
                   discount.type === "percentage"
                     ? `${discount.value}%`
-                    : discount.type === "fixed"
-                    ? `${formatCents(Math.round(discount.value * 100))}`
-                    : discount.type === "employee"
-                    ? `Fixed - ${formatCents(Math.round(discount.value))}`
-                    : `${discount.value}`;
+                    : `${formatCents(Math.round(Number(discount.value) / 100))}`;
                 
                 return (
                   <SelectItem key={discount.id} value={discount.id}>

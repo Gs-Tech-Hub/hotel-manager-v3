@@ -27,6 +27,7 @@ import {
 	DollarSign,
 	AlertCircleIcon,
 	Briefcase,
+	Flashlight,
 
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
@@ -277,7 +278,7 @@ export function Sidebar({ onMobileClose }: SidebarProps) {
 		Object.fromEntries(sidebarGroups.map(g => [g.title, true]))
 	);
 	const [expandedItems, setExpandedItems] = useState<Record<string, boolean>>({
-		'/employees': true, // Employees section expanded by default
+		'/employees': false,
 	});
 	const { user } = useAuth();
 

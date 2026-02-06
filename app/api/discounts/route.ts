@@ -21,11 +21,14 @@ import { successResponse, errorResponse, ErrorCodes, getStatusCode } from '@/lib
  *   code: string              // Unique discount code
  *   name?: string             // Discount name
  *   type: "percentage" | "fixed" | "tiered" | "employee" | "bulk"
- *   value: number             // Discount value (percentage: 0-100, fixed: amount in cents)
+ *   value: number             // Discount value
+ *                             // - Percentage: 0-100 (e.g., 20 for 20% off)
+ *                             // - Fixed: dollars in minor units (e.g., 2000 for $20.00)
+ *                             // Note: For fixed amounts, frontend should multiply by 100
  *   description?: string
  *   startDate: ISO string     // When discount becomes active
  *   endDate?: ISO string      // When discount expires (optional)
- *   minOrderAmount?: number   // Minimum order amount to apply (in cents)
+ *   minOrderAmount?: number   // Minimum order amount to apply (in expanded minor units)
  *   maxUsageTotal?: number    // Total usage limit (optional)
  *   maxUsagePerCustomer?: number // Usage limit per customer (optional)
  *   applicableDepts?: string[] // Department codes (optional, all if not specified)
