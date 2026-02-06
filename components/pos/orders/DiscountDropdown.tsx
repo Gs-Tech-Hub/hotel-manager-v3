@@ -175,13 +175,10 @@ export function DiscountDropdown({
             <SelectContent>
               {availableDiscounts.map((discount) => {
                 // Format discount value display
-                // All values stored in expanded minor units
-                // Percentage: 20 means 20%
-                // Fixed: 2000000 means $20.00 (divide by 100 to get cents for display)
                 const discountDisplay = 
                   discount.type === "percentage"
                     ? `${discount.value}%`
-                    : `${formatCents(Math.round(Number(discount.value) / 100))}`;
+                    : `${formatCents(Math.round(Number(discount.value)))}`;
                 
                 return (
                   <SelectItem key={discount.id} value={discount.id}>
@@ -241,9 +238,7 @@ export function DiscountDropdown({
                     <Badge variant="outline" className="text-xs bg-green-100">
                       {discount.type === "percentage"
                         ? `${discount.value}%`
-                        : discount.type === "employee"
-                        ? formatCents(Math.round(discount.value))
-                        : formatCents(Math.round(discount.value * 100))}
+                        : formatCents(Math.round(Number(discount.value)))}
                     </Badge>
                   )}
                   <button
