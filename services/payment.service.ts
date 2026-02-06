@@ -36,7 +36,7 @@ import { BaseService } from './base.service';
 import { IPayment } from '@/types/entities';
 import { prisma } from '@/lib/auth/prisma';
 import { normalizeToCents, validatePrice } from '@/lib/price';
-import { errorResponse, ErrorCodes } from '@/lib/api-response';
+import { errorResponse, successResponse, ErrorCodes } from '@/lib/api-response';
 
 /**
  * Payment request interface for unified payment recording
@@ -89,15 +89,24 @@ export class PaymentService extends BaseService<IPayment> {
     orderId: string,
     paymentRequest: PaymentRequest
   ): Promise<PaymentResult | any> {
+    const startTime = Date.now();
+    const timeline: { [key: string]: number } = {};
+
     try {
+      timeline.start = 0;
+      console.log(`[Payment] recordOrderPayment START for order ${orderId}`);
+
       const amount = normalizeToCents(paymentRequest.amount);
       validatePrice(amount, 'payment amount');
+      timeline.validatePrice = Date.now() - startTime;
 
       // Fetch order with minimal relations (payments only)
       const order = await (prisma as any).orderHeader.findUnique({
         where: { id: orderId },
-        include: { payments: true },
+        include: { payments: true, lines: { include: { departmentSection: true } } },
       });
+      timeline.fetchOrder = Date.now() - startTime;
+      console.log(`[Payment] Fetched order in ${timeline.fetchOrder}ms`);
 
       if (!order) {
         return errorResponse(ErrorCodes.NOT_FOUND, 'Order not found');
@@ -111,21 +120,51 @@ export class PaymentService extends BaseService<IPayment> {
         );
       }
 
-      // Calculate current payment state
-      const totalPaid = order.payments.reduce((sum: number, p: any) => sum + p.amount, 0);
-      if (totalPaid + amount > order.total) {
-        return errorResponse(ErrorCodes.VALIDATION_ERROR, 'Payment amount exceeds order total');
+      // Get affected section IDs for metadata updates BEFORE transaction
+      const affectedSectionIds = new Set<string>();
+      for (const line of order.lines || []) {
+        if (line.departmentSectionId) {
+          affectedSectionIds.add(line.departmentSectionId);
+        }
       }
 
-      // Ensure payment type exists
+      // Ensure payment type exists BEFORE transaction (cache it)
+      console.log(`[Payment] Ensuring payment type for method: ${paymentRequest.paymentMethod}`);
+      const ensureTypeStart = Date.now();
       const paymentType = await this.ensurePaymentType(paymentRequest.paymentMethod);
+      timeline.ensurePaymentType = Date.now() - ensureTypeStart;
+      console.log(`[Payment] ensurePaymentType took ${timeline.ensurePaymentType}ms`);
 
-      // ==================== FAST FINANCIAL TRANSACTION ====================
-      // ONLY: Create payment record + update payment status
-      // Order status & inventory are handled by fulfillment pipeline
+      // ==================== TRANSACTION: CREATE PAYMENT + UPDATE STATUS ====================
+      console.log(`[Payment] STARTING TRANSACTION for order ${orderId}, maxWait=10000, timeout=10000`);
+      const txStartTime = Date.now();
+      
+      // Re-fetch current payment state INSIDE transaction to avoid race conditions
       const payment = await prisma.$transaction(
         async (tx: any) => {
+          const txInnerStart = Date.now();
+          console.log(`[Payment-TX] Transaction callback started (${Date.now() - txStartTime}ms after tx call)`);
+
+          // Re-fetch current order state within transaction (gets latest committed data)
+          const currentOrder = await tx.orderHeader.findUnique({
+            where: { id: orderId },
+            include: { payments: true },
+          });
+          console.log(`[Payment-TX] Re-fetched order in ${Date.now() - txInnerStart}ms`);
+
+          if (!currentOrder) {
+            throw new Error('Order not found in transaction');
+          }
+
+          // Validate payment amount against current state
+          const currentTotalPaid = currentOrder.payments.reduce((sum: number, p: any) => sum + p.amount, 0);
+          if (currentTotalPaid + amount > currentOrder.total) {
+            throw new Error('Payment amount exceeds order total');
+          }
+
           // Create payment record
+          const createPaymentStart = Date.now();
+          console.log(`[Payment-TX] Creating payment record...`);
           const newPayment = await tx.orderPayment.create({
             data: {
               orderHeaderId: orderId,
@@ -137,36 +176,63 @@ export class PaymentService extends BaseService<IPayment> {
               processedAt: new Date(),
             },
           });
+          console.log(`[Payment-TX] Payment created in ${Date.now() - createPaymentStart}ms`);
 
-          // Calculate new payment state
-          const newTotalPaid = totalPaid + amount;
+          // Calculate new payment state based on CURRENT state
+          const newTotalPaid = currentTotalPaid + amount;
 
           // Determine payment status
           let paymentStatus = 'unpaid';
-          if (newTotalPaid >= order.total) {
+          if (newTotalPaid >= currentOrder.total) {
             paymentStatus = 'paid';
           } else if (newTotalPaid > 0) {
             paymentStatus = 'partial';
           }
 
-          // Update ONLY payment status on OrderHeader
-          // Order status (pending → processing) is handled by fulfillment pipeline
-          if (paymentStatus !== order.paymentStatus) {
+          console.log(`[Payment-TX] Updating order status from ${currentOrder.paymentStatus} to ${paymentStatus}`);
+
+          // ALWAYS update if status changed
+          if (paymentStatus !== currentOrder.paymentStatus) {
+            const updateStart = Date.now();
             await tx.orderHeader.update({
               where: { id: orderId },
               data: { paymentStatus },
             });
+            console.log(`[Payment-TX] Order updated in ${Date.now() - updateStart}ms`);
           }
 
-          return newPayment;
+          console.log(`[Payment-TX] Total transaction time: ${Date.now() - txInnerStart}ms`);
+          return { newPayment, paymentStatus };
         },
-        { maxWait: 5000, timeout: 5000 } // Fast timeout - only financial operations
+        { maxWait: 10000, timeout: 10000 } // Increased to handle queue delays
       );
+      timeline.transaction = Date.now() - startTime;
+      console.log(`[Payment] Transaction completed in ${timeline.transaction}ms`);
 
-      return payment;
+      // Extract payment from transaction result
+      const paymentResult = payment.newPayment;
+
+      // ==================== ASYNC SECTION METADATA UPDATE ====================
+      console.log(`[Payment] Starting async section updates for ${affectedSectionIds.size} sections`);
+      if (affectedSectionIds.size > 0) {
+        // Fire-and-forget: Start all section updates concurrently
+        Promise.all(
+          Array.from(affectedSectionIds).map((sectionId) =>
+            this.updateSectionMetadataAsync(sectionId, paymentRequest.paymentMethod)
+          )
+        ).catch((err) => {
+          console.error('Error in concurrent section metadata updates:', err);
+        });
+      }
+
+      const totalTime = Date.now() - startTime;
+      console.log(`[Payment] recordOrderPayment COMPLETE (${totalTime}ms total) - Timeline:`, timeline);
+
+      return successResponse(paymentResult);
     } catch (error) {
-      console.error('Error recording order payment:', error);
-      return errorResponse(ErrorCodes.INTERNAL_ERROR, 'Failed to record payment');
+      const totalTime = Date.now() - startTime;
+      console.error(`[Payment] recordOrderPayment FAILED after ${totalTime}ms:`, error);
+      return errorResponse(ErrorCodes.INTERNAL_ERROR, error instanceof Error ? error.message : 'Failed to record payment');
     }
   }
 
@@ -186,11 +252,17 @@ export class PaymentService extends BaseService<IPayment> {
     orderId: string,
     paymentRequest: PaymentRequest
   ): Promise<PaymentResult | any> {
+    const startTime = Date.now();
+    const timeline: { [key: string]: number } = {};
+
     try {
+      console.log(`[Deferred Payment] START for order ${orderId}, amount=${paymentRequest.amount}, method=${paymentRequest.paymentMethod}`);
+      
       const amount = normalizeToCents(paymentRequest.amount);
       validatePrice(amount, 'payment amount');
+      timeline.validatePrice = Date.now() - startTime;
 
-      // Fetch order with all needed relations
+      // Fetch order with all needed relations - fresh from DB
       const order = await (prisma as any).orderHeader.findUnique({
         where: { id: orderId },
         include: { 
@@ -198,6 +270,8 @@ export class PaymentService extends BaseService<IPayment> {
           lines: { include: { departmentSection: true } }
         },
       });
+      timeline.fetchOrder = Date.now() - startTime;
+      console.log(`[Deferred Payment] Fetched order in ${timeline.fetchOrder}ms`);
 
       if (!order) {
         return errorResponse(ErrorCodes.NOT_FOUND, 'Order not found');
@@ -211,13 +285,8 @@ export class PaymentService extends BaseService<IPayment> {
         );
       }
 
-      // Calculate current payment state
-      const totalPaid = order.payments.reduce((sum: number, p: any) => sum + p.amount, 0);
-      if (totalPaid + amount > order.total) {
-        return errorResponse(ErrorCodes.VALIDATION_ERROR, 'Payment amount exceeds order total');
-      }
-
       // Get affected section IDs for metadata updates
+
       const affectedSectionIds = new Set<string>();
       for (const line of order.lines || []) {
         if (line.departmentSectionId) {
@@ -225,15 +294,43 @@ export class PaymentService extends BaseService<IPayment> {
         }
       }
 
-      // Ensure payment type exists
+      // Ensure payment type exists BEFORE transaction
+      console.log(`[Deferred Payment] Ensuring payment type for method: ${paymentRequest.paymentMethod}`);
+      const ensureTypeStart = Date.now();
       const paymentType = await this.ensurePaymentType(paymentRequest.paymentMethod);
+      timeline.ensurePaymentType = Date.now() - ensureTypeStart;
+      console.log(`[Deferred Payment] ensurePaymentType took ${timeline.ensurePaymentType}ms`);
 
-      // ==================== FAST FINANCIAL TRANSACTION ====================
-      // ONLY: Create payment record + update payment status
-      // Section metadata is updated asynchronously to prevent timeout
+      // ==================== TRANSACTION: CREATE PAYMENT + UPDATE STATUS ====================
+      console.log(`[Deferred Payment] STARTING TRANSACTION for order ${orderId}, maxWait=10000, timeout=10000`);
+      const txStartTime = Date.now();
+      
+      // Re-fetch current payment state INSIDE transaction to avoid race conditions
       const payment = await prisma.$transaction(
         async (tx: any) => {
+          const txInnerStart = Date.now();
+          console.log(`[Deferred-TX] Transaction callback started (${Date.now() - txStartTime}ms after tx call)`);
+
+          // Re-fetch current order state within transaction (gets latest committed data)
+          const currentOrder = await tx.orderHeader.findUnique({
+            where: { id: orderId },
+            include: { payments: true },
+          });
+          console.log(`[Deferred-TX] Re-fetched order in ${Date.now() - txInnerStart}ms`);
+
+          if (!currentOrder) {
+            throw new Error('Order not found in transaction');
+          }
+
+          // Validate payment amount against current state
+          const currentTotalPaid = currentOrder.payments.reduce((sum: number, p: any) => sum + p.amount, 0);
+          if (currentTotalPaid + amount > currentOrder.total) {
+            throw new Error('Payment amount exceeds order total');
+          }
+
           // Create payment record
+          const createPaymentStart = Date.now();
+          console.log(`[Deferred-TX] Creating payment record...`);
           const newPayment = await tx.orderPayment.create({
             data: {
               orderHeaderId: orderId,
@@ -245,10 +342,11 @@ export class PaymentService extends BaseService<IPayment> {
               processedAt: new Date(),
             },
           });
+          console.log(`[Deferred-TX] Payment created in ${Date.now() - createPaymentStart}ms`);
 
-          // Calculate new payment state
-          const newTotalPaid = totalPaid + amount;
-          const amountOwed = order.total - newTotalPaid;
+          // Calculate new payment state based on CURRENT state
+          const newTotalPaid = currentTotalPaid + amount;
+          const amountOwed = currentOrder.total - newTotalPaid;
 
           // Determine payment status
           let paymentStatus = 'unpaid';
@@ -258,25 +356,31 @@ export class PaymentService extends BaseService<IPayment> {
             paymentStatus = 'partial';
           }
 
-          // Update ONLY payment status on OrderHeader
-          if (paymentStatus !== order.paymentStatus) {
+          // ALWAYS update if status changed
+          if (paymentStatus !== currentOrder.paymentStatus) {
+            const updateStart = Date.now();
             await tx.orderHeader.update({
               where: { id: orderId },
               data: { paymentStatus },
             });
+            console.log(`[Deferred-TX] Order updated in ${Date.now() - updateStart}ms`);
           }
 
-          return newPayment;
+          console.log(`[Deferred-TX] Total transaction time: ${Date.now() - txInnerStart}ms`);
+          return { newPayment, paymentStatus };
         },
-        { maxWait: 15000, timeout: 15000 } // Increased timeout for payment operations
+        { maxWait: 10000, timeout: 10000 } // Increased maxWait to handle queue delays
       );
+      timeline.transaction = Date.now() - startTime;
+      console.log(`[Deferred Payment] Transaction completed in ${timeline.transaction}ms`);
+
+      // Extract payment from transaction result
+      const paymentResult = payment.newPayment;
 
       // ==================== ASYNC SECTION METADATA UPDATE ====================
-      // Queue concurrent, independent section updates (no blocking)
-      // Each section is updated in parallel, completely separate from payment transaction
+      console.log(`[Deferred Payment] Starting async section updates for ${affectedSectionIds.size} sections`);
       if (affectedSectionIds.size > 0) {
         // Fire-and-forget: Start all section updates concurrently
-        // Don't await - let them run independently
         Promise.all(
           Array.from(affectedSectionIds).map((sectionId) =>
             this.updateSectionMetadataAsync(sectionId, paymentRequest.paymentMethod)
@@ -286,10 +390,14 @@ export class PaymentService extends BaseService<IPayment> {
         });
       }
 
-      return payment;
+      const totalTime = Date.now() - startTime;
+      console.log(`[Deferred Payment] COMPLETE (${totalTime}ms total) - Timeline:`, timeline);
+
+      return successResponse(paymentResult);
     } catch (error) {
-      console.error('Error recording deferred payment:', error);
-      return errorResponse(ErrorCodes.INTERNAL_ERROR, 'Failed to record payment');
+      const totalTime = Date.now() - startTime;
+      console.error(`[Deferred Payment] FAILED after ${totalTime}ms:`, error);
+      return errorResponse(ErrorCodes.INTERNAL_ERROR, error instanceof Error ? error.message : 'Failed to record payment');
     }
   }
 
