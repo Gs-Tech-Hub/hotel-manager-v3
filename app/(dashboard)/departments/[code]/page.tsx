@@ -101,14 +101,13 @@ export default function DepartmentDetail() {
     }
   }, [decodedCode])
 
-  // Fetch stats for selected date range (section details only)
+  // Fetch stats for selected date range
   const fetchSectionStats = async (code: string, fromDate: string | null, toDate: string | null) => {
     if (!fromDate || !toDate) return
-    if (!code.includes(':')) return // Only fetch for sections, not parent departments
 
     setStatsLoading(true)
     try {
-      const url = `/api/departments/${encodeURIComponent(code)}/section/stats?startDate=${fromDate}&endDate=${toDate}`
+      const url = `/api/departments/${encodeURIComponent(code)}/stats?fromDate=${fromDate}&toDate=${toDate}`
       const res = await fetch(url)
       if (!res.ok) {
         console.error('Failed to fetch stats:', res.statusText)
