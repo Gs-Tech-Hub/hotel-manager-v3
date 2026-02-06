@@ -721,7 +721,27 @@ export class OrderService extends BaseService<IOrderHeader> {
   }
 
   /**
-   * Get order with all related data
+   * Calculate order-specific financial state
+   * Used for backward integration to ensure each order has accurate financial data
+   * regardless of section metadata
+   */
+  private calculateOrderFinancialState(order: any) {
+    const totalPaid = (order.payments || []).reduce((sum: number, p: any) => sum + p.amount, 0);
+    const amountOwed = Math.max(0, order.total - totalPaid);
+    const hasExtras = order.total > (order.subtotal + order.tax - order.discountTotal);
+    const extrasTotal = hasExtras ? order.total - (order.subtotal + order.tax - order.discountTotal) : 0;
+
+    return {
+      totalPaid,
+      amountOwed,
+      hasExtras,
+      extrasTotal,
+      paymentStatus: amountOwed <= 0 ? 'paid' : totalPaid > 0 ? 'partial' : 'unpaid',
+    };
+  }
+
+  /**
+   * Get order with all related data and calculated financial state
    */
   async getOrderById(id: string, ctx?: UserContext) {
     try {
@@ -729,12 +749,17 @@ export class OrderService extends BaseService<IOrderHeader> {
         where: { id },
         include: {
           customer: true,
-          lines: true,
+          lines: { include: { departmentSection: true } },
           departments: { include: { department: true } },
           discounts: { include: { discountRule: true } },
           payments: { include: { paymentType: true } },
           fulfillments: true,
           reservations: true,
+          extras: {
+            include: {
+              extra: true,
+            },
+          },
         },
       });
 
@@ -746,7 +771,14 @@ export class OrderService extends BaseService<IOrderHeader> {
       const forbidden = requireRoleOrOwner(ctx, ['admin', 'manager', 'staff'], order.customerId);
       if (forbidden) return forbidden;
 
-      return order;
+      // Calculate order-specific financial state for backward integration
+      const financialState = this.calculateOrderFinancialState(order);
+      
+      // Attach financial state to order
+      return {
+        ...order,
+        financialState,
+      };
     } catch (error) {
       console.error('Error fetching order:', error);
       return errorResponse(ErrorCodes.INTERNAL_ERROR, 'Failed to fetch order');

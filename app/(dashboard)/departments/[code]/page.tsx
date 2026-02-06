@@ -299,6 +299,7 @@ export default function DepartmentDetail() {
               <OrderStatsCard
                 unpaidStats={sectionStats.unpaid}
                 paidStats={sectionStats.paid}
+                aggregatedStats={sectionStats.aggregated}
               />
             </div>
           </div>

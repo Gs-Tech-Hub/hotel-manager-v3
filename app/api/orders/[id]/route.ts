@@ -60,7 +60,11 @@ export async function GET(
         },
         fulfillments: true,
         reservations: true,
-        extras: true,
+        extras: {
+          include: {
+            extra: true,
+          },
+        },
       },
     });
 

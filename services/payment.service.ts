@@ -140,7 +140,6 @@ export class PaymentService extends BaseService<IPayment> {
 
           // Calculate new payment state
           const newTotalPaid = totalPaid + amount;
-          const newAmountDue = order.total - newTotalPaid;
 
           // Determine payment status
           let paymentStatus = 'unpaid';
@@ -173,10 +172,15 @@ export class PaymentService extends BaseService<IPayment> {
 
   /**
    * Record payment for a deferred (pending) order
-   * FINANCIAL ONLY: Creates payment record and updates payment status
+   * FINANCIAL ONLY: Creates payment record, updates payment status, and section finance stats
    * 
-   * NOTE: Order status transitions and other business logic are handled by
-   * the fulfillment pipeline. This keeps transactions fast and focused.
+   * Updates section metadata with:
+   * - totalPaidAmount: Cumulative amount paid towards this order
+   * - amountOwed: Remaining amount still owed (includes any extras added)
+   * - lastPaymentAt: When the most recent payment was made
+   * - lastPaymentMethod: How the most recent payment was made
+   * 
+   * This ensures sections track current financial state even when extras are added mid-order
    */
   async recordDeferredOrderPayment(
     orderId: string,
@@ -186,10 +190,13 @@ export class PaymentService extends BaseService<IPayment> {
       const amount = normalizeToCents(paymentRequest.amount);
       validatePrice(amount, 'payment amount');
 
-      // Fetch order with minimal relations
+      // Fetch order with all needed relations
       const order = await (prisma as any).orderHeader.findUnique({
         where: { id: orderId },
-        include: { payments: true },
+        include: { 
+          payments: true,
+          lines: { include: { departmentSection: true } }
+        },
       });
 
       if (!order) {
@@ -210,11 +217,19 @@ export class PaymentService extends BaseService<IPayment> {
         return errorResponse(ErrorCodes.VALIDATION_ERROR, 'Payment amount exceeds order total');
       }
 
+      // Get affected section IDs for metadata updates
+      const affectedSectionIds = new Set<string>();
+      for (const line of order.lines || []) {
+        if (line.departmentSectionId) {
+          affectedSectionIds.add(line.departmentSectionId);
+        }
+      }
+
       // Ensure payment type exists
       const paymentType = await this.ensurePaymentType(paymentRequest.paymentMethod);
 
       // ==================== FAST FINANCIAL TRANSACTION ====================
-      // ONLY: Create payment record + update payment status + finance-related stats
+      // ONLY: Create payment record + update payment status + section finance stats
       const payment = await prisma.$transaction(
         async (tx: any) => {
           // Create payment record
@@ -232,29 +247,81 @@ export class PaymentService extends BaseService<IPayment> {
 
           // Calculate new payment state
           const newTotalPaid = totalPaid + amount;
+          const amountOwed = order.total - newTotalPaid;
 
           // Determine payment status
           let paymentStatus = 'unpaid';
-          if (newTotalPaid >= order.total) {
+          if (amountOwed <= 0) {
             paymentStatus = 'paid';
           } else if (newTotalPaid > 0) {
             paymentStatus = 'partial';
           }
 
-          // Update ONLY payment status + finance-related metadata
+          // Update ONLY payment status on OrderHeader
           if (paymentStatus !== order.paymentStatus) {
             await tx.orderHeader.update({
               where: { id: orderId },
-              data: { 
-                paymentStatus,
-                metadata: {
-                  ...(order.metadata as any) || {},
-                  totalPaidAmount: newTotalPaid,
-                  lastPaymentAt: new Date(),
-                  lastPaymentMethod: paymentRequest.paymentMethod,
-                },
-              },
+              data: { paymentStatus },
             });
+          }
+
+          // Update section metadata by RECALCULATING from ALL orders in section
+          // This ensures section stats include extras added to any order
+          for (const sectionId of affectedSectionIds) {
+            const section = await tx.departmentSection.findUnique({
+              where: { id: sectionId },
+            });
+
+            if (section) {
+              // Get ALL orders that have lines in this section
+              const sectionOrders = await tx.orderHeader.findMany({
+                where: {
+                  lines: {
+                    some: { departmentSectionId: sectionId }
+                  }
+                },
+                include: {
+                  payments: true,
+                  lines: { where: { departmentSectionId: sectionId } }
+                }
+              });
+
+              // Calculate section-wide totals (including all extras)
+              let sectionTotalAmount = 0;
+              let sectionPaidAmount = 0;
+              let sectionOwedAmount = 0;
+
+              for (const order of sectionOrders) {
+                sectionTotalAmount += order.total;
+                const orderPaid = order.payments.reduce((sum: number, p: any) => sum + p.amount, 0);
+                sectionPaidAmount += orderPaid;
+                sectionOwedAmount += Math.max(0, order.total - orderPaid);
+              }
+
+              const existingMeta = (section.metadata as any) || {};
+
+              await tx.departmentSection.update({
+                where: { id: sectionId },
+                data: {
+                  metadata: {
+                    ...existingMeta,
+                    sectionStats: {
+                      paid: {
+                        totalAmount: sectionPaidAmount,
+                        updatedAt: new Date(),
+                      },
+                      unpaid: {
+                        totalAmount: sectionOwedAmount,
+                        updatedAt: new Date(),
+                      },
+                      updatedAt: new Date(),
+                    },
+                    lastPaymentAt: new Date(),
+                    lastPaymentMethod: paymentRequest.paymentMethod,
+                  },
+                },
+              });
+            }
           }
 
           return newPayment;

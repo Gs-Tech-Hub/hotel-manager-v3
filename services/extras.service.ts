@@ -353,12 +353,110 @@ export class ExtrasService extends BaseService<any> {
       // Recalculate order total: subtotal + extras + tax - discount
       const newTotal = (orderHeader.subtotal || 0) + extrasTotal + (orderHeader.tax || 0) - (orderHeader.discountTotal || 0);
       
-      await prisma.orderHeader.update({
-        where: { id: data.orderHeaderId },
-        data: { total: Math.max(0, newTotal) }
+      // Get all affected sections for this order
+      const orderLines = await prisma.orderLine.findMany({
+        where: { orderHeaderId: data.orderHeaderId },
+        include: { departmentSection: true }
+      });
+      
+      const affectedSectionIds = new Set<string>();
+      for (const line of orderLines) {
+        if (line.departmentSectionId) {
+          affectedSectionIds.add(line.departmentSectionId);
+        }
+      }
+
+      // Update order total and section financial metadata in transaction
+      const updatedOrder = await prisma.$transaction(async (tx: any) => {
+        // Update order total with extras included
+        const updated = await tx.orderHeader.update({
+          where: { id: data.orderHeaderId },
+          data: { total: Math.max(0, newTotal) },
+          include: {
+            customer: true,
+            lines: { include: { departmentSection: true } },
+            departments: { include: { department: true } },
+            discounts: { include: { discountRule: true } },
+            payments: { include: { paymentType: true } },
+            fulfillments: true,
+            reservations: true,
+            extras: {
+              include: { extra: true }
+            }
+          }
+        });
+
+        // Recalculate section-wide stats from ALL orders in each affected section
+        for (const sectionId of affectedSectionIds) {
+          // Get ALL orders that have lines in this section (with extras and payments)
+          const sectionOrders = await tx.orderHeader.findMany({
+            where: {
+              lines: {
+                some: { departmentSectionId: sectionId }
+              }
+            },
+            include: { 
+              payments: true,
+              extras: true, // Include extras to calculate total independently
+              lines: { where: { departmentSectionId: sectionId } }
+            }
+          });
+
+          // Calculate section-wide totals from fresh data
+          let sectionTotalAmount = 0;
+          let sectionPaidAmount = 0;
+          let sectionOwedAmount = 0;
+
+          for (const order of sectionOrders) {
+            // For the just-updated order, use the new total with extras
+            // For other orders, use their stored total (which should also include their extras)
+            let orderTotal = order.total;
+            
+            const orderPaid = order.payments.reduce((sum: number, p: any) => sum + p.amount, 0);
+            sectionTotalAmount += orderTotal;
+            sectionPaidAmount += orderPaid;
+            sectionOwedAmount += Math.max(0, orderTotal - orderPaid);
+          }
+
+          const section = await tx.departmentSection.findUnique({
+            where: { id: sectionId }
+          });
+
+          if (section) {
+            const existingMeta = (section.metadata as any) || {};
+
+            await tx.departmentSection.update({
+              where: { id: sectionId },
+              data: {
+                metadata: {
+                  ...existingMeta,
+                  // Section-wide stats aggregated from ALL orders (including extras)
+                  sectionStats: {
+                    paid: {
+                      totalAmount: sectionPaidAmount,
+                      updatedAt: new Date(),
+                    },
+                    unpaid: {
+                      totalAmount: sectionOwedAmount,
+                      updatedAt: new Date(),
+                    },
+                    updatedAt: new Date(),
+                  },
+                  lastUpdatedAt: new Date(),
+                  lastUpdateReason: 'Extras added - section stats recalculated from all orders',
+                },
+              },
+            });
+          }
+        }
+
+        return updated;
       });
 
-      return orderExtras;
+      return {
+        orderExtras,
+        order: updatedOrder
+      };
     } catch (error) {
       throw normalizeError(error);
     }

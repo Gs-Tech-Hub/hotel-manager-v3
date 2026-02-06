@@ -254,125 +254,173 @@ export class DepartmentService extends BaseService<IDepartment> {
       const dateTo = toDate || defaultDate;
       const dateFilter = buildDateFilter(dateFrom, dateTo);
 
-      // If sectionId provided, calculate stats for that specific section
-      // Otherwise, calculate for department level (for backward compatibility)
-      const baseWhere: any = { 
-        departmentCode, 
-        orderHeader: {
+      // Get unique orders with lines in the specified section/department
+      // We need to aggregate by ORDER TOTAL (which includes extras, tax, discounts)
+      // not by individual line items
+      const orderIds = await client.orderLine.findMany({
+        where: {
+          departmentCode,
+          ...(sectionId && { departmentSectionId: sectionId })
+        },
+        distinct: ['orderHeaderId'],
+        select: { orderHeaderId: true }
+      });
+
+      // Fetch full orders with their totals, extras, and payment info
+      const orders = await client.orderHeader.findMany({
+        where: {
+          id: { in: orderIds.map((o: any) => o.orderHeaderId) },
           ...dateFilter,
-          // Exclude cancelled and refunded orders from stats
           status: { notIn: ['cancelled', 'refunded'] }
+        },
+        include: {
+          payments: true,
+          extras: true,
+          lines: {
+            where: sectionId ? { departmentSectionId: sectionId } : undefined
+          }
         }
+      });
+
+      console.log(`[recalculateSectionStats] ${sectionId ? `Section ${sectionId}` : `Department ${departmentCode}`} - Found ${orders.length} orders`);
+
+      // Calculate stats from ORDER TOTALS (which include extras, tax, discounts)
+      let unpaidStats = {
+        totalOrders: 0,
+        pendingOrders: 0,
+        processingOrders: 0,
+        fulfilledOrders: 0,
+        totalUnits: 0,
+        fulfilledUnits: 0,
+        totalAmount: 0,
+        fulfillmentRate: 0,
+        updatedAt: new Date(),
       };
-      if (sectionId) {
-        baseWhere.departmentSectionId = sectionId;
+
+      let paidStats = {
+        totalOrders: 0,
+        pendingOrders: 0,
+        processingOrders: 0,
+        fulfilledOrders: 0,
+        totalUnits: 0,
+        fulfilledUnits: 0,
+        totalAmount: 0,
+        amountFulfilled: 0,
+        fulfillmentRate: 0,
+        updatedAt: new Date(),
+      };
+
+      // Separate tracker for aggregated (full order totals regardless of payment)
+      let aggregatedTotalAmount = 0;
+
+      for (const order of orders) {
+        const totalPaid = order.payments.reduce((sum: number, p: any) => sum + p.amount, 0);
+        const isPaid = totalPaid >= order.total;
+        const isUnpaid = totalPaid === 0;
+        const isPartial = !isPaid && !isUnpaid; // 0 < paid < total
+        const sectionLines = order.lines || [];
+        const totalUnits = sectionLines.reduce((sum: number, line: any) => sum + line.quantity, 0);
+        const fulfilledUnits = sectionLines.filter((line: any) => line.status === 'fulfilled')
+          .reduce((sum: number, line: any) => sum + line.quantity, 0);
+        
+        const extrasTotal = order.extras?.reduce((sum: number, e: any) => sum + (e.lineTotal || 0), 0) || 0;
+
+        console.log(`  [Order ${order.id}] total=${order.total}, paid=${totalPaid}, status=${order.status}, isPaid=${isPaid}, isUnpaid=${isUnpaid}, isPartial=${isPartial}, units=${totalUnits}, extras=${order.extras?.length || 0} (totalExtras=${extrasTotal})`);
+
+        if (isPartial) {
+          // Split partial payment: paid portion to paidStats, owed portion to unpaidStats
+          const paidAmount = totalPaid;
+          const owedAmount = order.total - totalPaid;
+          console.log(`    → PARTIAL: +${paidAmount} to PAID, +${owedAmount} to UNPAID (split from total ${order.total})`);
+          
+          // Add paid portion to paid stats
+          paidStats.totalAmount += paidAmount;
+          if (order.status === 'fulfilled') paidStats.amountFulfilled += paidAmount;
+          
+          // Add owed portion to unpaid stats
+          unpaidStats.totalAmount += owedAmount;
+          
+          // For order counts: count the order in both paid and unpaid (since it's split)
+          paidStats.totalOrders += 1;
+          unpaidStats.totalOrders += 1;
+          
+          // For fulfillment: distribute units based on payment portion (or could assign all to unpaid if preferred)
+          // Here we assign all to unpaid since it's the remaining work
+          unpaidStats.totalUnits += totalUnits;
+          unpaidStats.fulfilledUnits += fulfilledUnits;
+          
+          // Status tracking: count in both
+          if (order.status === 'pending') {
+            paidStats.pendingOrders += 1;
+            unpaidStats.pendingOrders += 1;
+          }
+          if (order.status === 'processing') {
+            paidStats.processingOrders += 1;
+            unpaidStats.processingOrders += 1;
+          }
+          if (order.status === 'fulfilled') {
+            paidStats.fulfilledOrders += 1;
+            unpaidStats.fulfilledOrders += 1;
+          }
+        } else if (isUnpaid) {
+          // Completely unpaid: full order total goes to unpaid
+          console.log(`    → Adding to UNPAID: +${order.total} (completely unpaid)`);
+          unpaidStats.totalOrders += 1;
+          unpaidStats.totalAmount += order.total;
+          unpaidStats.totalUnits += totalUnits;
+          unpaidStats.fulfilledUnits += fulfilledUnits;
+          if (order.status === 'pending') unpaidStats.pendingOrders += 1;
+          if (order.status === 'processing') unpaidStats.processingOrders += 1;
+          if (order.status === 'fulfilled') unpaidStats.fulfilledOrders += 1;
+        } else if (isPaid) {
+          console.log(`    → Adding to PAID: +${order.total} (base + extras breakdown: ${order.total - extrasTotal} + ${extrasTotal})`);
+          paidStats.totalOrders += 1;
+          paidStats.totalAmount += order.total;
+          paidStats.totalUnits += totalUnits;
+          paidStats.fulfilledUnits += fulfilledUnits;
+          if (order.status === 'fulfilled') paidStats.amountFulfilled += order.total;
+          if (order.status === 'pending') paidStats.pendingOrders += 1;
+          if (order.status === 'processing') paidStats.processingOrders += 1;
+          if (order.status === 'fulfilled') paidStats.fulfilledOrders += 1;
+        }
+
+        // Always add full order total to aggregated (regardless of payment status)
+        aggregatedTotalAmount += order.total;
       }
 
-      // ============ UNPAID ORDERS (paymentStatus = 'unpaid') ============
-      const unpaidWhere = {
-        ...baseWhere,
-        orderHeader: {
-          ...baseWhere.orderHeader,
-          paymentStatus: 'unpaid'
-        }
-      };
+      // Calculate fulfillment rates
+      unpaidStats.fulfillmentRate = unpaidStats.totalUnits > 0 
+        ? Math.round((unpaidStats.fulfilledUnits / unpaidStats.totalUnits) * 100)
+        : 0;
+      paidStats.fulfillmentRate = paidStats.totalUnits > 0 
+        ? Math.round((paidStats.fulfilledUnits / paidStats.totalUnits) * 100)
+        : 0;
 
-      const unpaidTotalOrderIds = await client.orderLine.findMany({
-        where: { ...unpaidWhere, status: { notIn: ['cancelled', 'refunded'] } },
-        distinct: ['orderHeaderId'],
-        select: { orderHeaderId: true },
-      });
-      
-      const unpaidPendingCount = await client.orderLine.count({ where: { ...unpaidWhere, status: 'pending' } });
-      const unpaidProcessingCount = await client.orderLine.count({ where: { ...unpaidWhere, status: 'processing' } });
-      const unpaidFulfilledCount = await client.orderLine.count({ where: { ...unpaidWhere, status: 'fulfilled' } });
-
-      const unpaidTotalUnitsRes: any = await client.orderLine.aggregate({ 
-        _sum: { quantity: true }, 
-        where: { ...unpaidWhere, status: { notIn: ['cancelled', 'refunded'] } } 
-      });
-      const unpaidFulfilledUnitsRes: any = await client.orderLine.aggregate({ 
-        _sum: { quantity: true }, 
-        where: { ...unpaidWhere, status: 'fulfilled' } 
-      });
-      const unpaidAmountRes: any = await client.orderLine.aggregate({ 
-        _sum: { lineTotal: true }, 
-        where: { ...unpaidWhere, status: { notIn: ['cancelled', 'refunded'] } } 
-      });
-
-      const unpaidStats = {
-        totalOrders: unpaidTotalOrderIds.length,
-        pendingOrders: unpaidPendingCount,
-        processingOrders: unpaidProcessingCount,
-        fulfilledOrders: unpaidFulfilledCount,
-        totalUnits: unpaidTotalUnitsRes._sum.quantity || 0,
-        fulfilledUnits: unpaidFulfilledUnitsRes._sum.quantity || 0,
-        totalAmount: unpaidAmountRes._sum.lineTotal || 0, // Total amount for unpaid orders
-        fulfillmentRate: (unpaidTotalUnitsRes._sum.quantity || 0) > 0 
-          ? Math.round(((unpaidFulfilledUnitsRes._sum.quantity || 0) / (unpaidTotalUnitsRes._sum.quantity || 0)) * 100) 
-          : 0,
-        updatedAt: new Date(),
-      };
+      console.log(`[recalculateSectionStats] FINAL AGGREGATION:`);
+      console.log(`  Unpaid: orders=${unpaidStats.totalOrders}, amount=${unpaidStats.totalAmount}, units=${unpaidStats.totalUnits}`);
+      console.log(`  Paid: orders=${paidStats.totalOrders}, amount=${paidStats.totalAmount}, units=${paidStats.totalUnits}`);
+      console.log(`  Total: amount=${aggregatedTotalAmount}, units=${unpaidStats.totalUnits + paidStats.totalUnits}`);
 
       validatePrice(unpaidStats.totalAmount, `${sectionId ? 'sectionStats.unpaid' : 'deptStats.unpaid'} totalAmount for ${departmentCode}`);
-
-      // ============ PAID ORDERS (paymentStatus = 'paid' OR 'partial') ============
-      const paidWhere = {
-        ...baseWhere,
-        orderHeader: {
-          ...baseWhere.orderHeader,
-          paymentStatus: { in: ['paid', 'partial'] }
-        }
-      };
-
-      const paidTotalOrderIds = await client.orderLine.findMany({
-        where: { ...paidWhere, status: { notIn: ['cancelled', 'refunded'] } },
-        distinct: ['orderHeaderId'],
-        select: { orderHeaderId: true },
-      });
-
-      const paidPendingCount = await client.orderLine.count({ where: { ...paidWhere, status: 'pending' } });
-      const paidProcessingCount = await client.orderLine.count({ where: { ...paidWhere, status: 'processing' } });
-      const paidFulfilledCount = await client.orderLine.count({ where: { ...paidWhere, status: 'fulfilled' } });
-
-      const paidTotalUnitsRes: any = await client.orderLine.aggregate({ 
-        _sum: { quantity: true }, 
-        where: { ...paidWhere, status: { notIn: ['cancelled', 'refunded'] } } 
-      });
-      const paidFulfilledUnitsRes: any = await client.orderLine.aggregate({ 
-        _sum: { quantity: true }, 
-        where: { ...paidWhere, status: 'fulfilled' } 
-      });
-      const paidAmountRes: any = await client.orderLine.aggregate({ 
-        _sum: { lineTotal: true }, 
-        where: { ...paidWhere, status: { notIn: ['cancelled', 'refunded'] } } 
-      });
-
-      const paidStats = {
-        totalOrders: paidTotalOrderIds.length,
-        pendingOrders: paidPendingCount,
-        processingOrders: paidProcessingCount,
-        fulfilledOrders: paidFulfilledCount,
-        totalUnits: paidTotalUnitsRes._sum.quantity || 0,
-        fulfilledUnits: paidFulfilledUnitsRes._sum.quantity || 0,
-        totalAmount: paidAmountRes._sum.lineTotal || 0, // Total amount for paid orders
-        amountFulfilled: paidFulfilledUnitsRes._sum.quantity || 0, // Fulfilled units in paid orders
-        fulfillmentRate: (paidTotalUnitsRes._sum.quantity || 0) > 0 
-          ? Math.round(((paidFulfilledUnitsRes._sum.quantity || 0) / (paidTotalUnitsRes._sum.quantity || 0)) * 100) 
-          : 0,
-        updatedAt: new Date(),
-      };
-
       validatePrice(paidStats.totalAmount, `${sectionId ? 'sectionStats.paid' : 'deptStats.paid'} totalAmount for ${departmentCode}`);
 
       const stats = {
         unpaid: unpaidStats,
         paid: paidStats,
+        aggregated: {
+          totalOrders: unpaidStats.totalOrders + paidStats.totalOrders,
+          totalPending: unpaidStats.pendingOrders + paidStats.pendingOrders,
+          totalProcessing: unpaidStats.processingOrders + paidStats.processingOrders,
+          totalFulfilled: unpaidStats.fulfilledOrders + paidStats.fulfilledOrders,
+          totalUnits: unpaidStats.totalUnits + paidStats.totalUnits,
+          totalFulfilledUnits: unpaidStats.fulfilledUnits + paidStats.fulfilledUnits,
+          totalAmount: aggregatedTotalAmount,
+        },
         updatedAt: new Date(),
       };
 
-      // Log aggregated data for verification
-      console.log(`[recalculateSectionStats] ${sectionId ? `Section ${sectionId}` : `Department ${departmentCode}`} Stats:`, {
+      // Log aggregated data for verification - showing COMPLETE stats including extras
+      console.log(`[recalculateSectionStats] ${sectionId ? `Section ${sectionId}` : `Department ${departmentCode}`} Stats (INCLUDING EXTRAS):`, {
         unpaid: {
           totalOrders: unpaidStats.totalOrders,
           pendingOrders: unpaidStats.pendingOrders,
@@ -400,7 +448,7 @@ export class DepartmentService extends BaseService<IDepartment> {
           totalFulfilled: unpaidStats.fulfilledOrders + paidStats.fulfilledOrders,
           totalUnits: unpaidStats.totalUnits + paidStats.totalUnits,
           totalFulfilledUnits: unpaidStats.fulfilledUnits + paidStats.fulfilledUnits,
-          totalAmount: unpaidStats.totalAmount + paidStats.totalAmount,
+          totalAmount: aggregatedTotalAmount,
         },
       });
 

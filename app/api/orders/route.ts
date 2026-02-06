@@ -335,6 +335,11 @@ export async function GET(request: NextRequest) {
               },
             },
           },
+          extras: {
+            include: {
+              extra: true,
+            },
+          },
           departments: { include: { department: true } },
           discounts: true,
           payments: true,

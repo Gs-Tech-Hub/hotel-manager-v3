@@ -68,22 +68,23 @@ export async function POST(request: NextRequest) {
       }
     }
 
-    const orderExtras = await extrasService.addExtrasToOrderLine({
+    const result = await extrasService.addExtrasToOrderLine({
       orderHeaderId: body.orderHeaderId,
       orderLineId: body.orderLineId,
       extras: body.extras,
     });
 
-    if ('error' in orderExtras) {
-      return NextResponse.json(orderExtras, { status: getStatusCode(ErrorCodes.INVALID_INPUT) });
+    if ('error' in result) {
+      return NextResponse.json(result, { status: getStatusCode(ErrorCodes.INVALID_INPUT) });
     }
+
+    // Extract the updated order and orderExtras from result
+    // Result is { orderExtras: [], order: OrderHeader }
+    const resultObj = result as any;
+    const { order, orderExtras } = resultObj;
 
     // AFTER adding extras, reset payment status from 'paid' to 'partial' (if was paid)
     try {
-      const order = await (prisma as any).orderHeader.findUnique({
-        where: { id: body.orderHeaderId }
-      });
-
       if (order && order.paymentStatus === 'paid') {
         // Extras increased the total, so reset status to 'partial'
         await (prisma as any).orderHeader.update({
@@ -91,17 +92,47 @@ export async function POST(request: NextRequest) {
           data: { paymentStatus: 'partial' },
         });
 
+        // Fetch updated order with new payment status
+        const refreshedOrder = await (prisma as any).orderHeader.findUnique({
+          where: { id: body.orderHeaderId },
+          include: {
+            customer: true,
+            lines: { include: { departmentSection: true } },
+            departments: { include: { department: true } },
+            discounts: { include: { discountRule: true } },
+            payments: { include: { paymentType: true } },
+            fulfillments: true,
+            reservations: true,
+            extras: {
+              include: {
+                extra: true,
+              },
+            },
+          },
+        });
+
         console.log(`[Extras] Order ${body.orderHeaderId} payment status reset to 'partial' (was 'paid')`);
+
+        // Return the refreshed order with updated payment status
+        return NextResponse.json(
+          successResponse({ data: { order: refreshedOrder, orderExtras } }),
+          { status: 201 }
+        );
       }
+
+      // Return the order from transaction (already has updated total and extras)
+      return NextResponse.json(
+        successResponse({ data: { order, orderExtras } }),
+        { status: 201 }
+      );
     } catch (updateErr) {
       console.error('[Extras] Failed to update order payment status:', updateErr);
-      // Don't fail the request - extras were added successfully
+      // Return the order from transaction (still has correct total and extras)
+      return NextResponse.json(
+        successResponse({ data: { order, orderExtras } }),
+        { status: 201 }
+      );
     }
-
-    return NextResponse.json(
-      successResponse({ data: { orderExtras } }),
-      { status: 201 }
-    );
   } catch (error) {
     console.error('POST /api/extras/order-lines error:', error);
     return NextResponse.json(

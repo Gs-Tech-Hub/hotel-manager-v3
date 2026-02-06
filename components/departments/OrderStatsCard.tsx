@@ -16,6 +16,15 @@ type StatsType = {
 type OrderStatsCardProps = {
   unpaidStats?: StatsType | null
   paidStats?: StatsType | null
+  aggregatedStats?: {
+    totalOrders: number
+    totalPending: number
+    totalProcessing: number
+    totalFulfilled: number
+    totalUnits: number
+    totalFulfilledUnits: number
+    totalAmount: number
+  } | null
   // Legacy props for backward compatibility
   totalOrders?: number
   pendingOrders?: number
@@ -29,6 +38,7 @@ type OrderStatsCardProps = {
 export default function OrderStatsCard({
   unpaidStats,
   paidStats,
+  aggregatedStats,
   // Legacy props
   totalOrders = 0,
   pendingOrders = 0,
@@ -43,17 +53,19 @@ export default function OrderStatsCard({
 
   if (hasNewStats) {
     // PAYMENT STATUS (financial dimension)
-    const totalOrderAmount = (unpaidStats?.totalAmount || 0) + (paidStats?.totalAmount || 0)
+    // Use aggregated total if available, otherwise calculate from paid + unpaid
+    const totalOrderAmount = aggregatedStats?.totalAmount || ((unpaidStats?.totalAmount || 0) + (paidStats?.totalAmount || 0))
     const paidAmount = paidStats?.totalAmount || 0
     const owedAmount = unpaidStats?.totalAmount || 0
 
     // ORDER FULFILLMENT (operational dimension - independent of payment)
-    const totalOrders = (unpaidStats?.totalOrders || 0) + (paidStats?.totalOrders || 0)
-    const totalPending = (unpaidStats?.pendingOrders || 0) + (paidStats?.pendingOrders || 0)
-    const totalProcessing = (unpaidStats?.processingOrders || 0) + (paidStats?.processingOrders || 0)
-    const totalFulfilled = (unpaidStats?.fulfilledOrders || 0) + (paidStats?.fulfilledOrders || 0)
-    const totalUnits = (unpaidStats?.totalUnits || 0) + (paidStats?.totalUnits || 0)
-    const totalFulfilledUnits = (unpaidStats?.fulfilledUnits || 0) + (paidStats?.fulfilledUnits || 0)
+    // Use aggregated counts if available
+    const totalOrders = aggregatedStats?.totalOrders || ((unpaidStats?.totalOrders || 0) + (paidStats?.totalOrders || 0))
+    const totalPending = aggregatedStats?.totalPending || ((unpaidStats?.pendingOrders || 0) + (paidStats?.pendingOrders || 0))
+    const totalProcessing = aggregatedStats?.totalProcessing || ((unpaidStats?.processingOrders || 0) + (paidStats?.processingOrders || 0))
+    const totalFulfilled = aggregatedStats?.totalFulfilled || ((unpaidStats?.fulfilledOrders || 0) + (paidStats?.fulfilledOrders || 0))
+    const totalUnits = aggregatedStats?.totalUnits || ((unpaidStats?.totalUnits || 0) + (paidStats?.totalUnits || 0))
+    const totalFulfilledUnits = aggregatedStats?.totalFulfilledUnits || ((unpaidStats?.fulfilledUnits || 0) + (paidStats?.fulfilledUnits || 0))
     const fulfillmentRate = totalUnits > 0 ? Math.round((totalFulfilledUnits / totalUnits) * 100) : 0
 
     return (
