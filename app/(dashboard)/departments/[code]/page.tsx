@@ -32,7 +32,6 @@ export default function DepartmentDetail() {
 
   // Modal states
   const [showCreateSection, setShowCreateSection] = useState(false)
-  const [incomingModalOpen, setIncomingModalOpen] = useState(false)
   const [showStatsModal, setShowStatsModal] = useState(false)
   const [pendingTransfers, setPendingTransfers] = useState<any[] | null>(null)
   const [loadingTransfers, setLoadingTransfers] = useState(false)
@@ -102,13 +101,14 @@ export default function DepartmentDetail() {
     }
   }, [decodedCode])
 
-  // Fetch stats for selected date range
+  // Fetch stats for selected date range (section details only)
   const fetchSectionStats = async (code: string, fromDate: string | null, toDate: string | null) => {
     if (!fromDate || !toDate) return
+    if (!code.includes(':')) return // Only fetch for sections, not parent departments
 
     setStatsLoading(true)
     try {
-      const url = `/api/departments/${encodeURIComponent(code)}/stats?fromDate=${fromDate}&toDate=${toDate}`
+      const url = `/api/departments/${encodeURIComponent(code)}/section/stats?startDate=${fromDate}&endDate=${toDate}`
       const res = await fetch(url)
       if (!res.ok) {
         console.error('Failed to fetch stats:', res.statusText)
@@ -188,6 +188,11 @@ export default function DepartmentDetail() {
         department={department}
         sectionStock={sectionStock}
         onBack={() => router.back()}
+        pendingTransfers={pendingTransfers}
+        loadingTransfers={loadingTransfers}
+        onAcceptTransfer={markReceived}
+        resolveStoreName={resolveStoreName}
+        resolveProductName={resolveProductName}
       />
 
       {/* Loading and error states */}
@@ -260,21 +265,6 @@ export default function DepartmentDetail() {
         </>
       )}
 
-      {/* Action Buttons */}
-      <div className="flex gap-2 justify-end">
-        {decodedCode.includes(':') && (
-          <button
-            onClick={() => setIncomingModalOpen(true)}
-            className="px-3 py-1 border rounded text-sm"
-          >
-            Incoming
-            {pendingTransfers && pendingTransfers.length > 0
-              ? ` (${pendingTransfers.length})`
-              : ''}
-          </button>
-        )}
-      </div>
-
       {/* Modals */}
       <CreateSectionModal
         isOpen={showCreateSection}
@@ -306,15 +296,7 @@ export default function DepartmentDetail() {
         </div>
       )}
 
-      <IncomingTransfersModal
-        isOpen={incomingModalOpen}
-        onClose={() => setIncomingModalOpen(false)}
-        transfers={pendingTransfers}
-        isLoading={loadingTransfers}
-        onAcceptTransfer={markReceived}
-        resolveStoreName={resolveStoreName}
-        resolveProductName={resolveProductName}
-      />
+     
     </div>
   )
 }
