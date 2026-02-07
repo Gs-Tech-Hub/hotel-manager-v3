@@ -9,6 +9,7 @@ export interface CartLine {
   productName: string
   quantity: number
   unitPrice: number
+  type?: string
 }
 
 export function POSCart({ items, onRemove, onQty }: { items: CartLine[]; onRemove: (id: string) => void; onQty: (id: string, qty: number) => void }) {

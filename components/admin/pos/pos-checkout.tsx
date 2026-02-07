@@ -8,6 +8,7 @@ import { POSCart, CartLine } from "@/components/admin/pos/pos-cart"
 import { POSPayment } from "@/components/admin/pos/pos-payment"
 import { POSReceipt } from "@/components/admin/pos/pos-receipt"
 import { DiscountDropdown } from "@/components/pos/orders/DiscountDropdown"
+import { EmployeeTargeting } from "@/components/pos/orders/EmployeeDiscountSelector"
 import { normalizeToCents, centsToDollars } from "@/lib/price"
 import { formatPriceDisplay, formatOrderTotal, formatTablePrice } from "@/lib/formatters"
 
@@ -44,6 +45,9 @@ export default function POSCheckoutShell({ terminalId }: { terminalId?: string }
   const [discountMap, setDiscountMap] = useState<Map<string, any>>(new Map())
   const [taxEnabled, setTaxEnabled] = useState(true)
   const [taxRate, setTaxRate] = useState(10)
+  const [showEmployeeTargeting, setShowEmployeeTargeting] = useState(false)
+  const [selectedEmployee, setSelectedEmployee] = useState<any | null>(null)
+  const [isChargingEmployee, setIsChargingEmployee] = useState(false)
 
   const categories = [
     { id: 'foods', name: 'Foods' },
@@ -756,10 +760,10 @@ export default function POSCheckoutShell({ terminalId }: { terminalId?: string }
                 Add Items to Order
               </button>
             ) : (
-              // When creating new order, show payment option
+              // When creating new order, show employee targeting then payment
               <>
                 <button 
-                  onClick={() => setShowPayment(true)} 
+                  onClick={() => setShowEmployeeTargeting(true)} 
                   disabled={!canProceedToPayment || isProcessingPayment}
                   className={`w-full py-2 rounded font-medium transition-colors ${
                     !canProceedToPayment || isProcessingPayment
@@ -780,6 +784,81 @@ export default function POSCheckoutShell({ terminalId }: { terminalId?: string }
           </div>
         </div>
       </div>
+
+      {/* Employee Targeting Modal */}
+      {showEmployeeTargeting && (
+        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
+          <div className="bg-white rounded-lg shadow-lg max-w-md w-full max-h-[90vh] overflow-y-auto">
+            <EmployeeTargeting
+              orderTotal={centsToDollars(estimatedTotal)}
+              onEmployeeSelected={(emp) => {
+                console.log('[POS] Employee selected:', emp)
+                setSelectedEmployee(emp)
+              }}
+              onCancel={() => {
+                setShowEmployeeTargeting(false)
+                setSelectedEmployee(null)
+              }}
+              onChargeToEmployee={async (employeeId, amount) => {
+                try {
+                  setIsChargingEmployee(true)
+                  console.log('[POS] Charging employee:', employeeId, 'amount:', amount)
+                  
+                  // Create order with employee charge
+                  const res = await fetch('/api/orders', {
+                    method: 'POST',
+                    credentials: 'include',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                      items: cart.map((item) => ({
+                        productId: item.productId,
+                        productType: item.type,
+                        productName: item.productName,
+                        departmentCode: departmentSection?.departmentCode,
+                        departmentSectionId: departmentSection?.id,
+                        quantity: item.quantity,
+                        unitPrice: item.unitPrice,
+                      })),
+                      discountIds: appliedDiscountIds,
+                      employeeChargeId: employeeId,
+                      paymentMethod: 'employee_account',
+                      isDeferred: false,
+                    }),
+                  })
+                  
+                  const json = await res.json()
+                  if (res.ok && json?.success && json.data) {
+                    console.log('[POS] Order created with employee charge:', json.data)
+                    setReceipt({
+                      ...json.data,
+                      isDeferred: false,
+                      orderTypeDisplay: 'EMPLOYEE CHARGE',
+                    })
+                    setCart([])
+                    setAppliedDiscountIds([])
+                    setShowEmployeeTargeting(false)
+                    setSelectedEmployee(null)
+                  } else {
+                    const msg = (json && json.error && json.error.message) ? json.error.message : `Failed to charge employee`
+                    throw new Error(msg)
+                  }
+                } catch (err) {
+                  console.error('[POS] Employee charge error:', err)
+                  setTerminalError(err instanceof Error ? err.message : 'Failed to charge employee')
+                } finally {
+                  setIsChargingEmployee(false)
+                }
+              }}
+              onProceedToPayment={() => {
+                console.log('[POS] Proceeding to payment')
+                setShowEmployeeTargeting(false)
+                setShowPayment(true)
+              }}
+              isSubmitting={isChargingEmployee}
+            />
+          </div>
+        </div>
+      )}
 
       {showPayment && <POSPayment total={estimatedTotal} onComplete={handlePaymentComplete} onCancel={() => setShowPayment(false)} isProcessing={isProcessingPayment} />}
       {receipt && <POSReceipt receipt={receipt} onClose={() => setReceipt(null)} />}

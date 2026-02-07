@@ -1097,6 +1097,122 @@ export class OrderService extends BaseService<IOrderHeader> {
       return errorResponse(ErrorCodes.INTERNAL_ERROR, 'Failed to fetch order stats');
     }
   }
+
+  /**
+   * Auto-charge employee when employee discount is applied
+   * Creates EmployeeCharge record for the order total
+   * No payment required - charge deducted from salary
+   * 
+   * @param orderId - Order ID to charge against
+   * @param employeeId - Employee user ID to charge
+   * @param chargeAmount - Amount to charge in decimal (dollars)
+   * @param orderNumber - Order reference for description
+   * @param ctx - User context for audit trail
+   */
+  async chargeEmployeeForOrder(
+    orderId: string,
+    employeeId: string,
+    chargeAmount: number,
+    orderNumber: string,
+    ctx?: UserContext
+  ) {
+    try {
+      console.log('[ORDER SERVICE] Charging employee for order:', {
+        orderId,
+        employeeId,
+        chargeAmount,
+        orderNumber,
+      });
+
+      // 1. Verify order exists
+      const order = await (prisma as any).orderHeader.findUnique({
+        where: { id: orderId },
+        include: { lines: true, discounts: true },
+      });
+
+      if (!order) {
+        console.error('[ORDER SERVICE] Order not found:', orderId);
+        return errorResponse(ErrorCodes.NOT_FOUND, 'Order not found');
+      }
+
+      // 2. Get employee with employment data
+      const employee = await (prisma as any).pluginUsersPermissionsUser.findUnique({
+        where: { id: employeeId },
+        include: { employmentData: true },
+      });
+
+      if (!employee) {
+        console.error('[ORDER SERVICE] Employee not found:', employeeId);
+        return errorResponse(ErrorCodes.NOT_FOUND, 'Employee not found');
+      }
+
+      if (!employee.employmentData) {
+        console.error('[ORDER SERVICE] Employee has no employment data:', employeeId);
+        return errorResponse(
+          ErrorCodes.BAD_REQUEST,
+          'Employee has no employment data'
+        );
+      }
+
+      console.log('[ORDER SERVICE] Creating charge for employee:', employeeId);
+
+      // 3. Create EmployeeCharge record
+      const charge = await (prisma as any).employeeCharge.create({
+        data: {
+          chargeType: 'employee_order', // Type of charge
+          amount: chargeAmount, // Decimal amount
+          description: `Order #${orderNumber} with employee discount`,
+          date: new Date(),
+          status: 'pending', // Pending until salary deduction
+          paidAmount: 0,
+          employmentDataId: employee.employmentData.id,
+        },
+      });
+
+      console.log('[ORDER SERVICE] ✅ EmployeeCharge created:', charge.id);
+
+      // 4. Update EmploymentData total charges
+      const updatedEmploymentData = await (prisma as any).employmentData.update({
+        where: { id: employee.employmentData.id },
+        data: {
+          totalCharges: {
+            increment: chargeAmount,
+          },
+        },
+      });
+
+      console.log('[ORDER SERVICE] ✅ EmploymentData updated with charge');
+
+      // 5. Update order to skip payment
+      const updatedOrder = await (prisma as any).orderHeader.update({
+        where: { id: orderId },
+        data: {
+          paymentStatus: 'unpaid', // Mark as unpaid (no payment needed)
+        },
+      });
+
+      console.log('[ORDER SERVICE] ✅ Order marked for employee charge');
+
+      return {
+        success: true,
+        chargeId: charge.id,
+        employeeEmail: employee.email,
+        employeeName: `${employee.firstname || ''} ${employee.lastname || ''}`.trim(),
+        chargeAmount,
+        message: 'Employee charged for order - payment skipped',
+      };
+
+    } catch (error) {
+      console.error('[ORDER SERVICE] Error charging employee for order:', error);
+      if (error instanceof Error) {
+        console.error('[ORDER SERVICE] Stack trace:', error.stack);
+      }
+      return errorResponse(
+        ErrorCodes.INTERNAL_ERROR,
+        'Failed to charge employee for order'
+      );
+    }
+  }
 }
 
 export const orderService = new OrderService();
