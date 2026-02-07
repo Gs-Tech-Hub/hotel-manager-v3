@@ -55,7 +55,7 @@ export class DiscountService extends BaseService<IDiscountRule> {
           minOrderAmount: data.minOrderAmount,
           applicableDepts: JSON.stringify(data.applicableDepts || []),
           applicableSections: JSON.stringify(data.applicableSections || []),
-          currency: data.currency || 'USD',
+          currency: data.currency,
           startDate: data.startDate,
           endDate: data.endDate,
           isActive: true,

@@ -3,6 +3,8 @@
 import React, { useEffect, useState } from 'react'
 import { Plus, Trash2 } from 'lucide-react'
 import { useAuth } from '@/components/auth-context'
+import { useCurrencyClient } from '@/context/CurrencyClientContext'
+import { formatTablePrice, formatDiscount } from '@/lib/formatters'
 
 type Discount = {
   id: string
@@ -20,6 +22,7 @@ type Discount = {
 
 export default function DiscountsPage() {
   const { hasPermission } = useAuth()
+  const { displayCurrency } = useCurrencyClient()
   const [discounts, setDiscounts] = useState<Discount[]>([])
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
@@ -79,6 +82,7 @@ export default function DiscountsPage() {
         endDate: formData.endDate ? new Date(formData.endDate).toISOString() : undefined,
         maxUsageTotal: formData.maxUsageTotal ? Number(formData.maxUsageTotal) : undefined,
         maxUsagePerCustomer: formData.maxUsagePerCustomer ? Number(formData.maxUsagePerCustomer) : undefined,
+        currency: displayCurrency,
       }
       const res = await fetch('/api/discounts', {
         method: 'POST',
@@ -178,7 +182,7 @@ export default function DiscountsPage() {
               </select>
               <input
                 type="number"
-                placeholder={formData.type === 'percentage' ? 'Value (0-100)' : 'Value ($)'}
+                placeholder={formData.type === 'percentage' ? 'Value (0-100)' : 'Value'}
                 value={formData.value}
                 onChange={e => setFormData({ ...formData, value: parseFloat(e.target.value) })}
                 className="px-3 py-2 border rounded text-sm"
@@ -241,7 +245,7 @@ export default function DiscountsPage() {
                 <td className="p-3">{d.name || '-'}</td>
                 <td className="p-3 capitalize text-sm">{d.type}</td>
                 <td className="p-3 font-medium">
-                  {d.type === 'percentage' ? `${d.value}%` : `$${(d.value / 100).toFixed(2)}`}
+                  {d.type === 'percentage' ? `${d.value}%` : formatTablePrice(d.value)}
                 </td>
                 <td className="p-3 text-sm">{d.startDate ? new Date(d.startDate).toLocaleDateString() : '-'}</td>
                 <td className="p-3 text-sm">{d.endDate ? new Date(d.endDate).toLocaleDateString() : '-'}</td>

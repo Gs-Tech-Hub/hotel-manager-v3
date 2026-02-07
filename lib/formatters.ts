@@ -3,7 +3,7 @@
  * Use these functions in ALL UI components for consistent pricing, dates, etc.
  */
 
-import { formatCents, formatPrice, centsToDollars, normalizeToCents } from './price';
+import { formatCents, centsToDollars, normalizeToCents } from './price';
 
 /**
  * Format any price value for display (unified across app)

@@ -105,7 +105,7 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    // Create discount rule
+    // Create discount rule with provided currency
     const rule = await (prisma as any).discountRule.create({
       data: {
         code,
@@ -119,7 +119,7 @@ export async function POST(request: NextRequest) {
         maxUsagePerCustomer,
         applicableDepts: applicableDepts ? JSON.stringify(applicableDepts) : JSON.stringify([]),
         applicableSections: applicableSections ? JSON.stringify(applicableSections) : JSON.stringify([]),
-        currency: currency || 'USD',
+        currency: currency,
         isActive: true,
       },
     });

@@ -107,7 +107,7 @@ export async function GET(
       startDate: rule.startDate,
       endDate: rule.endDate,
       isActive: rule.isActive,
-      currency: rule.currency || 'USD',
+      currency: rule.currency,
       applicableDepts: JSON.parse(rule.applicableDepts || '[]'),
       applicableSections: JSON.parse(rule.applicableSections || '[]'),
     }));

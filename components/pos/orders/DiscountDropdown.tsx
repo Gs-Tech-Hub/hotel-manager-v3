@@ -11,7 +11,7 @@ import {
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { AlertCircle, Loader2, X } from "lucide-react";
-import { formatCents } from "@/lib/price";
+import { formatCents, formatPriceAsDecimal } from "@/lib/price";
 
 interface DiscountOption {
   id: string;
@@ -178,7 +178,7 @@ export function DiscountDropdown({
                 const discountDisplay = 
                   discount.type === "percentage"
                     ? `${discount.value}%`
-                    : `${formatCents(Math.round(Number(discount.value)))}`;
+                    : formatPriceAsDecimal(Math.round(Number(discount.value)));
                 
                 return (
                   <SelectItem key={discount.id} value={discount.id}>
@@ -238,7 +238,7 @@ export function DiscountDropdown({
                     <Badge variant="outline" className="text-xs bg-green-100">
                       {discount.type === "percentage"
                         ? `${discount.value}%`
-                        : formatCents(Math.round(Number(discount.value)))}
+                        : formatPriceAsDecimal(Math.round(Number(discount.value)))}
                     </Badge>
                   )}
                   <button

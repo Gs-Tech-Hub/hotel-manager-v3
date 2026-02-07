@@ -230,6 +230,7 @@ export const SUPPORTED_CURRENCIES = {
   GBP: { code: 'GBP', symbol: '£', decimals: 2, name: 'British Pound' },
   JPY: { code: 'JPY', symbol: '¥', decimals: 0, name: 'Japanese Yen' },
   CHF: { code: 'CHF', symbol: 'CHF', decimals: 2, name: 'Swiss Franc' },
+  NGN: { code: 'NGN', symbol: '₦', decimals: 2, name: 'Nigerian Naira' },
 }
 
 export type CurrencyCode = keyof typeof SUPPORTED_CURRENCIES

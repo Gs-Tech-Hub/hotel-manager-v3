@@ -8,9 +8,8 @@ import { POSCart, CartLine } from "@/components/admin/pos/pos-cart"
 import { POSPayment } from "@/components/admin/pos/pos-payment"
 import { POSReceipt } from "@/components/admin/pos/pos-receipt"
 import { DiscountDropdown } from "@/components/pos/orders/DiscountDropdown"
-import { normalizeToCents, centsToDollars, formatCents } from "@/lib/price"
+import { normalizeToCents, formatPriceAsDecimal } from "@/lib/price"
 import Price from '@/components/ui/Price'
-import { formatPriceDisplay, formatOrderTotal } from "@/lib/formatters"
 
 interface SelectedSection {
   id: string
@@ -676,7 +675,7 @@ export default function POSCheckoutShell({ terminalId }: { terminalId?: string }
                         <span className="text-xs text-green-600 bg-green-100 px-1.5 py-0.5 rounded">
                           {d.type === 'percentage' 
                             ? `${d.value}%` 
-                            : formatCents(Math.round(Number(d.value)))}
+                            : formatPriceAsDecimal(Math.round(Number(d.value)))}
                         </span>
                       </span>
                       <span className="font-semibold text-green-700">-<Price amount={d.discountAmount} isMinor={true} /></span>
