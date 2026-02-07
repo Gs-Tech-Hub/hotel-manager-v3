@@ -307,6 +307,8 @@ export class DepartmentService extends BaseService<IDepartment> {
         totalAmount: 0,
         amountFulfilled: 0,
         fulfillmentRate: 0,
+        cashAmount: 0,
+        cardAmount: 0,
         updatedAt: new Date(),
       };
 
@@ -325,7 +327,11 @@ export class DepartmentService extends BaseService<IDepartment> {
         
         const extrasTotal = order.extras?.reduce((sum: number, e: any) => sum + (e.lineTotal || 0), 0) || 0;
 
-        console.log(`  [Order ${order.id}] total=${order.total}, paid=${totalPaid}, status=${order.status}, isPaid=${isPaid}, isUnpaid=${isUnpaid}, isPartial=${isPartial}, units=${totalUnits}, extras=${order.extras?.length || 0} (totalExtras=${extrasTotal})`);
+        // Calculate cash and card amounts from payment method
+        const cashPayments = order.payments.filter((p: any) => p.paymentMethod === 'cash').reduce((sum: number, p: any) => sum + p.amount, 0);
+        const cardPayments = order.payments.filter((p: any) => p.paymentMethod === 'card').reduce((sum: number, p: any) => sum + p.amount, 0);
+
+        console.log(`  [Order ${order.id}] total=${order.total}, paid=${totalPaid}, status=${order.status}, isPaid=${isPaid}, isUnpaid=${isUnpaid}, isPartial=${isPartial}, units=${totalUnits}, cash=${cashPayments}, card=${cardPayments}, extras=${order.extras?.length || 0} (totalExtras=${extrasTotal})`);
 
         if (isPartial) {
           // Split partial payment: paid portion to paidStats, owed portion to unpaidStats
@@ -335,6 +341,8 @@ export class DepartmentService extends BaseService<IDepartment> {
           
           // Add paid portion to paid stats
           paidStats.totalAmount += paidAmount;
+          paidStats.cashAmount += cashPayments;
+          paidStats.cardAmount += cardPayments;
           if (order.status === 'fulfilled') paidStats.amountFulfilled += paidAmount;
           
           // Add owed portion to unpaid stats
@@ -376,6 +384,8 @@ export class DepartmentService extends BaseService<IDepartment> {
           console.log(`    → Adding to PAID: +${order.total} (base + extras breakdown: ${order.total - extrasTotal} + ${extrasTotal})`);
           paidStats.totalOrders += 1;
           paidStats.totalAmount += order.total;
+          paidStats.cashAmount += cashPayments;
+          paidStats.cardAmount += cardPayments;
           paidStats.totalUnits += totalUnits;
           paidStats.fulfilledUnits += fulfilledUnits;
           if (order.status === 'fulfilled') paidStats.amountFulfilled += order.total;
@@ -398,7 +408,7 @@ export class DepartmentService extends BaseService<IDepartment> {
 
       console.log(`[recalculateSectionStats] FINAL AGGREGATION:`);
       console.log(`  Unpaid: orders=${unpaidStats.totalOrders}, amount=${unpaidStats.totalAmount}, units=${unpaidStats.totalUnits}`);
-      console.log(`  Paid: orders=${paidStats.totalOrders}, amount=${paidStats.totalAmount}, units=${paidStats.totalUnits}`);
+      console.log(`  Paid: orders=${paidStats.totalOrders}, amount=${paidStats.totalAmount}, cash=${paidStats.cashAmount}, card=${paidStats.cardAmount}, units=${paidStats.totalUnits}`);
       console.log(`  Total: amount=${aggregatedTotalAmount}, units=${unpaidStats.totalUnits + paidStats.totalUnits}`);
 
       validatePrice(unpaidStats.totalAmount, `${sectionId ? 'sectionStats.unpaid' : 'deptStats.unpaid'} totalAmount for ${departmentCode}`);
@@ -439,6 +449,8 @@ export class DepartmentService extends BaseService<IDepartment> {
           totalUnits: paidStats.totalUnits,
           fulfilledUnits: paidStats.fulfilledUnits,
           totalAmount: paidStats.totalAmount,
+          cashAmount: paidStats.cashAmount,
+          cardAmount: paidStats.cardAmount,
           fulfillmentRate: paidStats.fulfillmentRate,
         },
         aggregated: {

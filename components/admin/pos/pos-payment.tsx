@@ -1,8 +1,7 @@
 "use client"
 
 import { useState } from "react"
-import Price from '@/components/ui/Price'
-import { normalizeToCents, centsToDollars } from '@/lib/price'
+import { formatTablePrice } from '@/lib/formatters'
 
 export function POSPayment({ total, onComplete, onCancel, allowDeferred = true, isProcessing: externalIsProcessing = false }: { total: number; onComplete: (r: { method: string; amount?: number; isMinor?: boolean; isDeferred?: boolean }) => void; onCancel?: () => void; allowDeferred?: boolean; isProcessing?: boolean }) {
   // total is expected to come in as cents from POS checkout
@@ -10,13 +9,10 @@ export function POSPayment({ total, onComplete, onCancel, allowDeferred = true, 
   
   const [paymentType, setPaymentType] = useState<'immediate'|'deferred'>(allowDeferred ? 'immediate' : 'immediate')
   const [method, setMethod] = useState<'cash'|'card'>('cash')
-  const [tenderedCents, setTenderedCents] = useState<number>(totalCents)
   const [isProcessing, setIsProcessing] = useState(false)
   
   // Use external processing state if provided (from parent), otherwise use internal state
   const isTransacting = externalIsProcessing || isProcessing
-
-  const changeCents = tenderedCents - totalCents
 
   const handleComplete = async () => {
     if (isTransacting) return
@@ -27,7 +23,7 @@ export function POSPayment({ total, onComplete, onCancel, allowDeferred = true, 
         onComplete({ method: 'deferred', isDeferred: true })
       } else {
         // Send amount in cents (isMinor: true) for consistency with backend
-        onComplete({ method, amount: tenderedCents, isMinor: true })
+        onComplete({ method, amount: totalCents, isMinor: true })
       }
     } finally {
       setIsProcessing(false)
@@ -62,24 +58,7 @@ export function POSPayment({ total, onComplete, onCancel, allowDeferred = true, 
             </div>
             <div className="mb-3">
               <label className="block text-sm">Total</label>
-              <div className="font-bold text-xl"><Price amount={totalCents} isMinor={true} /></div>
-            </div>
-            <div className="mb-4">
-              <label className="block text-sm">Amount Tendered</label>
-              <input 
-                type="number" 
-                step="0.01"
-                min="0"
-                value={Math.round(centsToDollars(tenderedCents) * 100) / 100}
-                onChange={(e) => {
-                  const newDollars = Number(e.target.value)
-                  if (!isNaN(newDollars)) {
-                    setTenderedCents(Math.round(newDollars * 100))
-                  }
-                }} 
-                className="w-full border rounded px-3 py-2" 
-              />
-              <div className={`mt-2 font-semibold ${changeCents >= 0 ? 'text-green-600' : 'text-red-600'}`}>Change: <Price amount={changeCents} isMinor={true} /></div>
+              <div className="font-bold text-xl">{formatTablePrice(totalCents)}</div>
             </div>
           </>
         )}
@@ -89,7 +68,7 @@ export function POSPayment({ total, onComplete, onCancel, allowDeferred = true, 
           <div className="mb-4 p-3 bg-amber-50 rounded border border-amber-200">
             <div className="text-sm mb-2">
               <p className="font-semibold text-amber-900">Order Total</p>
-              <p className="text-lg font-bold text-amber-700"><Price amount={totalCents} isMinor={true} /></p>
+              <p className="text-lg font-bold text-amber-700">{formatTablePrice(totalCents)}</p>
             </div>
             <p className="text-xs text-amber-700">This order will be marked as PENDING and payment can be settled later.</p>
           </div>
@@ -100,7 +79,7 @@ export function POSPayment({ total, onComplete, onCancel, allowDeferred = true, 
           <button onClick={onCancel} disabled={isTransacting} className="flex-1 px-4 py-2 border rounded hover:bg-slate-50 transition disabled:opacity-50 disabled:cursor-not-allowed">Cancel</button>
           <button 
             onClick={handleComplete}
-            disabled={isTransacting || (paymentType === 'immediate' && tenderedCents < totalCents)} 
+            disabled={isTransacting} 
             className="flex-1 px-4 py-2 bg-emerald-600 text-white rounded hover:bg-emerald-700 disabled:opacity-60 disabled:cursor-not-allowed transition"
           >
             {isTransacting ? 'Processing...' : (paymentType === 'deferred' ? 'Create Deferred Order' : 'Complete Payment')}

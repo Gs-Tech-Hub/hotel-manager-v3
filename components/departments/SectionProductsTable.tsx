@@ -1,7 +1,7 @@
 "use client"
 
 import Link from 'next/link'
-import Price from '@/components/ui/Price'
+import { formatTablePrice } from '@/lib/formatters'
 import { getDisplayUnit, formatQuantityWithUnit } from '@/lib/unit-mapper'
 import { useEffect, useState } from 'react'
 
@@ -145,14 +145,15 @@ export default function SectionProductsTable({ products: initialProducts, depart
                 {p.sku && <div className="text-xs text-muted-foreground">{p.sku}</div>}
               </td>
               <td className="text-right py-2 px-2 text-muted-foreground">
-                {p.unitPrice ? <Price amount={p.unitPrice} isMinor={false} /> : '—'}
+                {p.unitPrice ? formatTablePrice(p.unitPrice) : '—'}
               </td>
               <td className="text-right py-2 px-2 font-medium">
                 {formatQuantityWithUnit(p.available ?? 0, getDisplayUnit(p.category, p.itemType))}
               </td>
               <td className="text-right py-2 px-2">{p.unitsSold ?? 0}</td>
               <td className="text-right py-2 px-2">
-                {p.amountSold ? <Price amount={p.amountSold} isMinor={false} /> : <Price amount={0} isMinor={false} />}
+                {p.amountSold ? formatTablePrice(p.amountSold) : formatTablePrice(0)}
+
               </td>
               <td className="text-right py-2 px-2">{p.pendingQuantity ?? 0}</td>
               <td className="text-right py-2 px-2">

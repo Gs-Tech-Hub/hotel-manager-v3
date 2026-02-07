@@ -1,6 +1,6 @@
 "use client"
 
-import Price from '@/components/ui/Price'
+import { formatTablePrice } from '@/lib/formatters'
 
 type StatsType = {
   totalOrders: number
@@ -11,6 +11,8 @@ type StatsType = {
   fulfilledUnits: number
   totalAmount: number
   fulfillmentRate: number
+  cashAmount?: number  // Amount paid via cash (requires backend implementation)
+  cardAmount?: number  // Amount paid via card (requires backend implementation)
 }
 
 type OrderStatsCardProps = {
@@ -57,6 +59,8 @@ export default function OrderStatsCard({
     const totalOrderAmount = aggregatedStats?.totalAmount || ((unpaidStats?.totalAmount || 0) + (paidStats?.totalAmount || 0))
     const paidAmount = paidStats?.totalAmount || 0
     const owedAmount = unpaidStats?.totalAmount || 0
+    const cashAmount = paidStats?.cashAmount || 0
+    const cardAmount = paidStats?.cardAmount || 0
 
     // ORDER FULFILLMENT (operational dimension - independent of payment)
     // Use aggregated counts if available
@@ -84,10 +88,26 @@ export default function OrderStatsCard({
             <tbody>
               <tr className="border-b border-gray-100 hover:bg-blue-50/30">
                 <td className="px-4 py-3 text-gray-600">Current Period</td>
-                <td className="px-4 py-3 text-right font-medium"><Price amount={totalOrderAmount} isMinor={true} /></td>
-                <td className="px-4 py-3 text-right font-medium text-green-600"><Price amount={paidAmount} isMinor={true} /></td>
-                <td className="px-4 py-3 text-right font-medium text-orange-600"><Price amount={owedAmount} isMinor={true} /></td>
+                <td className="px-4 py-3 text-right font-medium">{formatTablePrice(totalOrderAmount)}</td>
+                <td className="px-4 py-3 text-right font-medium text-green-600">{formatTablePrice(paidAmount)}</td>
+                <td className="px-4 py-3 text-right font-medium text-orange-600">{formatTablePrice(owedAmount)}</td>
               </tr>
+              {cashAmount > 0 && (
+                <tr className="border-b border-gray-100 hover:bg-green-50/20">
+                  <td className="px-4 py-3 text-gray-600 text-xs">💰 Cash Payments</td>
+                  <td className="px-4 py-3 text-right text-xs"></td>
+                  <td className="px-4 py-3 text-right font-medium text-green-600 text-xs">{formatTablePrice(cashAmount)}</td>
+                  <td className="px-4 py-3 text-right text-xs"></td>
+                </tr>
+              )}
+              {cardAmount > 0 && (
+                <tr className="border-b border-gray-100 hover:bg-blue-50/20">
+                  <td className="px-4 py-3 text-gray-600 text-xs">🏦 Card Payments</td>
+                  <td className="px-4 py-3 text-right text-xs"></td>
+                  <td className="px-4 py-3 text-right font-medium text-blue-600 text-xs">{formatTablePrice(cardAmount)}</td>
+                  <td className="px-4 py-3 text-right text-xs"></td>
+                </tr>
+              )}
             </tbody>
           </table>
         </div>

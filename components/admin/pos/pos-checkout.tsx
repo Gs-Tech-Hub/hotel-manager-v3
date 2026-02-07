@@ -8,8 +8,8 @@ import { POSCart, CartLine } from "@/components/admin/pos/pos-cart"
 import { POSPayment } from "@/components/admin/pos/pos-payment"
 import { POSReceipt } from "@/components/admin/pos/pos-receipt"
 import { DiscountDropdown } from "@/components/pos/orders/DiscountDropdown"
-import { normalizeToCents, formatPriceAsDecimal } from "@/lib/price"
-import Price from '@/components/ui/Price'
+import { normalizeToCents, centsToDollars } from "@/lib/price"
+import { formatPriceDisplay, formatOrderTotal, formatTablePrice } from "@/lib/formatters"
 
 interface SelectedSection {
   id: string
@@ -519,17 +519,13 @@ export default function POSCheckoutShell({ terminalId }: { terminalId?: string }
           if (json && json.success && json.data) {
             // Successfully validated
             const rule = json.data
-            // All discount values stored in expanded minor units - use directly
-            // Percentage: 20 means 20%
-            // Fixed: 2000000 means $20.00 (100x for consistent unit storage)
             let discountAmount = 0
             
             if (rule.type === 'percentage') {
-              // Apply percentage directly
               discountAmount = Math.round((subtotal * rule.value) / 100)
             } else {
-              // Fixed amount already in expanded minor units
-              discountAmount = Math.min(Math.round(Number(rule.value)), subtotal)
+              // Fixed amount discount (already in cents)
+              discountAmount = Math.round(rule.value * (rule.minorUnit || 100))
             }
             
             validated.push({
@@ -641,7 +637,7 @@ export default function POSCheckoutShell({ terminalId }: { terminalId?: string }
                     <div className="text-xs text-muted-foreground">transactions</div>
                   </div>
                   <div className="text-sm">
-                    <div className="text-2xl font-bold"><Price amount={salesSummary.total} isMinor={true} /></div>
+                    <div className="text-2xl font-bold">{formatTablePrice(salesSummary.total)}</div>
                     <div className="text-xs text-muted-foreground">gross</div>
                   </div>
                 </div>
@@ -661,7 +657,7 @@ export default function POSCheckoutShell({ terminalId }: { terminalId?: string }
             <div className="space-y-2 mb-3 pb-3 border-b border-blue-200">
               <div className="flex justify-between text-sm">
                 <span className="text-gray-700">Subtotal</span>
-                <span className="font-semibold"><Price amount={subtotal} isMinor={true} /></span>
+                <span className="font-semibold">{formatTablePrice(subtotal)}</span>
               </div>
               
               {/* Applied Discounts - Visual Impact */}
@@ -673,12 +669,10 @@ export default function POSCheckoutShell({ terminalId }: { terminalId?: string }
                         <span className="text-green-600 font-bold">✓</span> 
                         {d.code}
                         <span className="text-xs text-green-600 bg-green-100 px-1.5 py-0.5 rounded">
-                          {d.type === 'percentage' 
-                            ? `${d.value}%` 
-                            : formatPriceAsDecimal(Math.round(Number(d.value)))}
+                          {d.type === 'percentage' ? `${d.value}%` : 'fixed'}
                         </span>
                       </span>
-                      <span className="font-semibold text-green-700">-<Price amount={d.discountAmount} isMinor={true} /></span>
+                      <span className="font-semibold text-green-700">-{formatTablePrice(d.discountAmount)}</span>
                     </div>
                   ))}
                 </div>
@@ -689,7 +683,7 @@ export default function POSCheckoutShell({ terminalId }: { terminalId?: string }
             {validatedDiscounts.length > 0 && (
               <div className="flex justify-between text-sm mb-2 p-2 bg-green-50 rounded border border-green-200">
                 <span className="font-semibold text-green-700">After Discounts</span>
-                <span className="font-bold text-green-700"><Price amount={discountedSubtotal} isMinor={true} /></span>
+                <span className="font-bold text-green-700">{formatTablePrice(discountedSubtotal)}</span>
               </div>
             )}
 
@@ -697,18 +691,18 @@ export default function POSCheckoutShell({ terminalId }: { terminalId?: string }
             <div className="space-y-2">
               <div className="flex justify-between text-sm">
                 <span className="text-gray-700">Tax (estimated)</span>
-                <span className="font-semibold"><Price amount={estimatedTax} isMinor={true} /></span>
+                <span className="font-semibold">{formatTablePrice(estimatedTax)}</span>
               </div>
               <div className="flex justify-between text-lg font-bold text-gray-900 pt-2 border-t border-blue-200">
                 <span>Total Due</span>
-                <span className="text-blue-600"><Price amount={estimatedTotal} isMinor={true} /></span>
+                <span className="text-blue-600">{formatTablePrice(estimatedTotal)}</span>
               </div>
               
               {/* Savings Display */}
               {totalDiscountAmount > 0 && (
                 <div className="mt-2 p-2 bg-green-100 border border-green-300 rounded text-center">
                   <span className="text-xs text-green-800">
-                    💰 You saved <span className="font-bold"><Price amount={totalDiscountAmount} isMinor={true} /></span>
+                    💰 You saved <span className="font-bold">{formatTablePrice(totalDiscountAmount)}</span>
                   </span>
                 </div>
               )}

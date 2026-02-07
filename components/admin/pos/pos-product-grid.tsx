@@ -1,7 +1,7 @@
 "use client"
 
 import { useState } from "react"
-import Price from '@/components/ui/Price'
+import { formatTablePrice } from '@/lib/formatters'
 
 export interface POSProduct {
   id: string
@@ -26,7 +26,7 @@ export function POSProductGrid({ products, onAdd }: { products: POSProduct[]; on
         >
             <div className="flex flex-col">
             <div className="font-semibold text-sm">{p.name}</div>
-            <div className="text-sm text-sky-600 mt-1"><Price amount={p.price} isMinor={true} /></div>
+            <div className="text-sm text-sky-600 mt-1">{formatTablePrice(p.price)}</div>
           </div>
           <div className="text-xs text-muted-foreground mt-2">Qty: {qty}</div>
         </button>

@@ -134,7 +134,7 @@ export class SectionService {
         })
 
         const drinkBalances = await stockService.getBalances('drink', items.map(d => d.id), dept.id, resolvedSectionId)
-        let mapped = items.map((d: any) => ({ id: d.id, name: d.name, type: 'drink', available: drinkBalances.get(d.id) ?? 0, unitPrice: Number(d.price) }))
+        let mapped = items.map((d: any) => ({ id: d.id, name: d.name, type: 'drink', available: drinkBalances.get(d.id) ?? 0, unitPrice: Math.round(Number(d.price) * 100) }))
 
         if (includeDetails && mapped.length > 0) {
           const ids = mapped.map((m: any) => m.id)
@@ -202,7 +202,7 @@ export class SectionService {
       const drinkIds = items.map((d: any) => d.id)
       const drinkBalances = await stockService.getBalances('drink', drinkIds, dept.id)
 
-      let mapped = items.map((d: any) => ({ id: d.id, name: d.name, type: 'drink', available: drinkBalances.get(d.id) ?? 0, unitPrice: Number(d.price) }))
+      let mapped = items.map((d: any) => ({ id: d.id, name: d.name, type: 'drink', available: drinkBalances.get(d.id) ?? 0, unitPrice: Math.round(Number(d.price) * 100) }))
 
       if (includeDetails && mapped.length > 0) {
         const ids = mapped.map((m: any) => m.id)
@@ -304,7 +304,7 @@ export class SectionService {
         })
 
         const foodBalances = await stockService.getBalances('food', items.map(f => f.id), dept.id, resolvedSectionId)
-        let mapped = items.map((f: any) => ({ id: f.id, name: f.name, type: 'food', available: foodBalances.get(f.id) ?? 0 > 0 ? 1 : 0, unitPrice: Number(f.price) }))
+        let mapped = items.map((f: any) => ({ id: f.id, name: f.name, type: 'food', available: foodBalances.get(f.id) ?? 0 > 0 ? 1 : 0, unitPrice: Math.round(Number(f.price) * 100) }))
 
         if (includeDetails && mapped.length > 0) {
           const ids = mapped.map((m: any) => m.id)
@@ -367,7 +367,7 @@ export class SectionService {
       const foodIds = items.map((f: any) => f.id)
       const foodBalances = await stockService.getBalances('food', foodIds, dept.id)
 
-      let mapped = items.map((f: any) => ({ id: f.id, name: f.name, type: 'food', available: foodBalances.get(f.id) ?? 0 > 0 ? 1 : 0, unitPrice: Number(f.price) }))
+      let mapped = items.map((f: any) => ({ id: f.id, name: f.name, type: 'food', available: foodBalances.get(f.id) ?? 0 > 0 ? 1 : 0, unitPrice: Math.round(Number(f.price) * 100) }))
 
       if (includeDetails && mapped.length > 0) {
         const ids = mapped.map((m: any) => m.id)
@@ -505,7 +505,7 @@ export class SectionService {
       const itemIds = items.map((i: any) => i.id)
       const balances = await stockService.getBalances('inventoryItem', itemIds, dept.id, resolvedSectionId)
 
-      let mapped = items.map((it: any) => ({ id: it.id, name: it.name, type: 'inventoryItem', available: balances.get(it.id) ?? 0, unitPrice: Number(it.unitPrice) }))
+      let mapped = items.map((it: any) => ({ id: it.id, name: it.name, type: 'inventoryItem', available: balances.get(it.id) ?? 0, unitPrice: Math.round(Number(it.unitPrice) * 100) }))
 
       if (includeDetails && mapped.length > 0) {
         const ids = mapped.map((m: any) => m.id)
