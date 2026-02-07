@@ -4,7 +4,7 @@ import React, { useEffect, useState } from 'react'
 import { Plus, Trash2 } from 'lucide-react'
 import { useAuth } from '@/components/auth-context'
 import { useCurrencyClient } from '@/context/CurrencyClientContext'
-import { formatTablePrice, formatDiscount } from '@/lib/formatters'
+import { formatTablePrice, formatDiscount, formatPriceDisplay } from '@/lib/formatters'
 
 type Discount = {
   id: string
@@ -245,7 +245,7 @@ export default function DiscountsPage() {
                 <td className="p-3">{d.name || '-'}</td>
                 <td className="p-3 capitalize text-sm">{d.type}</td>
                 <td className="p-3 font-medium">
-                  {d.type === 'percentage' ? `${d.value}%` : formatTablePrice(d.value)}
+                  {d.type === 'percentage' ? `${d.value}%` : formatTablePrice(d.value, undefined, displayCurrency || undefined)}
                 </td>
                 <td className="p-3 text-sm">{d.startDate ? new Date(d.startDate).toLocaleDateString() : '-'}</td>
                 <td className="p-3 text-sm">{d.endDate ? new Date(d.endDate).toLocaleDateString() : '-'}</td>

@@ -1,6 +1,7 @@
 "use client"
 
 import React, { createContext, useContext, useEffect, useState } from 'react'
+import { currencyContextManager } from '@/lib/currency'
 
 type CurrencyClientContextType = {
   displayCurrency: string | null
@@ -20,7 +21,15 @@ export function CurrencyProvider({ children }: { children: React.ReactNode }) {
       .then((r) => r.json())
       .then((json) => {
         if (!mounted) return
-        if (json && json.currency) setDisplayCurrency(json.currency)
+        if (json && json.currency) {
+          setDisplayCurrency(json.currency)
+          // Also sync the server-side currencyContextManager with organisation currency
+          try {
+            currencyContextManager.setContext({ baseCurrency: json.currency })
+          } catch (e) {
+            console.warn('Failed to sync currency context', e)
+          }
+        }
       })
       .catch(() => {
         // ignore

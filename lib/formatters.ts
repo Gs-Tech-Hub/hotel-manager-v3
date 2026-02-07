@@ -4,6 +4,7 @@
  */
 
 import { formatCents, centsToDollars, normalizeToCents } from './price';
+import { currencyContextManager } from './currency';
 
 /**
  * Format any price value for display (unified across app)
@@ -107,11 +108,15 @@ export function formatPaymentAmount(cents: number): string {
 
 /**
  * Format price for table cells (compact)
- * Returns: "$X.XX" in muted style
+ * Returns: "₦X.XX" format (currency symbol, no code fallback)
+ * Always uses base currency symbol
+ * 
+ * @param cents - Amount in cents
+ * @param baseCurrency - Optional currency code (if not provided, uses currencyContextManager)
  */
-export function formatTablePrice(cents: number, className?: string): string {
-  const formatted = formatPriceDisplay(cents);
-  return formatted; // Component can apply styling
+export function formatTablePrice(cents: number, className?: string, baseCurrency?: string): string {
+  const currency = baseCurrency || currencyContextManager.getBaseCurrency() || 'USD';
+  return formatCents(cents, undefined, currency);
 }
 
 /**

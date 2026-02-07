@@ -32,11 +32,24 @@ export async function GET(req: Request) {
 export async function PUT(req: Request) {
   try {
     const body = await req.json()
+    const { currency } = body
+    
+    if (!currency) {
+      return NextResponse.json({ error: 'Currency is required' }, { status: 400 })
+    }
+    
+    // Update organisation currency
+    const org = await prisma.organisationInfo.update({
+      where: { id: '1' }, // Assuming single org with ID '1'
+      data: { currency },
+    })
+    
     return NextResponse.json({ 
       success: true, 
-      data: body
+      data: { currency: org.currency }
     }, { status: 200 })
   } catch (error) {
+    console.error('Failed to update currency settings', error)
     return NextResponse.json({ error: 'Failed to update currency settings' }, { status: 500 })
   }
 }
