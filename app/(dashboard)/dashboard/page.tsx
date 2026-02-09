@@ -1,10 +1,11 @@
 "use client";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-import { Activity, CreditCard, DollarSign, Users } from "lucide-react";
+import { Activity, CreditCard, DollarSign, Users, Calendar, TrendingUp } from "lucide-react";
 import { useAuth } from "@/components/auth-context";
 import Link from "next/link";
 import { Button } from "@/components/ui/button";
-import { useMemo } from "react";
+import { useMemo, useEffect, useState } from "react";
+import { formatTablePrice } from "@/lib/formatters";
 
 // Define dashboard sections and their access requirements
 interface DashboardSection {
@@ -21,32 +22,33 @@ const dashboardSections: DashboardSection[] = [
 	{
 		id: "revenue",
 		title: "Revenue Analytics",
-		description: "Total revenue and sales metrics",
+		description: "Total revenue last 24 hours",
 		requiredRoles: ["manager", "admin"],
 		requiredPermissions: ["reports.read"],
 		adminBypass: true,
 	},
 	{
-		id: "users",
-		title: "User Management",
-		description: "System users and subscriptions",
-		requiredRoles: ["manager", "admin"],
-		requiredPermissions: ["users.read"],
-		adminBypass: true,
-	},
-	{
 		id: "sales",
 		title: "Sales Tracking",
-		description: "Sales and transaction data",
+		description: "Total orders in last 24 hours",
 		requiredRoles: ["manager", "pos_manager", "admin"],
 		requiredPermissions: ["orders.read"],
 		adminBypass: true,
 	},
 	{
-		id: "activity",
-		title: "Active Users",
-		description: "Currently active system users",
-		requiredRoles: ["admin"],
+		id: "reservations",
+		title: "Reservations",
+		description: "Total bookings and reservations",
+		requiredRoles: ["manager", "admin"],
+		requiredPermissions: ["bookings.read"],
+		adminBypass: true,
+	},
+	{
+		id: "employees",
+		title: "Employee Management",
+		description: "Active employees in system",
+		requiredRoles: ["manager", "admin"],
+		requiredPermissions: ["employees.read"],
 		adminBypass: true,
 	},
 ];
@@ -55,36 +57,36 @@ const dashboardSections: DashboardSection[] = [
 const statsBySection = {
 	revenue: {
 		title: "Total Revenue",
-		value: "$45,231.89",
+		value: "$0",
 		icon: DollarSign,
-		description: "+20.1% from last month",
+		description: "Last 24 hours",
 		trend: "up" as const,
 		color: "text-emerald-600",
 		bgColor: "bg-emerald-50",
 	},
-	users: {
-		title: "Subscriptions",
-		value: "+2,350",
-		icon: Users,
-		description: "+180.1% from last month",
-		trend: "up" as const,
-		color: "text-blue-600",
-		bgColor: "bg-blue-50",
-	},
 	sales: {
-		title: "Sales",
-		value: "+12,234",
+		title: "Total Orders",
+		value: "0",
 		icon: CreditCard,
-		description: "+19% from last month",
+		description: "Last 24 hours",
 		trend: "up" as const,
 		color: "text-purple-600",
 		bgColor: "bg-purple-50",
 	},
-	activity: {
-		title: "Active Now",
-		value: "+573",
-		icon: Activity,
-		description: "+201 since last hour",
+	reservations: {
+		title: "Total Reservations",
+		value: "0",
+		icon: Calendar,
+		description: "Bookings and reservations",
+		trend: "up" as const,
+		color: "text-blue-600",
+		bgColor: "bg-blue-50",
+	},
+	employees: {
+		title: "Active Employees",
+		value: "0",
+		icon: Users,
+		description: "Currently in system",
 		trend: "up" as const,
 		color: "text-orange-600",
 		bgColor: "bg-orange-50",
@@ -130,6 +132,58 @@ function canAccessSection(section: DashboardSection, user: ReturnType<typeof use
 
 export default function DashboardPage() {
 	const { user } = useAuth();
+	const [metrics, setMetrics] = useState<any>(null);
+	const [loading, setLoading] = useState(false);
+	const [stats, setStats] = useState(statsBySection);
+
+	// Fetch analytics data on mount
+	useEffect(() => {
+		const fetchAnalytics = async () => {
+			try {
+				setLoading(true);
+				// Fetch 24-hour data for dashboard
+				const oneDayAgo = new Date(Date.now() - 24 * 60 * 60 * 1000).toISOString().split('T')[0];
+				const today = new Date().toISOString().split('T')[0];
+				const params = new URLSearchParams({
+					startDate: oneDayAgo,
+					endDate: today,
+				});
+				const response = await fetch(`/api/analytics/dashboard?${params}`);
+				if (response.ok) {
+					const data = await response.json();
+					const metricsData = data.data;
+					setMetrics(metricsData);
+
+					// Update stats with real data
+					setStats(prev => ({
+						...prev,
+						revenue: {
+							...prev.revenue,
+							value: formatTablePrice(metricsData?.salesData?.totalRevenue || 0),
+						},
+						sales: {
+							...prev.sales,
+							value: String(metricsData?.salesData?.totalOrders || 0),
+						},
+						reservations: {
+							...prev.reservations,
+							value: String(metricsData?.bookingData?.totalReservations || 0),
+						},
+						employees: {
+							...prev.employees,
+							value: String(metricsData?.employeeData?.activeEmployees || 0),
+						},
+					}));
+				}
+			} catch (error) {
+				console.error('Failed to fetch analytics:', error);
+			} finally {
+				setLoading(false);
+			}
+		};
+
+		fetchAnalytics();
+	}, []);
 
 	// Get accessible sections for this user
 	const accessibleSections = useMemo(() => {
@@ -140,9 +194,9 @@ export default function DashboardPage() {
 	// Get accessible stats based on sections
 	const accessibleStats = useMemo(() => {
 		return accessibleSections
-			.map(section => statsBySection[section.id as keyof typeof statsBySection])
+			.map(section => stats[section.id as keyof typeof stats])
 			.filter(Boolean);
-	}, [accessibleSections]);
+	}, [accessibleSections, stats]);
 
 	// Check if user has no meaningful roles
 	const hasNoOrDefaultRoles = !user?.roles || user.roles.length === 0 || 
@@ -267,7 +321,7 @@ export default function DashboardPage() {
 				)}
 
 				{/* Quick Actions Card - Managers and above */}
-				{canAccessSection(dashboardSections.find(s => s.id === 'users')!, user) && (
+				{canAccessSection(dashboardSections.find(s => s.id === 'employees')!, user) && (
 					<Card>
 						<CardHeader>
 							<CardTitle className="text-xl font-semibold">
@@ -276,23 +330,32 @@ export default function DashboardPage() {
 							<p className="text-muted-foreground">Commonly used features</p>
 						</CardHeader>
 						<CardContent className="space-y-4">
-							<div className="grid grid-cols-2 gap-4">
-								<Link href="/dashboard/admin/users">
+							<div className="grid grid-cols-3 gap-4">
+								<Link href="/reports/sales">
+									<button
+										type="button"
+										className="w-full flex flex-col items-center justify-center gap-2 p-6 rounded-lg border hover:bg-muted transition-colors"
+									>
+										<TrendingUp className="h-6 w-6" />
+										<span className="text-sm font-medium">Sales Report</span>
+									</button>
+								</Link>
+								<Link href="/reports/tax">
+									<button
+										type="button"
+										className="w-full flex flex-col items-center justify-center gap-2 p-6 rounded-lg border hover:bg-muted transition-colors"
+									>
+										<DollarSign className="h-6 w-6" />
+										<span className="text-sm font-medium">Tax Report</span>
+									</button>
+								</Link>
+								<Link href="/dashboard/employees">
 									<button
 										type="button"
 										className="w-full flex flex-col items-center justify-center gap-2 p-6 rounded-lg border hover:bg-muted transition-colors"
 									>
 										<Users className="h-6 w-6" />
-										<span className="text-sm font-medium">Add User</span>
-									</button>
-								</Link>
-								<Link href="/dashboard/analytics">
-									<button
-										type="button"
-										className="w-full flex flex-col items-center justify-center gap-2 p-6 rounded-lg border hover:bg-muted transition-colors"
-									>
-										<Activity className="h-6 w-6" />
-										<span className="text-sm font-medium">Reports</span>
+										<span className="text-sm font-medium">New Employee</span>
 									</button>
 								</Link>
 							</div>
