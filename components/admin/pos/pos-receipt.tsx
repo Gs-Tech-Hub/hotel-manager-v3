@@ -84,6 +84,13 @@ export function POSReceipt({ receipt, onClose }: { receipt: any; onClose?: () =>
             </div>
           )}
           
+          {/* Employee Charge Badge */}
+          {receipt?.orderTypeDisplay === 'EMPLOYEE CHARGE' && (
+            <div className="mt-2 p-2 bg-blue-100 border border-blue-400 rounded text-center font-bold text-blue-900">
+              💳 EMPLOYEE CHARGE
+            </div>
+          )}
+          
           {/* Deferred Order Badge */}
           {receipt?.isDeferred && (
             <div className="mt-2 p-2 bg-amber-100 border border-amber-400 rounded text-center font-bold text-amber-900">
@@ -159,6 +166,20 @@ export function POSReceipt({ receipt, onClose }: { receipt: any; onClose?: () =>
             <span><Price amount={receipt?.total ?? 0} isMinor={true} /></span>
           </div>
           
+          {/* Employee Charge Information */}
+          {receipt?.orderTypeDisplay === 'EMPLOYEE CHARGE' && (
+            <div className="border-t mt-2 pt-2">
+              <div className="text-xs font-semibold text-blue-900 mb-1">Charged to Employee:</div>
+              <div className="text-xs text-gray-700">
+                {receipt?.employee?.firstname} {receipt?.employee?.lastname}
+                {receipt?.employee?.email && <div className="text-xs text-gray-600">({receipt.employee.email})</div>}
+              </div>
+              <div className="text-xs text-gray-600 mt-1">
+                Charge ID: {receipt?.employeeChargeId}
+              </div>
+            </div>
+          )}
+          
           {/* Payment status section */}
           {receipt?.isDeferred ? (
             <div className="border-t mt-2 pt-2 text-center text-xs">
@@ -167,6 +188,11 @@ export function POSReceipt({ receipt, onClose }: { receipt: any; onClose?: () =>
                 To settle this order, visit the Open Orders Dashboard
               </div>
               <div className="mt-2 font-semibold">Order Status: PENDING</div>
+            </div>
+          ) : receipt?.orderTypeDisplay === 'EMPLOYEE CHARGE' ? (
+            <div className="border-t mt-2 pt-2 flex justify-between text-xs">
+              <span>Payment Status:</span>
+              <span className="font-semibold text-blue-600">✓ EMPLOYEE CHARGED</span>
             </div>
           ) : (
             <div className="border-t mt-2 pt-2 flex justify-between text-xs">

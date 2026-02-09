@@ -785,7 +785,7 @@ export default function POSCheckoutShell({ terminalId }: { terminalId?: string }
         </div>
       </div>
 
-      {/* Employee Targeting Modal */}
+      {/* Employee Targeting Modal - SINGLE ENTRY POINT for payment flow */}
       {showEmployeeTargeting && (
         <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
           <div className="bg-white rounded-lg shadow-lg max-w-md w-full max-h-[90vh] overflow-y-auto">
@@ -796,16 +796,19 @@ export default function POSCheckoutShell({ terminalId }: { terminalId?: string }
                 setSelectedEmployee(emp)
               }}
               onCancel={() => {
+                console.log('[POS] Employee targeting cancelled')
                 setShowEmployeeTargeting(false)
                 setSelectedEmployee(null)
               }}
-              onChargeToEmployee={async (employeeId, amount) => {
+              onChargeToEmployee={async (employeeId) => {
                 try {
                   setIsChargingEmployee(true)
-                  console.log('[POS] Charging employee:', employeeId, 'amount:', amount)
                   
-                  // Create order with employee charge
-                  const res = await fetch('/api/orders', {
+                  const chargeAmount = estimatedTotal
+                  console.log('[POS] EMPLOYEE CHARGE FLOW: Creating order and charge for employee:', employeeId, 'amount:', chargeAmount)
+                  
+                  // Step 1: Create order with payment recorded as 'employee'
+                  const orderRes = await fetch('/api/orders', {
                     method: 'POST',
                     credentials: 'include',
                     headers: { 'Content-Type': 'application/json' },
@@ -819,28 +822,108 @@ export default function POSCheckoutShell({ terminalId }: { terminalId?: string }
                         quantity: item.quantity,
                         unitPrice: item.unitPrice,
                       })),
-                      discountIds: appliedDiscountIds,
-                      employeeChargeId: employeeId,
-                      paymentMethod: 'employee_account',
-                      isDeferred: false,
+                      discounts: appliedDiscountIds,
+                      payment: {
+                        amount: chargeAmount,
+                        paymentMethod: 'employee',
+                        isDeferred: false,
+                      },
                     }),
                   })
                   
-                  const json = await res.json()
-                  if (res.ok && json?.success && json.data) {
-                    console.log('[POS] Order created with employee charge:', json.data)
-                    setReceipt({
-                      ...json.data,
+                  const orderJson = await orderRes.json()
+                  if (!orderRes.ok || !orderJson?.success || !orderJson.data) {
+                    throw new Error((orderJson?.error?.message) || 'Failed to create order')
+                  }
+                  
+                  const orderId = orderJson.data.id
+                  console.log('[POS] Order created:', orderId)
+                  
+                  // Step 2: Create employee charge
+                  const chargeRes = await fetch(`/api/employees/${employeeId}/charges`, {
+                    method: 'POST',
+                    credentials: 'include',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                      chargeType: 'order_discount',
+                      amount: chargeAmount / 100,
+                      description: `Order ${orderId} - Employee Discount Charge`,
+                      reason: 'Employee discount auto-charge from POS',
+                      date: new Date().toISOString(),
+                    }),
+                  })
+                  
+                  const chargeJson = await chargeRes.json()
+                  console.log('[POS] Charge response:', { status: chargeRes.status, body: chargeJson })
+                  
+                  if (!chargeRes.ok || !chargeJson?.success) {
+                    throw new Error((chargeJson?.error?.message) || 'Failed to charge employee')
+                  }
+                  
+                  // Charge object is in chargeJson.data due to successResponse format
+                  const chargeData = chargeJson.data
+                  if (!chargeData) {
+                    console.error('[POS] chargeData is null:', chargeJson)
+                    throw new Error('Invalid charge response structure - missing data')
+                  }
+                  
+                  // Ensure chargeData has id
+                  if (!chargeData.id) {
+                    console.error('[POS] chargeData missing id field:', { chargeData, fullResponse: chargeJson })
+                    throw new Error('Invalid charge response - missing id field')
+                  }
+                  
+                  console.log('[POS] Employee charged successfully:', { 
+                    chargeId: chargeData.id, 
+                    hasEmploymentData: !!chargeData.employmentData,
+                    hasUser: !!chargeData.employmentData?.user
+                  })
+                  
+                  // Step 3: Prepare and show receipt
+                  const formattedItems = (orderJson.data.lines || []).map((line: any) => ({
+                    lineId: line.id,
+                    productName: line.productName,
+                    quantity: line.quantity,
+                    unitPrice: line.unitPrice,
+                  }))
+                  
+                  const formattedDiscounts = (orderJson.data.discounts || []).map((d: any) => ({
+                    code: d.discountCode || d.code,
+                    type: d.discountType || d.type,
+                    value: d.discountRule?.value || d.value,
+                    discountAmount: d.discountAmount,
+                  }))
+                  
+                  // Clear all state and show receipt
+                  setCart([])
+                  setAppliedDiscountIds([])
+                  setShowEmployeeTargeting(false)
+                  setSelectedEmployee(null)
+                  
+                  // Build receipt carefully with defensive checks
+                  try {
+                    const receiptData = {
+                      ...orderJson.data,
+                      items: formattedItems,
+                      discounts: formattedDiscounts,
                       isDeferred: false,
                       orderTypeDisplay: 'EMPLOYEE CHARGE',
+                      employeeChargeId: chargeData?.id,
+                      chargeAmount: chargeAmount,
+                      employee: chargeData?.employmentData?.user || null,
+                      employmentData: chargeData?.employmentData || null,
+                    }
+                    
+                    console.log('[POS] Receipt data built:', {
+                      chargeId: receiptData.employeeChargeId,
+                      employeeId: receiptData.employee?.id,
+                      employeeName: receiptData.employee?.firstname,
                     })
-                    setCart([])
-                    setAppliedDiscountIds([])
-                    setShowEmployeeTargeting(false)
-                    setSelectedEmployee(null)
-                  } else {
-                    const msg = (json && json.error && json.error.message) ? json.error.message : `Failed to charge employee`
-                    throw new Error(msg)
+                    
+                    setReceipt(receiptData)
+                  } catch (receiptErr) {
+                    console.error('[POS] Error building receipt:', receiptErr)
+                    throw new Error(`Failed to build receipt: ${receiptErr instanceof Error ? receiptErr.message : 'Unknown error'}`)
                   }
                 } catch (err) {
                   console.error('[POS] Employee charge error:', err)
@@ -850,8 +933,10 @@ export default function POSCheckoutShell({ terminalId }: { terminalId?: string }
                 }
               }}
               onProceedToPayment={() => {
-                console.log('[POS] Proceeding to payment')
+                console.log('[POS] NORMAL PAYMENT FLOW: User chose to proceed with normal payment')
+                // Close employee modal, open payment modal
                 setShowEmployeeTargeting(false)
+                setSelectedEmployee(null)
                 setShowPayment(true)
               }}
               isSubmitting={isChargingEmployee}

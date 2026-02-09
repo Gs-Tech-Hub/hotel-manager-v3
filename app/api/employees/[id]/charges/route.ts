@@ -116,7 +116,7 @@ export async function POST(
       );
     }
 
-    // Create charge
+    // Create charge with employee data included
     const charge = await (prisma as any).employeeCharge.create({
       data: {
         employmentDataId: employment.id,
@@ -127,6 +127,20 @@ export async function POST(
         date: new Date(date),
         dueDate: dueDate ? new Date(dueDate) : null,
         status: 'pending',
+      },
+      include: {
+        employmentData: {
+          include: {
+            user: {
+              select: {
+                id: true,
+                firstname: true,
+                lastname: true,
+                email: true,
+              },
+            },
+          },
+        },
       },
     });
 
@@ -140,9 +154,9 @@ export async function POST(
       },
     });
 
-    console.log(`[API] Created charge for employee: ${id}`);
+    console.log(`[API] Created charge for employee: ${id}`, { chargeId: charge.id, employeeId: id });
 
-    return NextResponse.json(successResponse(charge), { status: 201 });
+    return NextResponse.json(successResponse({ data: charge }), { status: 201 });
   } catch (error: any) {
     console.error('[API] Failed to create charge:', error);
     return NextResponse.json(

@@ -125,6 +125,11 @@ export function EmployeeTargeting({
     onProceedToPayment?.();
   };
 
+  const handleSkipAndProceed = () => {
+    // Skip employee, go straight to payment
+    onProceedToPayment?.();
+  };
+
   // Show the charge mode selection if employee is selected
   if (chargeMode) {
     return (
@@ -314,10 +319,10 @@ export function EmployeeTargeting({
         ) : (
           <>
             <button
-              onClick={() => setChargeMode('payment')}
+              onClick={handleSkipAndProceed}
               className="flex-1 p-2 bg-green-600 hover:bg-green-700 text-white rounded font-medium transition-colors"
             >
-              Skip & Proceed
+              Skip & Proceed to Payment
             </button>
             <button
               onClick={onCancel}
