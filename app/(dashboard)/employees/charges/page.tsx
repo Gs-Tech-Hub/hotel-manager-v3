@@ -2,6 +2,7 @@
 
 import { useEffect, useState } from 'react';
 import { Plus, Trash2, Edit2, AlertCircle, CheckCircle } from 'lucide-react';
+import { formatTablePrice } from '@/lib/formatters';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import {
@@ -268,8 +269,8 @@ export default function EmployeeChargesPage() {
                     <TableRow key={charge.id}>
                       <TableCell className="font-medium">{getEmployeeName(charge.employmentDataId)}</TableCell>
                       <TableCell>{charge.chargeType}</TableCell>
-                      <TableCell>${Number(charge.amount).toFixed(2)}</TableCell>
-                      <TableCell>${Number(charge.paidAmount).toFixed(2)}</TableCell>
+                      <TableCell>{formatTablePrice(Number(charge.amount) * 100)}</TableCell>
+                      <TableCell>{formatTablePrice(Number(charge.paidAmount) * 100)}</TableCell>
                       <TableCell>{formatDate(charge.date)}</TableCell>
                       <TableCell>
                         {charge.dueDate ? formatDate(charge.dueDate) : '-'}

@@ -40,7 +40,7 @@ export async function GET(req: NextRequest) {
             employmentData: {
               include: {
                 leaves: { where: { status: 'approved' } },
-                charges: { where: { status: { in: ['pending', 'partially_paid'] } } },
+                charges: true, // Get all charges for summary
               },
             },
             employeeSummary: true,
@@ -67,6 +67,53 @@ export async function GET(req: NextRequest) {
             },
           });
 
+          // Fetch last paid salary
+          const lastSalaryPayment = await prisma.salaryPayment.findFirst({
+            where: { userId: emp.id },
+            orderBy: { paymentDate: 'desc' },
+            take: 1,
+          });
+
+          // Calculate charges breakdown
+          const allCharges = emp.employmentData?.charges || [];
+          const chargesBreakdown: Record<string, { count: number; total: number }> = {};
+          let totalOutstandingCharges = 0;
+          let totalPaidCharges = 0;
+
+          allCharges.forEach((charge) => {
+            if (!chargesBreakdown[charge.chargeType]) {
+              chargesBreakdown[charge.chargeType] = { count: 0, total: 0 };
+            }
+            chargesBreakdown[charge.chargeType].count++;
+            chargesBreakdown[charge.chargeType].total += Number(charge.amount);
+
+            if (charge.status === 'pending' || charge.status === 'partially_paid') {
+              totalOutstandingCharges += Number(charge.amount) - Number(charge.paidAmount || 0);
+            }
+            if (charge.status === 'paid') {
+              totalPaidCharges += Number(charge.amount);
+            }
+          });
+
+          // Calculate next salary due date
+          let nextSalaryDueDate = null;
+          if (emp.employmentData) {
+            const empData = emp.employmentData;
+            const empDate = new Date(empData.employmentDate);
+            const now = new Date();
+
+            if (empData.salaryFrequency === 'monthly') {
+              nextSalaryDueDate = new Date(now.getFullYear(), now.getMonth() + 1, empDate.getDate());
+              if (nextSalaryDueDate <= now) {
+                nextSalaryDueDate = new Date(now.getFullYear(), now.getMonth() + 2, empDate.getDate());
+              }
+            } else if (empData.salaryFrequency === 'bi-weekly') {
+              nextSalaryDueDate = new Date(now.getTime() + (14 * 24 * 60 * 60 * 1000));
+            } else if (empData.salaryFrequency === 'weekly') {
+              nextSalaryDueDate = new Date(now.getTime() + (7 * 24 * 60 * 60 * 1000));
+            }
+          }
+
           return {
             id: emp.id,
             email: emp.email,
@@ -82,7 +129,15 @@ export async function GET(req: NextRequest) {
               departmentId: ur.departmentId,
               departmentName: ur.department?.name,
             })),
-            totalCharges: emp.employmentData?.charges.reduce((sum, c) => sum + Number(c.amount), 0) || 0,
+            // Financial summary
+            totalCharges: allCharges.reduce((sum, c) => sum + Number(c.amount), 0),
+            totalOutstandingCharges,
+            totalPaidCharges,
+            chargesBreakdown,
+            // Salary info
+            lastPaidDate: lastSalaryPayment?.paymentDate || null,
+            nextSalaryDueDate,
+            // Leave info
             activeLeaves: emp.employmentData?.leaves.length || 0,
             createdAt: emp.createdAt,
           };

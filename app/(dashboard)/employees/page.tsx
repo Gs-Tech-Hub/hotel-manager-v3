@@ -1,9 +1,11 @@
 "use client"
 
 import { useEffect, useState } from 'react'
+import { useRouter } from 'next/navigation'
 import { useAuth } from '@/components/auth-context'
-import { Plus, Trash2, Edit } from 'lucide-react'
+import { Plus, AlertCircle } from 'lucide-react'
 import { EmployeeForm } from '@/components/admin/employee-form'
+import { EmployeeListCard } from '@/components/admin/employee-list-card'
 
 type Employee = {
   id: string
@@ -12,19 +14,46 @@ type Employee = {
   firstname?: string
   lastname?: string
   blocked: boolean
+  employmentData?: {
+    employmentDate: string
+    position: string
+    department?: string
+    salary: number
+    salaryType: string
+    salaryFrequency: string
+    employmentStatus: string
+    totalCharges?: number
+  } | null
+  summary?: any
   roles?: Array<{
     roleId: string
+    roleName: string
     departmentId?: string
+    departmentName?: string
   }>
+  totalCharges: number
+  totalOutstandingCharges: number
+  totalPaidCharges: number
+  chargesBreakdown: Record<string, { count: number; total: number }>
+  lastPaidDate?: string | null
+  nextSalaryDueDate?: string | null
+  activeLeaves: number
+  createdAt?: string
 }
 
 export default function EmployeesPage() {
+  const router = useRouter()
   const { hasPermission } = useAuth()
   const [employees, setEmployees] = useState<Employee[]>([])
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [showForm, setShowForm] = useState(false)
   const [editingEmployee, setEditingEmployee] = useState<Employee | null>(null)
+
+  // Filtering & Sorting
+  const [statusFilter, setStatusFilter] = useState<string>('all')
+  const [sortBy, setSortBy] = useState<'name' | 'salary' | 'charges' | 'outstanding'>('name')
+  const [searchQuery, setSearchQuery] = useState('')
 
   const fetchEmployees = async () => {
     setLoading(true)
@@ -34,8 +63,7 @@ export default function EmployeesPage() {
       if (!res.ok) throw new Error(`Failed to fetch employees (${res.status})`)
       const json = await res.json()
       if (!json?.success) throw new Error(json?.error || 'Invalid response')
-      
-      // Handle the nested data structure: data.data.employees
+
       const employeeList = json.data?.employees || json.data || []
       if (!Array.isArray(employeeList)) {
         console.error('[EmployeesPage] employeeList is not an array:', employeeList)
@@ -72,9 +100,8 @@ export default function EmployeesPage() {
     }
   }
 
-  const handleEditEmployee = (emp: Employee) => {
-    setEditingEmployee(emp)
-    setShowForm(true)
+  const handleViewEmployee = (id: string) => {
+    router.push(`/employees/${id}`)
   }
 
   const handleFormClose = () => {
@@ -86,16 +113,55 @@ export default function EmployeesPage() {
     fetchEmployees()
   }
 
-  const fullName = (emp: Employee) => {
-    const parts = [emp.firstname, emp.lastname].filter(Boolean)
-    return parts.length > 0 ? parts.join(' ') : emp.username
-  }
+  // Filter and sort employees
+  const filteredAndSortedEmployees = employees
+    .filter((emp) => {
+      // Status filter
+      const empStatus = emp.employmentData?.employmentStatus || 'inactive'
+      if (statusFilter !== 'all' && empStatus !== statusFilter) {
+        return false
+      }
+
+      // Search filter
+      if (searchQuery) {
+        const query = searchQuery.toLowerCase()
+        const fullName = `${emp.firstname || ''} ${emp.lastname || ''}`.toLowerCase()
+        return (
+          fullName.includes(query) ||
+          emp.email.toLowerCase().includes(query) ||
+          emp.username.toLowerCase().includes(query)
+        )
+      }
+
+      return true
+    })
+    .sort((a, b) => {
+      switch (sortBy) {
+        case 'salary':
+          return (Number(b.employmentData?.salary) || 0) - (Number(a.employmentData?.salary) || 0)
+        case 'charges':
+          return b.totalCharges - a.totalCharges
+        case 'outstanding':
+          return b.totalOutstandingCharges - a.totalOutstandingCharges
+        case 'name':
+        default: {
+          const aName = `${a.firstname || ''} ${a.lastname || ''}`.trim() || a.username
+          const bName = `${b.firstname || ''} ${b.lastname || ''}`.trim() || b.username
+          return aName.localeCompare(bName)
+        }
+      }
+    })
 
   return (
     <div className="space-y-6">
       {/* Header */}
       <div className="flex items-center justify-between">
-        <h1 className="text-3xl font-bold">Employee Management</h1>
+        <div>
+          <h1 className="text-3xl font-bold">Employee Management</h1>
+          <p className="text-gray-600 mt-1">
+            {filteredAndSortedEmployees.length} of {employees.length} employees
+          </p>
+        </div>
         <div className="flex gap-2">
           {hasPermission('employees.create') && (
             <button
@@ -108,8 +174,8 @@ export default function EmployeesPage() {
               <Plus size={18} /> Add Employee
             </button>
           )}
-          <button 
-            onClick={() => fetchEmployees()} 
+          <button
+            onClick={() => fetchEmployees()}
             className="px-4 py-2 border border-gray-300 rounded-lg hover:bg-gray-50"
           >
             Refresh
@@ -119,8 +185,9 @@ export default function EmployeesPage() {
 
       {/* Error Alert */}
       {error && (
-        <div className="p-4 bg-red-50 border border-red-200 rounded-lg">
-          <p className="text-red-700">⚠️ {error}</p>
+        <div className="p-4 bg-red-50 border border-red-200 rounded-lg flex items-start gap-3">
+          <AlertCircle className="text-red-600 flex-shrink-0 mt-0.5" size={20} />
+          <p className="text-red-700">{error}</p>
         </div>
       )}
 
@@ -153,94 +220,92 @@ export default function EmployeesPage() {
         </div>
       )}
 
-      {/* Employee Table */}
+      {/* Filters and Sorting */}
+      {!loading && employees.length > 0 && (
+        <div className="bg-white rounded-lg border border-gray-200 p-4 space-y-4">
+          {/* Search */}
+          <div>
+            <label className="block text-sm font-medium text-gray-700 mb-2">Search</label>
+            <input
+              type="text"
+              placeholder="Search by name, email, or username..."
+              value={searchQuery}
+              onChange={(e) => setSearchQuery(e.target.value)}
+              className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+            />
+          </div>
+
+          {/* Filters and Sorting Grid */}
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+            {/* Status Filter */}
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-2">Employment Status</label>
+              <select
+                value={statusFilter}
+                onChange={(e) => setStatusFilter(e.target.value)}
+                className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+              >
+                <option value="all">All Statuses</option>
+                <option value="active">Active</option>
+                <option value="inactive">Inactive</option>
+                <option value="on_leave">On Leave</option>
+                <option value="terminated">Terminated</option>
+              </select>
+            </div>
+
+            {/* Sort By */}
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-2">Sort By</label>
+              <select
+                value={sortBy}
+                onChange={(e) => setSortBy(e.target.value as any)}
+                className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+              >
+                <option value="name">Name (A-Z)</option>
+                <option value="salary">Salary (High to Low)</option>
+                <option value="charges">Total Charges</option>
+                <option value="outstanding">Outstanding Amount</option>
+              </select>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Employee Cards Grid */}
       {!loading && (
-        <div className="bg-white rounded-lg border border-gray-200 overflow-hidden">
+        <>
           {!Array.isArray(employees) || employees.length === 0 ? (
-            <div className="text-center py-12">
+            <div className="text-center py-12 bg-white rounded-lg border border-gray-200">
               <p className="text-gray-600">
                 {hasPermission('employees.create')
                   ? 'No employees found. Create one to get started.'
                   : 'No employees found.'}
               </p>
             </div>
+          ) : filteredAndSortedEmployees.length === 0 ? (
+            <div className="text-center py-12 bg-white rounded-lg border border-gray-200">
+              <p className="text-gray-600">No employees match your filter criteria.</p>
+            </div>
           ) : (
-            <div className="overflow-x-auto">
-              <table className="w-full">
-                <thead className="bg-gray-50 border-b">
-                  <tr>
-                    <th className="px-6 py-3 text-left text-xs font-medium text-gray-700 uppercase">
-                      Name
-                    </th>
-                    <th className="px-6 py-3 text-left text-xs font-medium text-gray-700 uppercase">
-                      Email
-                    </th>
-                    <th className="px-6 py-3 text-left text-xs font-medium text-gray-700 uppercase">
-                      Username
-                    </th>
-                    <th className="px-6 py-3 text-left text-xs font-medium text-gray-700 uppercase">
-                      Status
-                    </th>
-                    <th className="px-6 py-3 text-right text-xs font-medium text-gray-700 uppercase">
-                      Actions
-                    </th>
-                  </tr>
-                </thead>
-                <tbody className="divide-y">
-                  {employees.map((emp) => (
-                    <tr key={emp.id} className="hover:bg-gray-50">
-                      <td className="px-6 py-4">
-                        <div>
-                          <p className="font-medium text-gray-900">
-                            {emp.firstname || emp.lastname
-                              ? `${emp.firstname || ''} ${emp.lastname || ''}`.trim()
-                              : emp.username}
-                          </p>
-                          <p className="text-sm text-gray-500">{emp.username}</p>
-                        </div>
-                      </td>
-                      <td className="px-6 py-4 text-sm text-gray-900">{emp.email}</td>
-                      <td className="px-6 py-4 text-sm text-gray-600">{emp.username}</td>
-                      <td className="px-6 py-4">
-                        <span
-                          className={`inline-flex px-3 py-1 rounded-full text-xs font-medium ${
-                            emp.blocked
-                              ? 'bg-red-100 text-red-800'
-                              : 'bg-green-100 text-green-800'
-                          }`}
-                        >
-                          {emp.blocked ? 'Blocked' : 'Active'}
-                        </span>
-                      </td>
-                      <td className="px-6 py-4 text-right">
-                        <div className="flex justify-end gap-2">
-                          {hasPermission('employees.update') && (
-                            <button
-                              onClick={() => handleEditEmployee(emp)}
-                              className="p-2 text-blue-600 hover:bg-blue-50 rounded hover:text-blue-700"
-                              title="Edit"
-                            >
-                              <Edit size={16} />
-                            </button>
-                          )}
-                          {hasPermission('employees.delete') && (
-                            <button
-                              onClick={() => handleDeleteEmployee(emp.id)}
-                              className="p-2 text-red-600 hover:bg-red-50 rounded hover:text-red-700"
-                              title="Delete"
-                            >
-                              <Trash2 size={16} />
-                            </button>
-                          )}
-                        </div>
-                      </td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+              {filteredAndSortedEmployees.map((emp) => (
+                <EmployeeListCard
+                  key={emp.id}
+                  id={emp.id}
+                  firstname={emp.firstname}
+                  lastname={emp.lastname}
+                  email={emp.email}
+                  username={emp.username}
+                  employmentData={emp.employmentData}
+                  totalOutstandingCharges={emp.totalOutstandingCharges}
+                  roles={emp.roles}
+                  blocked={emp.blocked}
+                  onClick={() => handleViewEmployee(emp.id)}
+                />
+              ))}
             </div>
           )}
-        </div>
+        </>
       )}
     </div>
   )

@@ -2,6 +2,7 @@
 
 import { useEffect, useState } from 'react';
 import { Plus, Trash2, Edit2, CheckCircle, Clock } from 'lucide-react';
+import { formatTablePrice } from '@/lib/formatters';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import {
@@ -355,9 +356,9 @@ export default function SalaryPaymentsPage() {
                           <span className="text-muted-foreground">-</span>
                         )}
                       </TableCell>
-                      <TableCell>${payment.grossSalary.toFixed(2)}</TableCell>
-                      <TableCell>${payment.deductions.toFixed(2)}</TableCell>
-                      <TableCell className="font-semibold">${payment.netSalary.toFixed(2)}</TableCell>
+                      <TableCell>{formatTablePrice(payment.grossSalary * 100)}</TableCell>
+                      <TableCell>{formatTablePrice(payment.deductions * 100)}</TableCell>
+                      <TableCell className="font-semibold">{formatTablePrice(payment.netSalary * 100)}</TableCell>
                       <TableCell>{payment.paymentMethod || '-'}</TableCell>
                       <TableCell>
                         <div className="flex items-center gap-2">
@@ -437,11 +438,11 @@ export default function SalaryPaymentsPage() {
                 <div className="grid grid-cols-2 gap-3 text-sm">
                   <div>
                     <span className="text-muted-foreground">Base Salary:</span>
-                    <p className="font-semibold text-lg">${employeeData.salary ? Number(employeeData.salary).toFixed(2) : '0.00'}</p>
+                    <p className="font-semibold text-lg">{employeeData.salary ? formatTablePrice(Number(employeeData.salary) * 100) : formatTablePrice(0)}</p>
                   </div>
                   <div>
                     <span className="text-muted-foreground">Unpaid Charges:</span>
-                    <p className="font-semibold text-lg text-red-600">${unpaidChargesTotal.toFixed(2)}</p>
+                    <p className="font-semibold text-lg text-red-600">{formatTablePrice(unpaidChargesTotal * 100)}</p>
                   </div>
                 </div>
               </div>
