@@ -8,43 +8,38 @@ import { CurrencyProvider } from '@/context/CurrencyClientContext'
 const inter = Inter({ subsets: ["latin"] });
 
 export const metadata: Metadata = {
-	title: "Modern Dashboard Template - Next.js 14 & shadcn/ui",
+	title: "GS Hotel Manager - Hotel Management Software",
 	description:
-		"A beautiful, responsive dashboard template built with Next.js 14, shadcn/ui, and Tailwind CSS. Ready-to-use admin panel with modern UI components.",
+		"GS Hotel Manager - Professional hotel management software. Streamline your operations with our intuitive management platform.",
 	keywords: [
-		"dashboard template",
-		"admin panel",
-		"Next.js 14",
-		"shadcn/ui",
-		"Tailwind CSS",
-		"React dashboard",
-		"modern UI",
-		"admin dashboard",
-		"responsive design",
-		"TypeScript",
-		"open source",
-		"dashboard components",
+		"hotel management",
+		"hotel software",
+		"property management",
+		"booking system",
+		"management software",
+		"GS Hotel Manager",
+		"hotel operations",
 	],
-	authors: [{ name: "Dashboard Template" }],
-	creator: "Dashboard Template",
-	publisher: "Dashboard Template",
+	authors: [{ name: "GS Hotel Manager" }],
+	creator: "GS Hotel Manager",
+	publisher: "GS Hotel Manager",
 	formatDetection: {
 		email: false,
 		address: false,
 		telephone: false,
 	},
-	metadataBase: new URL("https://shadcn-nextjs-dashboard.vercel.app"),
+	metadataBase: new URL("https://gshotelmanager.com"),
 	alternates: {
 		canonical: "/",
 	},
 	openGraph: {
 		type: "website",
 		locale: "en_US",
-		url: "https://shadcn-nextjs-dashboard.vercel.app",
-		title: "Modern Dashboard Template - Next.js 14 & shadcn/ui",
+		url: "https://gshotelmanager.com",
+		title: "GS Hotel Manager - Hotel Management Software",
 		description:
-			"A beautiful, responsive dashboard template built with Next.js 14, shadcn/ui, and Tailwind CSS. Ready-to-use admin panel with modern UI components.",
-		siteName: "Dashboard Template",
+			"Professional hotel management software for modern hospitality operations.",
+		siteName: "GS Hotel Manager",
 		images: [
 			{
 				url: "/og-image.png",

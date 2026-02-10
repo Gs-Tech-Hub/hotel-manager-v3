@@ -12,3 +12,5 @@
 {"ts":"2026-02-02T12:37:54.706Z","level":"error","message":"Cannot read properties of undefined (reading 'findFirst')","meta":{"context":"createOrder.normalized"}}
 {"ts":"2026-02-02T13:17:35.126Z","level":"error","message":"Cannot read properties of undefined (reading 'findFirst')","meta":{"context":"createOrder"}}
 {"ts":"2026-02-02T13:17:35.131Z","level":"error","message":"Cannot read properties of undefined (reading 'findFirst')","meta":{"context":"createOrder.normalized"}}
+{"ts":"2026-02-10T07:31:54.066Z","level":"error","message":"\nInvalid `prisma.orderDepartment.createMany()` invocation:\n\n\nUnique constraint failed on the fields: (`orderHeaderId`,`departmentId`)","meta":{"context":"createOrder"}}
+{"ts":"2026-02-10T07:31:54.071Z","level":"error","message":"\nInvalid `prisma.orderDepartment.createMany()` invocation:\n\n\nUnique constraint failed on the fields: (`orderHeaderId`,`departmentId`)","meta":{"context":"createOrder.normalized"}}
