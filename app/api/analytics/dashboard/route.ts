@@ -70,43 +70,60 @@ export async function GET(request: NextRequest) {
     const dateFilter = buildDateFilter(startDate, endDate);
 
     // Fetch all data in parallel
-    const [orders, payments, employees, newUsers, discounts, taxSettings, bookings] = await Promise.all([
-      prisma.order.findMany({
+    const [orderHeaders, orderPayments, employees, discounts, bookings] = await Promise.all([
+      (prisma as any).orderHeader.findMany({
         where: {
           ...dateFilter,
-          orderStatus: {
-            in: ['paid', 'fulfilled', 'completed'],
+          status: {
+            in: ['fulfilled', 'completed'],
+          },
+        },
+        include: {
+          payments: true,
+          lines: {
+            include: {
+              departmentSection: true,
+            },
           },
         },
       }),
-      prisma.payment.findMany({
+      (prisma as any).orderPayment.findMany({
         where: {
           ...dateFilter,
+          paymentStatus: 'completed',
         },
       }),
-      prisma.pluginUsersPermissionsUser.findMany({
+      (prisma as any).pluginUsersPermissionsUser.findMany({
         include: {
           employmentData: true,
-          employeeRecords: true,
         },
       }),
-      prisma.pluginUsersPermissionsUser.findMany({
-        where: {
-          ...dateFilter,
-        },
-      }),
-      prisma.discountRule.findMany(),
-      prisma.taxSettings.findFirst(),
-      prisma.booking.findMany({
+      (prisma as any).discountRule.findMany(),
+      (prisma as any).booking.findMany({
         where: {
           ...dateFilter,
         },
       }),
     ]);
 
-    // Calculate sales data
-    const totalRevenue = Math.round((orders.reduce((sum: number, order: any) => sum + (order.total || 0), 0)) * 100);
-    const totalOrders = orders.length;
+    // Calculate sales data - count paid orders (those with sufficient payments)
+    let totalRevenue = 0;
+    let totalPaidOrders = 0;
+    let totalFulfilledOrders = 0;
+
+    for (const order of orderHeaders) {
+      const totalPaid = (order.payments || []).reduce((sum: number, p: any) => sum + (p.amount ?? 0), 0);
+      const isPaid = totalPaid >= order.total && order.total > 0;
+      
+      if (isPaid) {
+        totalPaidOrders += 1;
+        totalRevenue += order.total;
+      }
+      
+      if (order.status === 'fulfilled') {
+        totalFulfilledOrders += 1;
+      }
+    }
 
     // Calculate booking data
     const totalReservations = bookings.length;
@@ -118,7 +135,7 @@ export async function GET(request: NextRequest) {
     const metrics: DashboardMetrics = {
       salesData: {
         totalRevenue,
-        totalOrders,
+        totalOrders: totalPaidOrders,
       },
       bookingData: {
         totalReservations,

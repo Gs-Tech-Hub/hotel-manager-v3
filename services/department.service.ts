@@ -206,28 +206,67 @@ export class DepartmentService extends BaseService<IDepartment> {
         return errorResponse(ErrorCodes.NOT_FOUND, 'Department not found');
       }
 
-      const [pendingOrders, processingOrders, fulfilledOrders, completedOrders] = await Promise.all([
-        (prisma as any).orderDepartment.count({
-          where: { departmentId: department.id, status: 'pending' },
-        }),
-        (prisma as any).orderDepartment.count({
-          where: { departmentId: department.id, status: 'processing' },
-        }),
-        (prisma as any).orderDepartment.count({
-          where: { departmentId: department.id, status: 'fulfilled' },
-        }),
-        (prisma as any).orderDepartment.count({
-          where: { departmentId: department.id, status: 'completed' },
-        }),
-      ]);
+      // Get all orders with lines in this department
+      const orders = await (prisma as any).orderHeader.findMany({
+        where: {
+          lines: {
+            some: { departmentCode: departmentCode }
+          }
+        },
+        include: {
+          payments: true,
+          lines: {
+            where: { departmentCode: departmentCode }
+          }
+        }
+      });
+
+      let totalOrders = 0;
+      let paidOrders = 0;
+      let unpaidOrders = 0;
+      let pendingOrders = 0;
+      let processingOrders = 0;
+      let fulfilledOrders = 0;
+      let completedOrders = 0;
+      let totalAmount = 0;
+      let paidAmount = 0;
+      let unpaidAmount = 0;
+
+      for (const order of orders) {
+        totalOrders += 1;
+        totalAmount += order.total || 0;
+
+        // Calculate payment status
+        const totalPaid = (order.payments || []).reduce((sum: number, p: any) => sum + (p.amount ?? 0), 0);
+        const isPaid = totalPaid >= order.total && order.total > 0;
+
+        if (isPaid) {
+          paidOrders += 1;
+          paidAmount += order.total || 0;
+        } else {
+          unpaidOrders += 1;
+          unpaidAmount += order.total || 0;
+        }
+
+        // Count by order status
+        if (order.status === 'pending') pendingOrders += 1;
+        if (order.status === 'processing') processingOrders += 1;
+        if (order.status === 'fulfilled') fulfilledOrders += 1;
+        if (order.status === 'completed') completedOrders += 1;
+      }
 
       return {
         department: department.name,
+        totalOrders,
+        paidOrders,
+        unpaidOrders,
         pendingOrders,
         processingOrders,
         fulfilledOrders,
         completedOrders,
-        totalOrders: pendingOrders + processingOrders + fulfilledOrders + completedOrders,
+        totalAmount,
+        paidAmount,
+        unpaidAmount,
       };
     } catch (error) {
       console.error('Error fetching department stats:', error);

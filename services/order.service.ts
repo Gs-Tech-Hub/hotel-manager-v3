@@ -1065,6 +1065,7 @@ export class OrderService extends BaseService<IOrderHeader> {
 
   /**
    * Get order statistics
+   * Returns paid, unpaid, fulfilled, and pending order counts and amounts
    */
   async getOrderStats(ctx?: UserContext) {
     try {
@@ -1074,23 +1075,62 @@ export class OrderService extends BaseService<IOrderHeader> {
       //   if (forbidden) return forbidden;
       // }
 
-      const [totalOrders, activeOrders, completedOrders, cancelledOrders, totalRevenue] = await Promise.all([
-        (prisma as any).orderHeader.count(),
-        (prisma as any).orderHeader.count({ where: { status: { in: ['pending', 'processing'] } } }),
-        (prisma as any).orderHeader.count({ where: { status: 'completed' } }),
-        (prisma as any).orderHeader.count({ where: { status: 'cancelled' } }),
-        (prisma as any).orderHeader.aggregate({
-          _sum: { total: true },
-          where: { status: 'completed' },
-        }),
-      ]);
+      // Fetch all orders with their payment information
+      const orders = await (prisma as any).orderHeader.findMany({
+        include: {
+          payments: true,
+          lines: true,
+        },
+      });
+
+      let totalOrders = 0;
+      let paidOrders = 0;
+      let unpaidOrders = 0;
+      let fulfilledOrders = 0;
+      let pendingOrders = 0;
+      let processingOrders = 0;
+      let completedOrders = 0;
+      let cancelledOrders = 0;
+      let totalPaidRevenue = 0;
+      let totalUnpaidRevenue = 0;
+      let totalRevenue = 0;
+
+      for (const order of orders) {
+        totalOrders += 1;
+        totalRevenue += order.total || 0;
+
+        // Calculate payment status
+        const totalPaid = (order.payments || []).reduce((sum: number, p: any) => sum + (p.amount ?? 0), 0);
+        const isPaid = totalPaid >= order.total && order.total > 0;
+        
+        if (isPaid) {
+          paidOrders += 1;
+          totalPaidRevenue += order.total || 0;
+        } else {
+          unpaidOrders += 1;
+          totalUnpaidRevenue += order.total || 0;
+        }
+
+        // Count by order status
+        if (order.status === 'pending') pendingOrders += 1;
+        if (order.status === 'processing') processingOrders += 1;
+        if (order.status === 'fulfilled') fulfilledOrders += 1;
+        if (order.status === 'completed') completedOrders += 1;
+        if (order.status === 'cancelled') cancelledOrders += 1;
+      }
 
       return {
         totalOrders,
-        activeOrders,
+        paidOrders,
+        unpaidOrders,
+        fulfilledOrders,
+        pendingOrders,
+        processingOrders,
         completedOrders,
         cancelledOrders,
-        totalRevenue: totalRevenue._sum.total || 0,
+        totalRevenue: totalRevenue || 0,
+        totalPaidRevenue: totalPaidRevenue || 0,
+        totalUnpaidRevenue: totalUnpaidRevenue || 0,
       };
     } catch (error) {
       console.error('Error fetching order stats:', error);
