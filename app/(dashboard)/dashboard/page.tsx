@@ -159,7 +159,7 @@ export default function DashboardPage() {
 						...prev,
 						revenue: {
 							...prev.revenue,
-							value: formatTablePrice(metricsData?.salesData?.totalRevenue || 0),
+							value: formatTablePrice(parseInt(String(metricsData?.salesData?.totalRevenue || 0))),
 						},
 						sales: {
 							...prev.sales,
@@ -282,44 +282,7 @@ export default function DashboardPage() {
 
 		{/* Additional Content Sections - Only show if user has access */}
 		{accessibleSections.length > 0 && (
-			<div className="grid gap-6 lg:grid-cols-2">
-				{/* Recent Activity Card - Admin only */}
-				{canAccessSection(dashboardSections.find(s => s.id === 'activity')!, user) && (
-					<Card>
-						<CardHeader>
-							<CardTitle className="text-xl font-semibold">
-								Recent Activity
-							</CardTitle>
-							<p className="text-muted-foreground">
-								Latest updates from your dashboard
-							</p>
-						</CardHeader>
-						<CardContent className="space-y-4">
-							<div className="flex items-center gap-4 p-4 rounded-lg border">
-								<div className="w-2 h-2 rounded-full bg-green-500" />
-								<div className="flex-1">
-									<p className="font-medium">New user registered</p>
-									<p className="text-sm text-muted-foreground">2 minutes ago</p>
-								</div>
-							</div>
-							<div className="flex items-center gap-4 p-4 rounded-lg border">
-								<div className="w-2 h-2 rounded-full bg-blue-500" />
-								<div className="flex-1">
-									<p className="font-medium">Payment processed</p>
-									<p className="text-sm text-muted-foreground">5 minutes ago</p>
-								</div>
-							</div>
-							<div className="flex items-center gap-4 p-4 rounded-lg border">
-								<div className="w-2 h-2 rounded-full bg-orange-500" />
-								<div className="flex-1">
-									<p className="font-medium">System update completed</p>
-									<p className="text-sm text-muted-foreground">1 hour ago</p>
-								</div>
-							</div>
-						</CardContent>
-					</Card>
-				)}
-
+			<div className="grid gap-6">
 				{/* Quick Actions Card - Managers and above */}
 				{canAccessSection(dashboardSections.find(s => s.id === 'employees')!, user) && (
 					<Card>
