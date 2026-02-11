@@ -241,23 +241,31 @@ export async function GET(request: NextRequest) {
       );
     }
 
+    console.log(`[ORDERS API] GET /api/orders - userId=${ctx.userId}`);
+
     // Load full user with roles
     const userWithRoles = await loadUserWithRoles(ctx.userId);
     if (!userWithRoles) {
+      console.log('[ORDERS API] User not found');
       return NextResponse.json(
         errorResponse(ErrorCodes.FORBIDDEN, 'Insufficient permissions'),
         { status: getStatusCode(ErrorCodes.FORBIDDEN) }
       );
     }
 
+    console.log(`[ORDERS API] User loaded - userType=${userWithRoles.userType}, isAdmin=${userWithRoles.isAdmin}`);
+
     // Build permission context
     const permCtx: PermissionContext = {
       userId: ctx.userId,
-      userType: userWithRoles.isAdmin ? 'admin' : hasAnyRole(userWithRoles, ['admin', 'manager', 'staff']) ? 'employee' : 'other',
+      userType: (userWithRoles.userType as 'admin' | 'employee' | 'other') || 'employee',
     };
+
+    console.log(`[ORDERS API] Checking orders.read permission...`);
 
     // Check read permission; employees/admins must have 'orders.read'.
     const hasReadPerm = await checkPermission(permCtx, 'orders.read', 'orders');
+    console.log(`[ORDERS API] hasReadPerm=${hasReadPerm}`);
 
     // Parse query parameters
     const searchParams = request.nextUrl.searchParams;

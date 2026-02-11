@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { withAuth } from '@/lib/auth/middleware';
-import { hasRole, checkPermission } from '@/lib/auth/rbac';
+import { checkPermission, type PermissionContext } from '@/lib/auth/rbac';
 import { extractUserContext, loadUserWithRoles } from '@/lib/user-context';
 import { listSections, createSection, deleteSection } from '@/services/admin/departmentSections';
 
@@ -18,12 +18,31 @@ export const GET = withAuth(
   async (req, ctx) => {
     try {
       console.time('GET /api/departments/sections')
+      console.log(`[API] GET /api/departments/sections - ctx.userId=${ctx.userId}`);
       
-      // Check if user is admin or has permission
-      const isAdmin = await loadUserWithRoles(ctx.userId).then(u => u?.isAdmin);
-      const hasPermission = !isAdmin ? await hasRole(ctx, 'admin') : true;
+      // Load full user with roles
+      const userWithRoles = await loadUserWithRoles(ctx.userId);
+      if (!userWithRoles) {
+        console.log('[API] User not found');
+        return NextResponse.json(
+          { success: false, error: 'User not found' },
+          { status: 403 }
+        );
+      }
       
-      if (!isAdmin && !hasPermission) {
+      console.log(`[API] User loaded - userType=${userWithRoles.userType}, isAdmin=${userWithRoles.isAdmin}`);
+      
+      // Check permission using unified RBAC
+      const permCtx: PermissionContext = {
+        userId: ctx.userId,
+        userType: (userWithRoles.userType as 'admin' | 'employee' | 'other') || 'employee',
+        departmentId: null,
+      };
+      
+      const hasPermission = await checkPermission(permCtx, 'department_sections.read', 'department_sections');
+      console.log(`[API] Permission check result: ${hasPermission}`);
+      
+      if (!hasPermission) {
         return NextResponse.json(
           { success: false, error: 'Insufficient permissions' },
           { status: 403 }

@@ -39,6 +39,21 @@ export async function GET(request: NextRequest) {
       );
     }
 
+    // Check permission to read departments
+    const { checkPermission } = await import('@/lib/auth/rbac');
+    const permCtx = {
+      userId: ctx.userId!,
+      userType: (userWithRoles.userType as 'admin' | 'employee' | 'other') || 'employee',
+      departmentId: null,
+    };
+    const canRead = await checkPermission(permCtx, 'departments.read', 'departments');
+    if (!canRead) {
+      return NextResponse.json(
+        errorResponse(ErrorCodes.FORBIDDEN, 'Insufficient permissions to view departments'),
+        { status: getStatusCode(ErrorCodes.FORBIDDEN) }
+      );
+    }
+
     // If a parentCode is provided, return only child departments to avoid
     // loading the entire departments table into the client.
     let departments: any[] = []
