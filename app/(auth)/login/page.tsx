@@ -73,15 +73,12 @@ export default function LoginPage() {
 	async function onSubmit(values: z.infer<typeof formSchema>) {
 		setIsLoading(true);
 		try {
-		  setIsLoading(true);
 		  await auth.login(values.email, values.password);
 		  toast.success("Login successful!", {
 			description: "Welcome back! Redirecting...",
 		  });
-
-		  // Redirect after login — auth context is already updated by auth.login
-		  router.replace('/dashboard');
-		  router.refresh();
+		  // auth.login() already handles router.push() to role-based landing page
+		  // No need for additional redirects here
 		} catch (error: any) {
 		  console.error("Login error:", error);
 		  toast.error("Login failed", {

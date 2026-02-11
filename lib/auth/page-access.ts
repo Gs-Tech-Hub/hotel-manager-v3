@@ -18,6 +18,48 @@ export type PageAccessRule = {
   authenticatedOnly?: boolean;
 };
 
+function normalizePermissionForMatching(perm: string): string[] {
+  // Goal: tolerate both "orders.read" and "orders:read" styles (and mixed/legacy values).
+  // Return a small set of equivalents that we consider a match.
+  const p = (perm || "").trim();
+  if (!p) return [];
+
+  const out = new Set<string>([p]);
+
+  // If we have feature.operation, also accept feature:operation
+  if (p.includes(".") && !p.includes(":")) {
+    const [a, ...rest] = p.split(".");
+    const b = rest.join(".");
+    if (a && b) out.add(`${a}:${b}`);
+  }
+
+  // If we have feature:operation, also accept feature.operation
+  if (p.includes(":") && !p.includes(".")) {
+    const [a, ...rest] = p.split(":");
+    const b = rest.join(":");
+    if (a && b) out.add(`${a}.${b}`);
+  }
+
+  return Array.from(out);
+}
+
+function userHasPermission(userPermissions: string[], requiredPermission: string): boolean {
+  if (!requiredPermission) return true;
+  if (!Array.isArray(userPermissions) || userPermissions.length === 0) return false;
+
+  // Wildcard support (best-effort)
+  if (userPermissions.includes("*") || userPermissions.includes("*.*") || userPermissions.includes("*:*")) {
+    return true;
+  }
+
+  const requiredVariants = normalizePermissionForMatching(requiredPermission);
+  for (const variant of requiredVariants) {
+    if (userPermissions.includes(variant)) return true;
+  }
+
+  return false;
+}
+
 /**
  * Page access rules mapped by pathname.
  * Pattern matching: exact paths and prefix patterns (with *).
@@ -33,60 +75,90 @@ export const pageAccessRules: Record<string, PageAccessRule> = {
     authenticatedOnly: true,
   },
 
+  "/analytics": {
+    requiredRoles: ["admin", "manager", "pos_manager"],
+    requiredPermissions: ["reports.read"],
+    adminBypass: true,
+  },
+
+  "/analytics/*": {
+    requiredRoles: ["admin", "manager", "pos_manager"],
+    requiredPermissions: ["reports.read"],
+    adminBypass: true,
+  },
+
   // ==================== ADMIN PAGES ====================
-  "/dashboard/admin/*": {
+  "/admin/*": {
     requiredRoles: ["admin"],
     adminBypass: true,
   },
 
-  "/dashboard/admin": {
+  "/admin": {
     requiredRoles: ["admin"],
     adminBypass: true,
   },
 
-  "/dashboard/admin/users": {
+  "/admin/users": {
     requiredRoles: ["admin"],
     adminBypass: true,
   },
 
-  "/dashboard/admin/users/*": {
+  "/admin/users/*": {
     requiredRoles: ["admin"],
     adminBypass: true,
   },
 
-  "/dashboard/admin/roles": {
+  "/admin/roles": {
     requiredRoles: ["admin"],
     adminBypass: true,
   },
 
-  "/dashboard/admin/roles/*": {
+  "/admin/roles/*": {
     requiredRoles: ["admin"],
     adminBypass: true,
   },
 
-  "/dashboard/admin/permissions": {
+  "/admin/permissions": {
     requiredRoles: ["admin"],
     adminBypass: true,
   },
 
-  "/dashboard/admin/permissions/*": {
+  "/admin/permissions/*": {
     requiredRoles: ["admin"],
     adminBypass: true,
   },
 
-  "/dashboard/admin/sessions": {
+  "/admin/sessions": {
     requiredRoles: ["admin"],
     adminBypass: true,
   },
 
-  "/dashboard/admin/page-access": {
+  "/admin/page-access": {
     requiredRoles: ["admin"],
     adminBypass: true,
   },
 
-  "/dashboard/admin/page-access/*": {
+  "/admin/page-access/*": {
     requiredRoles: ["admin"],
     adminBypass: true,
+  },
+
+  "/admin/extras": {
+    requiredRoles: ["admin"],
+    adminBypass: true,
+  },
+
+  "/admin/extras/*": {
+    requiredRoles: ["admin"],
+    adminBypass: true,
+  },
+
+  "/dashboard/settings": {
+    authenticatedOnly: true,
+  },
+
+  "/dashboard/settings/*": {
+    authenticatedOnly: true,
   },
 
   // ==================== POS SYSTEM ====================
@@ -183,39 +255,42 @@ export const pageAccessRules: Record<string, PageAccessRule> = {
 
   // ==================== BOOKINGS ====================
   "/bookings": {
-    requiredRoles: ["receptionist", "manager", "admin"],
+    // NOTE: `position-role-mapping` assigns Receptionist/Front Desk → `front_desk`.
+    // Keep `receptionist` for backward compatibility (existing data), but allow `front_desk` and `customer_service`.
+    requiredRoles: ["front_desk", "receptionist", "customer_service", "manager", "admin"],
     requiredPermissions: ["bookings.read"],
     adminBypass: true,
   },
 
   "/bookings/*": {
-    requiredRoles: ["receptionist", "manager", "admin"],
+    requiredRoles: ["front_desk", "receptionist", "customer_service", "manager", "admin"],
     requiredPermissions: ["bookings.read"],
     adminBypass: true,
   },
 
   // ==================== CUSTOMERS ====================
   "/customers": {
-    requiredRoles: ["receptionist", "manager", "admin"],
+    requiredRoles: ["front_desk", "receptionist", "customer_service", "manager", "admin"],
     requiredPermissions: ["customers.read"],
     adminBypass: true,
   },
 
   "/customers/*": {
-    requiredRoles: ["receptionist", "manager", "admin"],
+    requiredRoles: ["front_desk", "receptionist", "customer_service", "manager", "admin"],
     requiredPermissions: ["customers.read"],
     adminBypass: true,
   },
 
   // ==================== ROOMS ====================
   "/rooms": {
-    requiredRoles: ["receptionist", "manager", "admin"],
+    // Allow housekeeping to land on /rooms, and allow front desk/customer service to view room status.
+    requiredRoles: ["housekeeping_staff", "front_desk", "receptionist", "customer_service", "manager", "admin"],
     requiredPermissions: ["rooms.read"],
     adminBypass: true,
   },
 
   "/rooms/*": {
-    requiredRoles: ["receptionist", "manager", "admin"],
+    requiredRoles: ["housekeeping_staff", "front_desk", "receptionist", "customer_service", "manager", "admin"],
     requiredPermissions: ["rooms.read"],
     adminBypass: true,
   },
@@ -235,13 +310,14 @@ export const pageAccessRules: Record<string, PageAccessRule> = {
 
   // ==================== DEPARTMENTS ====================
   "/departments": {
-    requiredRoles: ["manager", "admin"],
+    // Many department-bound roles land on /departments (kitchen/bar), and dept-bound staff/employees are redirected here.
+    requiredRoles: ["manager", "staff", "employee", "kitchen_staff", "bar_staff", "admin"],
     requiredPermissions: ["departments.read"],
     adminBypass: true,
   },
 
   "/departments/*": {
-    requiredRoles: ["manager", "admin"],
+    requiredRoles: ["manager", "staff", "employee", "kitchen_staff", "bar_staff", "admin"],
     requiredPermissions: ["departments.read"],
     adminBypass: true,
   },
@@ -380,7 +456,7 @@ export function checkPageAccess(
     userPermissions.length > 0
   ) {
     const hasAllPermissions = rule.requiredPermissions.every((perm) =>
-      userPermissions.includes(perm)
+      userHasPermission(userPermissions, perm)
     );
     if (!hasAllPermissions) {
       return false; // User lacks required permissions
@@ -395,7 +471,7 @@ export function checkPageAccess(
     userPermissions.length > 0
   ) {
     const hasAnyPermission = rule.requiredAnyPermissions.some((perm) =>
-      userPermissions.includes(perm)
+      userHasPermission(userPermissions, perm)
     );
     if (!hasAnyPermission) {
       return false; // User lacks required permissions

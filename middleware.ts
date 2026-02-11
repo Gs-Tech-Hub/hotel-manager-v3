@@ -54,9 +54,10 @@ export async function middleware(req: NextRequest) {
 
   // Only protect dashboard routes — these correspond to the child folders under (dashboard)
   const dashboardPrefixes = [
+    "/admin",
+    "/analytics",
     "/pos",
     "/pos-terminals",
-    "/admin",
     "/bookings",
     "/customers",
     "/dashboard",
@@ -152,9 +153,10 @@ export async function middleware(req: NextRequest) {
 
 export const config = {
   matcher: [
+    "/admin/:path*",
+    "/analytics/:path*",
     "/pos/:path*",
     "/pos-terminals/:path*",
-    "/admin/:path*",
     "/bookings/:path*",
     "/customers/:path*",
     "/dashboard/:path*",

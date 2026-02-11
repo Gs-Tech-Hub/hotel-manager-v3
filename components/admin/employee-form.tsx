@@ -2,6 +2,7 @@
 
 import { useState, useEffect } from 'react';
 import { X, Plus, Trash2 } from 'lucide-react';
+import { STANDARDIZED_POSITIONS } from '@/lib/auth/position-role-mapping';
 
 interface Role {
   id: string;
@@ -407,15 +408,25 @@ export function EmployeeForm({
                 <label className="block text-sm font-medium text-gray-700 mb-1">
                   Position
                 </label>
-                <input
-                  type="text"
+                <select
                   value={employmentData.position}
                   onChange={(e) =>
                     setEmploymentData({ ...employmentData, position: e.target.value })
                   }
-                  placeholder="e.g., Server, Chef, Manager"
                   className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 outline-none"
-                />
+                >
+                  <option value="">-- Select position --</option>
+                  {STANDARDIZED_POSITIONS.map((pos) => (
+                    <option key={pos.id} value={pos.name}>
+                      {pos.name}
+                    </option>
+                  ))}
+                </select>
+                {employmentData.position && (
+                  <p className="mt-1 text-xs text-gray-500">
+                    Role: {STANDARDIZED_POSITIONS.find(p => p.name === employmentData.position)?.roleCode}
+                  </p>
+                )}
               </div>
             </div>
 

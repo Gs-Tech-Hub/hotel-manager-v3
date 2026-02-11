@@ -32,7 +32,8 @@ import {
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { useAuth } from "./../../components/auth-context";
-import { pageAccessRules, type PageAccessRule } from "@/lib/auth/page-access";
+import { checkPageAccess, getPageAccessRule } from "@/lib/auth/page-access";
+import { shouldHideSidebarItem, getAllowedSidebarGroups } from "@/lib/auth/role-landing";
 
 const sidebarGroups = [
 	{
@@ -139,27 +140,15 @@ const sidebarGroups = [
 		title: "Administration",
 		items: [
 			{
-				title: "Users",
-				href: "/dashboard/admin/users",
-				icon: Users,
-				badge: null,
-			},
-			{
 				title: "Roles & Permissions",
-				href: "/dashboard/admin/roles",
+				href: "/admin/roles",
 				icon: Shield,
 				badge: null,
 			},
 			{
 				title: "Page Access Control",
-				href: "/dashboard/admin/page-access",
+				href: "/admin/page-access",
 				icon: Shield,
-				badge: null,
-			},
-			{
-				title: "Sessions",
-				href: "/dashboard/admin/sessions",
-				icon: LogIn,
 				badge: null,
 			},
 			{
@@ -170,105 +159,10 @@ const sidebarGroups = [
 			},
 		],
 	},
-
-	{
-		title: "Documentation",
-		items: [
-			{
-				title: "Docs",
-				href: "/docs",
-				icon: BookOpen,
-				badge: null,
-			},
-			{
-				title: "Quick Reference",
-				href: "/quick-reference",
-				icon: BookOpen,
-				badge: null,
-			},
-			{
-				title: "Implementation Guide",
-				href: "/implementation-guide",
-				icon: BookOpen,
-				badge: null,
-			},
-		],
-	},
 ];
 
 interface SidebarProps {
 	onMobileClose?: () => void;
-}
-
-/**
- * Check if a user can access a given path based on page access rules
- */
-function canAccessPath(
-	path: string,
-	user: ReturnType<typeof useAuth>["user"],
-	userType?: string
-): boolean {
-	if (!user) return false;
-
-	// Find matching rule (exact match first, then prefix patterns)
-	let matchedRule: PageAccessRule | null = null;
-	
-	// Try exact match first
-	if (pageAccessRules[path]) {
-		matchedRule = pageAccessRules[path];
-	} else {
-		// Try prefix patterns (longest match wins)
-		const patterns = Object.keys(pageAccessRules)
-			.filter(key => key.endsWith('*'))
-			.sort((a, b) => b.length - a.length); // Longest first
-		
-		for (const pattern of patterns) {
-			const prefix = pattern.slice(0, -1); // Remove the *
-			if (path.startsWith(prefix)) {
-				matchedRule = pageAccessRules[pattern];
-				break;
-			}
-		}
-	}
-
-	if (!matchedRule) {
-		// No rule found - default to authenticated users only
-		return user !== null;
-	}
-
-	// Admin bypass (if rule allows it)
-	if (matchedRule.adminBypass && user.userType === 'admin') {
-		return true;
-	}
-
-	// Authenticated only check
-	if (matchedRule.authenticatedOnly) {
-		return user !== null;
-	}
-
-	// Check required roles
-	if (matchedRule.requiredRoles && matchedRule.requiredRoles.length > 0) {
-		const hasRole = user.roles?.some(r => matchedRule!.requiredRoles!.includes(r));
-		if (!hasRole) return false;
-	}
-
-	// Check required permissions
-	if (matchedRule.requiredPermissions && matchedRule.requiredPermissions.length > 0) {
-		const hasAllPermissions = matchedRule.requiredPermissions.every(perm =>
-			user.permissions?.includes(perm)
-		);
-		if (!hasAllPermissions) return false;
-	}
-
-	// Check required any permissions
-	if (matchedRule.requiredAnyPermissions && matchedRule.requiredAnyPermissions.length > 0) {
-		const hasAnyPermission = user.permissions?.some(perm =>
-			matchedRule!.requiredAnyPermissions!.includes(perm)
-		);
-		if (!hasAnyPermission) return false;
-	}
-
-	return true;
 }
 
 export function Sidebar({ onMobileClose }: SidebarProps) {
@@ -282,14 +176,52 @@ export function Sidebar({ onMobileClose }: SidebarProps) {
 	});
 	const { user } = useAuth();
 
-	// Filter sidebar items based on user permissions
+	// Filter sidebar items based on user permissions and role-based visibility
 	const getFilteredSidebarGroups = useMemo(() => {
 		if (!user) return [];
 
+		const allowedGroups = getAllowedSidebarGroups(user.roles);
+		const canAccessPath = (path: string) => {
+			const rule = getPageAccessRule(path);
+			return checkPageAccess(
+				rule,
+				user.roles || [],
+				user.permissions || [],
+				user.userType || "employee"
+			);
+		};
+
 		return sidebarGroups
+			.filter(group => allowedGroups.includes(group.title))
 			.map(group => ({
 				...group,
-				items: group.items.filter(item => canAccessPath(item.href, user))
+				items: group.items
+					.map((item) => {
+						// Filter children too, so we don't show "dead" links.
+						if ("children" in item && Array.isArray((item as any).children)) {
+							const children = (item as any).children as Array<{ href: string }>;
+							const filteredChildren = children.filter(
+								(child) =>
+									canAccessPath(child.href) &&
+									!shouldHideSidebarItem(child.href, user.roles, user.departmentId)
+							);
+							return { ...(item as any), children: filteredChildren };
+						}
+						return item;
+					})
+					.filter((item: any) => {
+						const isHidden = shouldHideSidebarItem(item.href, user.roles, user.departmentId);
+						if (isHidden) return false;
+
+						const hasAccess = canAccessPath(item.href);
+						if (!hasAccess) return false;
+
+						// If item has children, keep it only if at least one child is visible (or no children).
+						if (Array.isArray(item.children)) {
+							return item.children.length > 0;
+						}
+						return true;
+					})
 			}))
 			.filter(group => group.items.length > 0);
 	}, [user]);
