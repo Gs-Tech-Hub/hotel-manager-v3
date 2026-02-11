@@ -561,7 +561,6 @@ export function shouldHideSidebarItem(itemHref: string, roles: string[], departm
   if (departmentId && !roles.includes("admin")) {
     const specializedRoles = ["pos_manager", "pos_staff", "customer_service", "front_desk", "cashier"];
     const hasSpecializedRole = roles.some(r => specializedRoles.includes(r));
-    
     if (!hasSpecializedRole) {
       // Show department items for department-scoped users
       if (itemHref === "/departments" || itemHref?.startsWith("/departments/")) {
@@ -570,15 +569,16 @@ export function shouldHideSidebarItem(itemHref: string, roles: string[], departm
     }
   }
 
-  // Check each role's hidden items
+  // Only hide if ALL roles have this item in hiddenItems
+  let hiddenForAll = true;
   for (const role of roles) {
     const config = roleLandingPages[role as RoleType];
-    if (config?.hiddenItems?.includes(itemHref)) {
-      return true;
+    if (!config?.hiddenItems?.includes(itemHref)) {
+      hiddenForAll = false;
+      break;
     }
   }
-
-  return false;
+  return hiddenForAll;
 }
 
 /**

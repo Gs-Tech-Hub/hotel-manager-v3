@@ -48,6 +48,12 @@ export const STANDARDIZED_POSITIONS: Position[] = [
   // POS / Cashier
   { id: "cashier", name: "Cashier", roleCode: "cashier", description: "POS Cashier / Register Operator" },
   { id: "pos_operator", name: "POS Operator", roleCode: "pos_staff", description: "Point of Sale Operator" },
+  { id: "pos_manager", name: "POS Manager", roleCode: "pos_manager", description: "POS Manager / POS Supervisor" },
+  { id: "terminal_operator", name: "Terminal Operator", roleCode: "terminal_operator", description: "POS Terminal Operator" },
+  
+  // Inventory
+  { id: "inventory_manager", name: "Inventory Manager", roleCode: "inventory_staff", description: "Inventory Manager" },
+  { id: "inventory_staff", name: "Inventory Staff", roleCode: "inventory_staff", description: "Inventory Assistant" },
   
   // Customer Service
   { id: "customer_service", name: "Customer Service", roleCode: "customer_service", description: "Customer Service Representative" },
@@ -61,6 +67,9 @@ export const STANDARDIZED_POSITIONS: Position[] = [
   { id: "housekeeping", name: "Housekeeping", roleCode: "housekeeping_staff", description: "Housekeeper" },
   { id: "housekeeper", name: "Housekeeper", roleCode: "housekeeping_staff", description: "Housekeeping Staff" },
   { id: "housekeeping_supervisor", name: "Housekeeping Supervisor", roleCode: "housekeeping_staff", description: "Housekeeping Supervisor" },
+  
+  // Finance
+  { id: "accountant", name: "Accountant", roleCode: "accountant", description: "Accountant / Financial Officer" },
   
   // General
   { id: "staff", name: "Staff", roleCode: "staff", description: "General Staff Member" },

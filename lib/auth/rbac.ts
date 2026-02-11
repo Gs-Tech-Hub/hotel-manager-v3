@@ -114,23 +114,54 @@ export async function checkPermission(
       }
     }
 
+    // Normalize all possible permission variants for action/subject
+    function getPermissionVariants(action: string, subject?: string | null) {
+      const variants: { action: string; subject: string | null }[] = [];
+      const base = action.replace(/[:.][^:.]+$/, '');
+      const sub = subject || null;
+      // Dot and colon variants
+      variants.push({ action, subject: sub });
+      if (sub) {
+        variants.push({ action: `${base}.${sub}`, subject: null });
+        variants.push({ action: `${base}:${sub}`, subject: null });
+        variants.push({ action, subject: null });
+      }
+      // Also try with subject as 'orders', 'payments', etc. if not already present
+      if (action.includes('.')) {
+        const [a, s] = action.split('.');
+        if (s && s !== sub) {
+          variants.push({ action: a, subject: s });
+        }
+      }
+      if (action.includes(':')) {
+        const [a, s] = action.split(':');
+        if (s && s !== sub) {
+          variants.push({ action: a, subject: s });
+        }
+      }
+      // Always try just the action with subject null
+      variants.push({ action, subject: null });
+      // Remove duplicates
+      const seen = new Set();
+      return variants.filter(v => {
+        const key = v.action + '|' + v.subject;
+        if (seen.has(key)) return false;
+        seen.add(key);
+        return true;
+      });
+    }
+
     // Check 1: Direct user permissions (bypasses role)
+    const userVariants = getPermissionVariants(action, subject);
     const userPermission = await prisma.userPermission.findFirst({
       where: {
         userId: ctx.userId,
         userType: ctx.userType,
-        permission: {
-          action,
-          subject: subject || null,
-        },
-        // Match department scope
         departmentId: ctx.departmentId || null,
+        OR: userVariants.map(v => ({ permission: { action: v.action, subject: v.subject } })),
       },
     });
-
-    if (userPermission) {
-      return true;
-    }
+    if (userPermission) return true;
 
     // Check 2: Global user permissions (no department scope)
     if (ctx.departmentId) {
@@ -138,66 +169,52 @@ export async function checkPermission(
         where: {
           userId: ctx.userId,
           userType: ctx.userType,
-          permission: {
-            action,
-            subject: subject || null,
-          },
           departmentId: null,
+          OR: userVariants.map(v => ({ permission: { action: v.action, subject: v.subject } })),
         },
       });
-
-      if (globalUserPermission) {
-        return true;
-      }
+      if (globalUserPermission) return true;
     }
 
-    // Check 3: Role-based permissions (department-scoped)
-    const rolePermission = await prisma.userRole.findFirst({
+    // Check 3: Role-based permissions (department-scoped or global)
+    if (ctx.departmentId) {
+      const rolePermission = await prisma.userRole.findFirst({
+        where: {
+          userId: ctx.userId,
+          userType: ctx.userType,
+          departmentId: ctx.departmentId,
+          revokedAt: null,
+          role: {
+            isActive: true,
+            rolePermissions: {
+              some: {
+                OR: userVariants.map(v => ({ permission: { action: v.action, subject: v.subject } })),
+              },
+            },
+          },
+        },
+      });
+      if (rolePermission) return true;
+    }
+
+    // Check 4: Global role permissions (no department scope)
+    const globalRolePermission = await prisma.userRole.findFirst({
       where: {
         userId: ctx.userId,
         userType: ctx.userType,
-        departmentId: ctx.departmentId || null,
+        departmentId: null,
+        revokedAt: null,
         role: {
+          isActive: true,
           rolePermissions: {
             some: {
-              permission: {
-                action,
-                subject: subject || null,
-              },
+              OR: userVariants.map(v => ({ permission: { action: v.action, subject: v.subject } })),
             },
           },
         },
       },
     });
-
-    if (rolePermission) {
-      return true;
-    }
-
-    // Check 4: Global role permissions (no department scope)
-    if (ctx.departmentId) {
-      const globalRolePermission = await prisma.userRole.findFirst({
-        where: {
-          userId: ctx.userId,
-          userType: ctx.userType,
-          departmentId: null,
-          role: {
-            rolePermissions: {
-              some: {
-                permission: {
-                  action,
-                  subject: subject || null,
-                },
-              },
-            },
-          },
-        },
-      });
-
-      if (globalRolePermission) {
-        return true;
-      }
-    }
+    if (globalRolePermission) return true;
 
     return false;
   } catch (error) {

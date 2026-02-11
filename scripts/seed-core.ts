@@ -347,43 +347,79 @@ async function seedPermissions(roles: Record<string, any>) {
     ],
 
     // ==================== CASHIER ====================
+    // Full permissions for: /pos, /pos/orders, /pos/food, /pos/drinks, /pos-terminals
     cashier: [
+      // POS operations
       { action: 'orders.read', subject: null },
       { action: 'orders.create', subject: null },
       { action: 'orders.update', subject: null },
+      { action: 'orders.delete', subject: null },
+      // Payment processing
       { action: 'payments.read', subject: null },
       { action: 'payments.process', subject: null },
       { action: 'payments.refund', subject: null },
+      // Inventory for stock checks
       { action: 'inventory.read', subject: null },
+      // Department navigation
       { action: 'departments.read', subject: null },
       { action: 'department_sections.read', subject: null },
+      // Discount application
       { action: 'discounts.read', subject: null },
+      { action: 'discounts.apply', subject: null },
+      // POS terminal
+      { action: 'pos_terminal.access', subject: null },
     ],
 
     // ==================== STAFF ====================
+    // Staff with broader access (Assistant Manager level) - can manage orders, bookings, customers, rooms
     staff: [
       { action: 'dashboard.read', subject: null },
+      // Orders & POS
       { action: 'orders.read', subject: null },
       { action: 'orders.create', subject: null },
       { action: 'orders.update', subject: null },
+      { action: 'orders.cancel', subject: null },
+      // Payments
       { action: 'payments.read', subject: null },
+      { action: 'payments.process', subject: null },
+      { action: 'payments.refund', subject: null },
+      // Inventory
       { action: 'inventory.read', subject: null },
+      // Bookings
       { action: 'bookings.read', subject: null },
+      { action: 'bookings.create', subject: null },
+      { action: 'bookings.update', subject: null },
+      { action: 'bookings.cancel', subject: null },
+      // Customers
+      { action: 'customers.read', subject: null },
+      { action: 'customers.create', subject: null },
+      { action: 'customers.update', subject: null },
+      // Rooms
+      { action: 'rooms.read', subject: null },
+      { action: 'rooms.update', subject: null },
+      // Departments
       { action: 'departments.read', subject: null },
       { action: 'department_sections.read', subject: null },
+      // Discounts
+      { action: 'discounts.read', subject: null },
+      { action: 'discounts.apply', subject: null },
+      // Reports
       { action: 'reports.read', subject: null },
     ],
 
     // ==================== EMPLOYEE ====================
+    // Minimal access, read-only for most features
     employee: [
       { action: 'dashboard.read', subject: null },
       { action: 'orders.read', subject: null },
       { action: 'inventory.read', subject: null },
       { action: 'bookings.read', subject: null },
       { action: 'departments.read', subject: null },
+      { action: 'department_sections.read', subject: null },
     ],
 
     // ==================== KITCHEN STAFF ====================
+    // Full permissions for: /departments/kitchen operations
     kitchen_staff: [
       { action: 'orders.read', subject: null },
       { action: 'orders.update', subject: null },
@@ -393,6 +429,7 @@ async function seedPermissions(roles: Record<string, any>) {
     ],
 
     // ==================== BAR STAFF ====================
+    // Full permissions for: /departments/bar operations
     bar_staff: [
       { action: 'orders.read', subject: null },
       { action: 'orders.update', subject: null },
@@ -403,17 +440,25 @@ async function seedPermissions(roles: Record<string, any>) {
     ],
 
     // ==================== POS STAFF ====================
+    // Full permissions for: /pos, /pos/orders, /pos/food, /pos/drinks
     pos_staff: [
       { action: 'orders.read', subject: null },
       { action: 'orders.create', subject: null },
       { action: 'orders.update', subject: null },
+      { action: 'orders.delete', subject: null },
+      { action: 'payments.read', subject: null },
+      { action: 'payments.process', subject: null },
+      { action: 'payments.refund', subject: null },
       { action: 'inventory.read', subject: null },
       { action: 'departments.read', subject: null },
       { action: 'department_sections.read', subject: null },
       { action: 'discounts.read', subject: null },
+      { action: 'discounts.apply', subject: null },
+      { action: 'pos_terminal.access', subject: null },
     ],
 
     // ==================== HOUSEKEEPING STAFF ====================
+    // Full permissions for: /rooms, /inventory for housekeeping
     housekeeping_staff: [
       { action: 'rooms.read', subject: null },
       { action: 'rooms.update', subject: null },
@@ -424,11 +469,13 @@ async function seedPermissions(roles: Record<string, any>) {
     ],
 
     // ==================== FRONT DESK ====================
+    // Full permissions for: /bookings, /customers, /rooms, /pos orders
     front_desk: [
       { action: 'bookings.read', subject: null },
       { action: 'bookings.create', subject: null },
       { action: 'bookings.update', subject: null },
       { action: 'bookings.checkout', subject: null },
+      { action: 'bookings.cancel', subject: null },
       { action: 'customers.read', subject: null },
       { action: 'customers.create', subject: null },
       { action: 'customers.update', subject: null },
@@ -438,13 +485,16 @@ async function seedPermissions(roles: Record<string, any>) {
       { action: 'departments.read', subject: null },
       { action: 'department_sections.read', subject: null },
       { action: 'discounts.read', subject: null },
+      { action: 'discounts.apply', subject: null },
     ],
 
     // ==================== CUSTOMER SERVICE ====================
+    // Full permissions for: /bookings, /customers, /rooms
     customer_service: [
       { action: 'bookings.read', subject: null },
       { action: 'bookings.create', subject: null },
       { action: 'bookings.update', subject: null },
+      { action: 'bookings.cancel', subject: null },
       { action: 'customers.read', subject: null },
       { action: 'customers.create', subject: null },
       { action: 'customers.update', subject: null },
@@ -453,14 +503,17 @@ async function seedPermissions(roles: Record<string, any>) {
       { action: 'departments.read', subject: null },
       { action: 'department_sections.read', subject: null },
       { action: 'discounts.read', subject: null },
+      { action: 'discounts.apply', subject: null },
     ],
 
     // ==================== RECEPTIONIST (legacy, same as front_desk) ====================
+    // Full permissions for: /bookings, /customers, /rooms, /pos orders
     receptionist: [
       { action: 'bookings.read', subject: null },
       { action: 'bookings.create', subject: null },
       { action: 'bookings.update', subject: null },
       { action: 'bookings.checkout', subject: null },
+      { action: 'bookings.cancel', subject: null },
       { action: 'customers.read', subject: null },
       { action: 'customers.create', subject: null },
       { action: 'customers.update', subject: null },
@@ -470,9 +523,11 @@ async function seedPermissions(roles: Record<string, any>) {
       { action: 'departments.read', subject: null },
       { action: 'department_sections.read', subject: null },
       { action: 'discounts.read', subject: null },
+      { action: 'discounts.apply', subject: null },
     ],
 
     // ==================== TERMINAL OPERATOR ====================
+    // Full permissions for: /pos-terminals, /pos operations
     terminal_operator: [
       { action: 'orders.read', subject: null },
       { action: 'orders.create', subject: null },
@@ -480,11 +535,13 @@ async function seedPermissions(roles: Record<string, any>) {
       { action: 'orders.delete', subject: null },
       { action: 'payments.read', subject: null },
       { action: 'payments.process', subject: null },
+      { action: 'payments.refund', subject: null },
       { action: 'pos_terminal.access', subject: null },
       { action: 'inventory.read', subject: null },
       { action: 'departments.read', subject: null },
       { action: 'department_sections.read', subject: null },
       { action: 'discounts.read', subject: null },
+      { action: 'discounts.apply', subject: null },
     ],
   };
 

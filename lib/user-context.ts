@@ -61,10 +61,12 @@ export async function extractUserContext(req: NextRequest): Promise<UserContext>
 /**
  * Load full user with all roles from database
  * Use this when you need complete role information
+ * Supports both legacy AdminUser and unified UserRole system
  */
-export async function loadUserWithRoles(userId: string): Promise<UserContext & { roles?: any[] } | null> {
+export async function loadUserWithRoles(userId: string): Promise<UserContext & { roles?: any[], isAdmin?: boolean, userType?: string } | null> {
   try {
-    const user = await prisma.adminUser.findUnique({
+    // First, try to find user in AdminUser (legacy admin system)
+    const adminUser = await prisma.adminUser.findUnique({
       where: { id: userId },
       include: {
         roles: {
@@ -73,22 +75,61 @@ export async function loadUserWithRoles(userId: string): Promise<UserContext & {
       },
     });
 
-    if (!user) return null;
+    if (adminUser) {
+      // Load legacy admin roles
+      let roleCodes: string[] = [];
+      if (adminUser.roles && adminUser.roles.length > 0) {
+        roleCodes = adminUser.roles.map((r: any) => r.code);
+      }
 
-    // Load legacy admin roles
-    let roleCodes: string[] = [];
-    if (user.roles && user.roles.length > 0) {
-      roleCodes = user.roles.map((r: any) => r.code);
+      const primaryRole = roleCodes[0]; // Use first role as primary
+
+      return {
+        userId: adminUser.id,
+        userRole: primaryRole,
+        userRoles: roleCodes,
+        isAdmin: roleCodes.includes('admin') || true, // AdminUser is always admin
+        roles: adminUser.roles,
+        userType: 'admin',
+      };
     }
 
+    // If not an admin, try unified UserRole system (for employee users)
+    // First check if user exists as employee user
+    const employeeUser = await prisma.pluginUsersPermissionsUser.findUnique({
+      where: { id: userId },
+    });
+
+    if (!employeeUser) {
+      console.warn(`[User] User not found: ${userId}`);
+      return null;
+    }
+
+    // Load unified roles for this employee user
+    const userRoles = await prisma.userRole.findMany({
+      where: {
+        userId,
+        userType: 'employee',
+        // Exclude revoked roles (where revokedAt is not null)
+        revokedAt: null,
+      },
+      include: {
+        role: {
+          select: { code: true, name: true },
+        },
+      },
+    });
+
+    const roleCodes = userRoles.map((ur) => ur.role.code);
     const primaryRole = roleCodes[0]; // Use first role as primary
 
     return {
-      userId: user.id,
+      userId: employeeUser.id,
       userRole: primaryRole,
       userRoles: roleCodes,
-      isAdmin: roleCodes.includes('admin'),
-      roles: user.roles,
+      isAdmin: false, // Employee users are not admins
+      roles: userRoles.map((ur) => ur.role),
+      userType: 'employee',
     };
   } catch (error) {
     console.error('Error loading user with roles:', error);
