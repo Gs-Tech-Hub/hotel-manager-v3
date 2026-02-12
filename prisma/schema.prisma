@@ -337,6 +337,7 @@ model Customer {
   sportMemberships SportMembership[]
   orders           Order[]
   orderHeaders     OrderHeader[]
+  gameSessions     GameSession[]
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
@@ -720,6 +721,7 @@ model Order {
   orderStatus String @default("Active")
 
   bookingItems BookingItem[]
+  gameSession  GameSession?
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
@@ -814,6 +816,9 @@ model Department {
   departmentExtras DepartmentExtra[]
   extras Extra[]
 
+  // Games types managed by this department
+  gameTypes GameType[]
+
   // RBAC: Role assignments scoped to this department
   userRoles       UserRole[]
   userPermissions UserPermission[]
@@ -843,6 +848,9 @@ model DepartmentSection {
   
   // extras available for this section
   extras      Extra[]
+  
+  // game sessions in this section (games departments only)
+  gameSessions GameSession[]
 
   metadata     Json?     @default("{}")
   isActive     Boolean   @default(true)
@@ -1926,5 +1934,67 @@ model TaxSettings {
   updatedAt       DateTime @updatedAt
 
   @@map("tax_settings")
+}
+
+// ==================== GAMES SECTION ====================
+
+/// Game types/definitions (e.g., Billiards, Table Tennis, Air Hockey)
+/// Scoped to a specific Games department
+model GameType {
+  id            String   @id @default(cuid())
+  name          String
+  description   String?
+  pricePerGame  Decimal  @db.Decimal(10, 2) // Price per game
+  isActive      Boolean  @default(true)
+  
+  departmentId  String
+  department    Department @relation(fields: [departmentId], references: [id], onDelete: Cascade)
+  
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+
+  gameSessions  GameSession[]
+
+  @@unique([departmentId, name])
+  @@index([departmentId])
+  @@index([isActive])
+  @@map("game_types")
+}
+
+/// Game session - tracks a customer playing games in a specific section
+/// Links to Customer, DepartmentSection (game location), and GameType (for pricing)
+/// Integrates with existing Order system for checkout/payment
+model GameSession {
+  id            String   @id @default(cuid())
+  
+  customerId    String
+  customer      Customer @relation(fields: [customerId], references: [id], onDelete: Cascade)
+  
+  sectionId     String
+  section       DepartmentSection @relation(fields: [sectionId], references: [id], onDelete: Cascade)
+  
+  gameTypeId    String
+  gameType      GameType @relation(fields: [gameTypeId], references: [id], onDelete: Restrict)
+  
+  gameCount     Int      @default(1) // Number of games played in this session
+  status        String   @default("active") // active, completed, checked_out
+  
+  totalAmount   Decimal  @db.Decimal(10, 2) @default(0) // Calculated: gameCount * gameType.pricePerGame
+  
+  orderId       String?  @unique  // Links to Order when checked out (one-to-one)
+  order         Order?   @relation(fields: [orderId], references: [id], onDelete: SetNull)
+  
+  startedAt     DateTime @default(now())
+  endedAt       DateTime?
+  checkedOutAt  DateTime?
+  
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+
+  @@index([customerId])
+  @@index([sectionId])
+  @@index([status])
+  @@index([startedAt])
+  @@map("game_sessions")
 }
 

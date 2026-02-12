@@ -187,11 +187,18 @@ async function runDemoSeeds() {
     },
   });
 
-  // Ensure a payment type exists
+  // Ensure default payment types exist
   const paymentType = await prisma.paymentType.upsert({
     where: { type: 'cash' },
     update: {},
     create: { type: 'cash', description: 'Cash payment' },
+  });
+
+  // Ensure games payment type exists (used by games checkout flow)
+  await prisma.paymentType.upsert({
+    where: { type: 'games' },
+    update: {},
+    create: { type: 'games', description: 'Games payment' },
   });
 
   // Food types & categories

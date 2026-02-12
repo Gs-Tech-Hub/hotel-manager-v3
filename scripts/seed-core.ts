@@ -257,6 +257,10 @@ async function seedPermissions(roles: Record<string, any>) {
       { action: 'extras.delete', subject: null },
       { action: 'extras.allocate', subject: null },
       { action: 'extras.transfer', subject: null },
+      { action: 'games.read', subject: null },
+      { action: 'games.create', subject: null },
+      { action: 'games.update', subject: null },
+      { action: 'games.checkout', subject: null },
       { action: 'bookings.read', subject: null },
       { action: 'bookings.create', subject: null },
       { action: 'bookings.update', subject: null },
@@ -298,6 +302,10 @@ async function seedPermissions(roles: Record<string, any>) {
       { action: 'inventory.update', subject: null },
       { action: 'inventory.transfer', subject: null },
       { action: 'extras.read', subject: null },
+      { action: 'games.read', subject: null },
+      { action: 'games.create', subject: null },
+      { action: 'games.update', subject: null },
+      { action: 'games.checkout', subject: null },
       { action: 'bookings.read', subject: null },
       { action: 'rooms.read', subject: null },
       { action: 'departments.read', subject: null },
@@ -696,6 +704,7 @@ async function seedCanonicalDepartments() {
     { code: 'service', name: 'Service', description: 'Service department' },
     { code: 'reception', name: 'Reception', description: 'Reception department' },
     { code: 'housekeeping', name: 'Housekeeping', description: 'Housekeeping department' },
+    { code: 'games', name: 'Games & Entertainment', description: 'Arcade, pool, and entertainment', type: 'games', icon: 'gamepad' },
   ];
 
   let created = 0;
@@ -712,6 +721,10 @@ async function seedCanonicalDepartments() {
             code: dept.code,
             name: dept.name,
             description: dept.description,
+            type: (dept as any).type || null,
+            icon: (dept as any).icon || null,
+            metadata: {},
+            isActive: true,
           },
         })
       );
@@ -720,6 +733,40 @@ async function seedCanonicalDepartments() {
   }
 
   console.log(`✓ Seeded ${created} canonical departments`);
+}
+
+async function seedPaymentTypes() {
+  console.log('Seeding payment types...');
+
+  const paymentTypes = [
+    { type: 'cash', description: 'Cash payment' },
+    { type: 'card', description: 'Card payment' },
+    { type: 'bank_transfer', description: 'Bank transfer' },
+    { type: 'mobile_payment', description: 'Mobile payment' },
+    { type: 'employee', description: 'Employee charge' },
+  ];
+
+  let created = 0;
+
+  for (const pt of paymentTypes) {
+    const existing = await withRetries(() =>
+      prisma.paymentType.findUnique({ where: { type: pt.type } })
+    );
+
+    if (!existing) {
+      await withRetries(() =>
+        prisma.paymentType.create({
+          data: {
+            type: pt.type,
+            description: pt.description,
+          },
+        })
+      );
+      created++;
+    }
+  }
+
+  console.log(`✓ Seeded ${created} payment types`);
 }
 
 async function main() {
@@ -733,6 +780,7 @@ async function main() {
     await seedPermissions(roles);
     await ensureAdminUserWithRole(adminRoles, roles);
     await seedCanonicalDepartments();
+    await seedPaymentTypes();
 
     console.log('\n✅ Core application seed completed successfully.\n');
   } catch (err) {

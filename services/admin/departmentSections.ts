@@ -76,6 +76,14 @@ export async function createSection(
     throw new Error('Department not found');
   }
 
+  // If this department is a games department, ensure section metadata marks it
+  const baseMetadata = metadata && typeof metadata === 'object' ? { ...metadata } : {};
+  if (department.type === 'games') {
+    // mark section as games-scoped so UI and services can detect it
+    baseMetadata.sectionType = baseMetadata.sectionType || 'games';
+    baseMetadata.module = baseMetadata.module || 'games';
+  }
+
   return await prisma.$transaction(
     async (tx) => {
       const section = await tx.departmentSection.create({
@@ -83,7 +91,7 @@ export async function createSection(
           name: name.trim(),
           departmentId,
           slug: slug?.trim() || null,
-          metadata: metadata || {},
+          metadata: baseMetadata,
           isActive: true,
         },
       });
@@ -95,7 +103,7 @@ export async function createSection(
           action: 'create',
           subject: 'department_sections',
           subjectId: section.id,
-          details: { name, departmentId, slug: section.slug },
+          details: { name, departmentId, slug: section.slug, metadata: baseMetadata },
         },
       });
 

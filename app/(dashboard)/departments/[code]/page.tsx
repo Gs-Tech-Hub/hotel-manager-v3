@@ -11,6 +11,8 @@ import CreateSectionModal from '../../../../components/departments/CreateSection
 import IncomingTransfersModal from '../../../../components/departments/IncomingTransfersModal'
 import ParentDepartmentView from '../../../../components/departments/ParentDepartmentView'
 import SectionProductsView from '../../../../components/departments/SectionProductsView'
+import { DepartmentGames } from '../../../../components/games/department-games'
+import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
 
 
 export default function DepartmentDetail() {
@@ -35,6 +37,7 @@ export default function DepartmentDetail() {
   const [showStatsModal, setShowStatsModal] = useState(false)
   const [pendingTransfers, setPendingTransfers] = useState<any[] | null>(null)
   const [loadingTransfers, setLoadingTransfers] = useState(false)
+  const [activeTab, setActiveTab] = useState<string>('overview')
 
   const {
     menu,
@@ -204,13 +207,33 @@ export default function DepartmentDetail() {
 
       {/* Parent department sections */}
       {!decodedCode.includes(':') && !error && (
-        <ParentDepartmentView
-          loading={loading}
-          canCreateSection={hasPermission('department_sections.create')}
-          onCreateSection={() => setShowCreateSection(true)}
-        >
-          {children}
-        </ParentDepartmentView>
+        <Tabs value={activeTab} onValueChange={setActiveTab} className="w-full">
+          <TabsList>
+            <TabsTrigger value="overview">Overview</TabsTrigger>
+            {department?.type === 'games' && (
+              <TabsTrigger value="games">Games</TabsTrigger>
+            )}
+          </TabsList>
+          
+          <TabsContent value="overview" className="space-y-6">
+            <ParentDepartmentView
+              loading={loading}
+              canCreateSection={hasPermission('department_sections.create')}
+              onCreateSection={() => setShowCreateSection(true)}
+            >
+              {children}
+            </ParentDepartmentView>
+          </TabsContent>
+
+          {department?.type === 'games' && (
+            <TabsContent value="games">
+              <DepartmentGames 
+                departmentCode={decodedCode}
+                departmentId={department?.id || ''}
+              />
+            </TabsContent>
+          )}
+        </Tabs>
       )}
 
       {/* Section/sub-department view */}
@@ -238,29 +261,41 @@ export default function DepartmentDetail() {
             )}
           </div>
 
-          {/* Products Section */}
-          <SectionProductsView
-            code={decodedCode}
-            departmentCode={decodedCode.split(':')[0]}
-            defaultFromDate={sectionFromDate}
-            defaultToDate={sectionToDate}
-          >
-            {sectionProductsLoading ? (
-              <div className="text-sm text-muted-foreground">Loading products...</div>
-            ) : (
-              <SectionProductsTable
-                products={sectionProducts}
-                departmentCode={decodedCode.split(':')[0]}
-                sectionCode={decodedCode}
-                onDateChange={(from, to) => {
-                  setSectionFromDate(from)
-                  setSectionToDate(to)
-                }}
-                dateFromFilter={sectionFromDate}
-                dateToFilter={sectionToDate}
-              />
-            )}
-          </SectionProductsView>
+          {/* Products Section (or Games UI for games departments) */}
+          {department?.type === 'games' ? (
+            <div className="mt-6">
+              <h2 className="text-xl font-semibold">Games Management</h2>
+              <div className="mt-3">
+                <DepartmentGames
+                  departmentCode={decodedCode.split(':')[0]}
+                  departmentId={department?.id || ''}
+                />
+              </div>
+            </div>
+          ) : (
+            <SectionProductsView
+              code={decodedCode}
+              departmentCode={decodedCode.split(':')[0]}
+              defaultFromDate={sectionFromDate}
+              defaultToDate={sectionToDate}
+            >
+              {sectionProductsLoading ? (
+                <div className="text-sm text-muted-foreground">Loading products...</div>
+              ) : (
+                <SectionProductsTable
+                  products={sectionProducts}
+                  departmentCode={decodedCode.split(':')[0]}
+                  sectionCode={decodedCode}
+                  onDateChange={(from, to) => {
+                    setSectionFromDate(from)
+                    setSectionToDate(to)
+                  }}
+                  dateFromFilter={sectionFromDate}
+                  dateToFilter={sectionToDate}
+                />
+              )}
+            </SectionProductsView>
+          )}
         </>
       )}
 
