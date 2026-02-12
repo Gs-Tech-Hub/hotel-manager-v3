@@ -4,14 +4,22 @@ import bcrypt from 'bcryptjs';
 const prisma = new PrismaClient();
 
 /**
- * Core application seeding script.
- * Seeds only application-dependent data:
- * - Roles and permissions (admin, manager, staff, employee, cashier)
+ * Core application seeding script - UNIFIED VERSION
+ * 
+ * Seeds all essential application-dependent data:
+ * - Complete role hierarchy with comprehensive permissions
  * - Admin user
  * - Organization configuration
  * - Canonical departments
+ * - All position/department mappings
  *
+ * This is the SINGLE SOURCE OF TRUTH for core application setup.
+ * Other seed files (seed-permissions.ts, seed-employee-roles.ts) are deprecated.
+ * 
  * Does NOT seed demo data (customers, menu items, orders, etc.)
+ * 
+ * Usage:
+ *   npm run seed:core
  */
 
 // Small helper to retry transient Prisma errors
@@ -143,14 +151,39 @@ async function seedAdminRoles() {
 }
 
 async function seedRoles() {
-  console.log('Seeding roles...');
+  console.log('Seeding unified roles...');
 
-  const rolesToSeed = [
+  interface RoleData {
+    code: string;
+    name: string;
+    description: string;
+  }
+
+  // Comprehensive role list including department-scoped roles
+  const rolesToSeed: RoleData[] = [
+    // Core roles
     { code: 'admin', name: 'Administrator', description: 'Full system administrator access' },
-    { code: 'manager', name: 'Manager', description: 'Manager with elevated permissions' },
-    { code: 'staff', name: 'Staff', description: 'Department staff with limited operational access' },
+    { code: 'manager', name: 'Manager', description: 'General manager with elevated permissions' },
+    { code: 'staff', name: 'Staff', description: 'General staff member with limited access' },
+    { code: 'employee', name: 'Employee', description: 'Basic employee with minimal access' },
     { code: 'cashier', name: 'Cashier', description: 'Cashier for payment processing' },
     { code: 'accountant', name: 'Accountant', description: 'Finance and accounting management' },
+    
+    // Management roles
+    { code: 'pos_manager', name: 'POS Manager', description: 'Manages POS system and cashiers' },
+    { code: 'inventory_staff', name: 'Inventory Staff', description: 'Full inventory management' },
+    
+    // Department-scoped roles
+    { code: 'kitchen_staff', name: 'Kitchen Staff', description: 'Kitchen operations and order fulfillment' },
+    { code: 'bar_staff', name: 'Bartender', description: 'Bar operations and beverage inventory' },
+    { code: 'pos_staff', name: 'POS Staff', description: 'Point of sale operations' },
+    { code: 'housekeeping_staff', name: 'Housekeeping Staff', description: 'Room cleaning and maintenance' },
+    { code: 'front_desk', name: 'Front Desk Staff', description: 'Guest check-in/check-out and room management' },
+    { code: 'customer_service', name: 'Customer Service Representative', description: 'Manages bookings and customer inquiries' },
+    
+    // Legacy/compatibility
+    { code: 'receptionist', name: 'Receptionist', description: 'Receptionist (legacy name, same as Front Desk)' },
+    { code: 'terminal_operator', name: 'Terminal Operator', description: 'POS terminal access and operations' },
   ];
 
   const roles: Record<string, any> = {};
@@ -174,232 +207,341 @@ async function seedRoles() {
     }
   }
 
-  console.log(`✓ Seeded ${Object.keys(roles).length} roles`);
+  console.log(`✓ Seeded ${Object.keys(roles).length} unified roles`);
   return roles;
 }
 
 async function seedPermissions(roles: Record<string, any>) {
-  console.log('Seeding permissions...');
+  console.log('Seeding comprehensive permissions for all roles...');
 
-  const permissionSets: Record<string, Array<{ action: string; subject: string | null }>> = {
+  interface PermissionData {
+    action: string;
+    subject?: string | null;
+  }
+
+  interface PermissionSetData {
+    [roleCode: string]: PermissionData[];
+  }
+
+  // KEY FIX: When action already contains the full permission (e.g., 'orders.read'),
+  // use subject: null. This prevents malformed variants like 'orders.read.orders'.
+  // The addPermissionVariants function will auto-generate both dot and colon formats.
+
+  const permissionSets: PermissionSetData = {
+    // ==================== ADMIN ====================
     admin: [
-      // Wildcard - full access
-      { action: '*', subject: '*' },
-      
-      // Admin & Users
-      { action: 'admin', subject: 'view' },
-      { action: 'admin', subject: 'create' },
-      { action: 'admin', subject: 'edit' },
-      { action: 'admin', subject: 'delete' },
-      { action: 'admin', subject: 'manage' },
-      { action: 'users', subject: 'create' },
-      { action: 'users', subject: 'read' },
-      { action: 'users', subject: 'update' },
-      { action: 'users', subject: 'delete' },
-      
-      // Roles & Permissions
-      { action: 'roles', subject: 'create' },
-      { action: 'roles', subject: 'read' },
-      { action: 'roles', subject: 'update' },
-      { action: 'roles', subject: 'delete' },
-      { action: 'permissions', subject: 'create' },
-      { action: 'permissions', subject: 'read' },
-      { action: 'permissions', subject: 'update' },
-      { action: 'permissions', subject: 'delete' },
-      
-      // Orders
-      { action: 'orders', subject: 'create' },
-      { action: 'orders', subject: 'read' },
-      { action: 'orders', subject: 'update' },
-      { action: 'orders', subject: 'delete' },
-      { action: 'orders', subject: 'cancel' },
-      
-      // Payments
-      { action: 'payments', subject: 'read' },
-      { action: 'payments', subject: 'process' },
-      { action: 'payments', subject: 'refund' },
-      
-      // Inventory
-      { action: 'inventory', subject: 'read' },
-      { action: 'inventory', subject: 'create' },
-      { action: 'inventory', subject: 'update' },
-      { action: 'inventory', subject: 'delete' },
-      { action: 'inventory', subject: 'transfer' },
-      { action: 'inventory_items', subject: 'create' },
-      { action: 'inventory_items', subject: 'read' },
-      { action: 'inventory_items', subject: 'update' },
-      { action: 'inventory_items', subject: 'delete' },
-      
-      // Bookings
-      { action: 'bookings', subject: 'create' },
-      { action: 'bookings', subject: 'read' },
-      { action: 'bookings', subject: 'update' },
-      { action: 'bookings', subject: 'delete' },
-      { action: 'bookings', subject: 'checkin' },
-      { action: 'bookings', subject: 'checkout' },
-      
-      // Departments & Sections
-      { action: 'departments', subject: 'read' },
-      { action: 'departments', subject: 'create' },
-      { action: 'departments', subject: 'update' },
-      { action: 'departments', subject: 'delete' },
-      { action: 'department_sections', subject: 'create' },
-      { action: 'department_sections', subject: 'read' },
-      { action: 'department_sections', subject: 'update' },
-      { action: 'department_sections', subject: 'delete' },
-      
-      // Discounts & Extras
-      { action: 'discounts', subject: 'create' },
-      { action: 'discounts', subject: 'read' },
-      { action: 'discounts', subject: 'update' },
-      { action: 'discounts', subject: 'delete' },
-      { action: 'extras', subject: 'create' },
-      { action: 'extras', subject: 'read' },
-      { action: 'extras', subject: 'update' },
-      { action: 'extras', subject: 'delete' },
-      
-      // Employees
-      { action: 'employees', subject: 'create' },
-      { action: 'employees', subject: 'read' },
-      { action: 'employees', subject: 'update' },
-      { action: 'employees', subject: 'delete' },
-      
-      // Reports & Analytics
-      { action: 'reports', subject: 'read' },
-      { action: 'reports', subject: 'generate' },
-      { action: 'reports', subject: 'export' },
-      { action: 'analytics', subject: 'read' },
+      { action: '*', subject: '*' }, // Full access
+      { action: 'admin.view', subject: null },
+      { action: 'admin.create', subject: null },
+      { action: 'admin.edit', subject: null },
+      { action: 'admin.delete', subject: null },
+      { action: 'admin.manage', subject: null },
     ],
+
+    // ==================== MANAGER ====================
     manager: [
-      // Orders
-      { action: 'orders', subject: 'read' },
-      { action: 'orders', subject: 'create' },
-      { action: 'orders', subject: 'update' },
-      { action: 'orders', subject: 'cancel' },
-      
-      // Payments
-      { action: 'payments', subject: 'read' },
-      { action: 'payments', subject: 'process' },
-      { action: 'payments', subject: 'refund' },
-      
-      // Inventory
-      { action: 'inventory', subject: 'read' },
-      { action: 'inventory', subject: 'update' },
-      { action: 'inventory', subject: 'transfer' },
-      
-      // Inventory Items
-      { action: 'inventory_items', subject: 'read' },
-      
-      // Bookings
-      { action: 'bookings', subject: 'read' },
-      { action: 'bookings', subject: 'create' },
-      { action: 'bookings', subject: 'update' },
-      { action: 'bookings', subject: 'checkin' },
-      { action: 'bookings', subject: 'checkout' },
-      
-      // Departments
-      { action: 'departments', subject: 'read' },
-      
-      // Department Sections
-      { action: 'department_sections', subject: 'read' },
-      
-      // Discounts
-      { action: 'discounts', subject: 'read' },
-      
-      // Extras
-      { action: 'extras', subject: 'create' },
-      { action: 'extras', subject: 'read' },
-      { action: 'extras', subject: 'update' },
-      { action: 'extras', subject: 'delete' },
-      { action: 'extras', subject: 'allocate' },
-      { action: 'extras', subject: 'transfer' },
-      
-      // Employees
-      { action: 'employees', subject: 'read' },
-      { action: 'employees', subject: 'update' },
-      
-      // Reports
-      { action: 'reports', subject: 'read' },
-      { action: 'reports', subject: 'generate' },
-      { action: 'reports', subject: 'export' },
+      { action: 'dashboard.read', subject: null },
+      { action: 'orders.read', subject: null },
+      { action: 'orders.create', subject: null },
+      { action: 'orders.update', subject: null },
+      { action: 'orders.cancel', subject: null },
+      { action: 'payments.read', subject: null },
+      { action: 'payments.process', subject: null },
+      { action: 'payments.refund', subject: null },
+      { action: 'inventory.read', subject: null },
+      { action: 'inventory.update', subject: null },
+      { action: 'inventory.transfer', subject: null },
+      { action: 'extras.read', subject: null },
+      { action: 'extras.create', subject: null },
+      { action: 'extras.update', subject: null },
+      { action: 'extras.delete', subject: null },
+      { action: 'extras.allocate', subject: null },
+      { action: 'extras.transfer', subject: null },
+      { action: 'bookings.read', subject: null },
+      { action: 'bookings.create', subject: null },
+      { action: 'bookings.update', subject: null },
+      { action: 'bookings.checkout', subject: null },
+      { action: 'rooms.read', subject: null },
+      { action: 'rooms.update', subject: null },
+      { action: 'customers.read', subject: null },
+      { action: 'customers.create', subject: null },
+      { action: 'customers.update', subject: null },
+      { action: 'discounts.read', subject: null },
+      { action: 'discounts.create', subject: null },
+      { action: 'discounts.update', subject: null },
+      { action: 'discounts.delete', subject: null },
+      { action: 'departments.read', subject: null },
+      { action: 'departments.update', subject: null },
+      { action: 'department_sections.read', subject: null },
+      { action: 'employees.read', subject: null },
+      { action: 'employees.create', subject: null },
+      { action: 'employees.update', subject: null },
+      { action: 'employees.delete', subject: null },
+      { action: 'reports.read', subject: null },
+      { action: 'reports.generate', subject: null },
+      { action: 'reports.export', subject: null },
+      { action: 'analytics.read', subject: null },
     ],
-    staff: [
-      // Orders (department scoped)
-      { action: 'orders', subject: 'read' },
-      { action: 'orders', subject: 'create' },
-      
-      // Payments (view only)
-      { action: 'payments', subject: 'read' },
-      
-      // Inventory (view only)
-      { action: 'inventory', subject: 'read' },
-      { action: 'inventory_items', subject: 'read' },
-      
-      // Extras (view only)
-      { action: 'extras', subject: 'read' },
-      
-      // Bookings (limited)
-      { action: 'bookings', subject: 'read' },
-      
-      // Departments (read only)
-      { action: 'departments', subject: 'read' },
-      { action: 'department_sections', subject: 'read' },
-      
-      // Reports (read only)
-      { action: 'reports', subject: 'read' },
+
+    // ==================== POS MANAGER ====================
+    pos_manager: [
+      { action: 'dashboard.read', subject: null },
+      { action: 'orders.read', subject: null },
+      { action: 'orders.create', subject: null },
+      { action: 'orders.update', subject: null },
+      { action: 'orders.delete', subject: null },
+      { action: 'orders.cancel', subject: null },
+      { action: 'payments.read', subject: null },
+      { action: 'payments.process', subject: null },
+      { action: 'payments.refund', subject: null },
+      { action: 'inventory.read', subject: null },
+      { action: 'inventory.update', subject: null },
+      { action: 'inventory.transfer', subject: null },
+      { action: 'extras.read', subject: null },
+      { action: 'bookings.read', subject: null },
+      { action: 'rooms.read', subject: null },
+      { action: 'departments.read', subject: null },
+      { action: 'department_sections.read', subject: null },
+      { action: 'departments.update', subject: null },
+      { action: 'discounts.read', subject: null },
+      { action: 'reports.read', subject: null },
+      { action: 'reports.generate', subject: null },
+      { action: 'reports.export', subject: null },
     ],
+
+    // ==================== INVENTORY STAFF ====================
+    inventory_staff: [
+      { action: 'dashboard.read', subject: null },
+      { action: 'inventory.read', subject: null },
+      { action: 'inventory.create', subject: null },
+      { action: 'inventory.update', subject: null },
+      { action: 'inventory.delete', subject: null },
+      { action: 'inventory.transfer', subject: null },
+      { action: 'extras.read', subject: null },
+      { action: 'extras.create', subject: null },
+      { action: 'extras.update', subject: null },
+      { action: 'extras.delete', subject: null },
+      { action: 'extras.allocate', subject: null },
+      { action: 'extras.transfer', subject: null },
+      { action: 'departments.read', subject: null },
+      { action: 'department_sections.read', subject: null },
+      { action: 'reports.read', subject: null },
+    ],
+
+    // ==================== ACCOUNTANT ====================
     accountant: [
-      // Payments (full financial access)
-      { action: 'payments', subject: 'read' },
-      { action: 'payments', subject: 'process' },
-      { action: 'payments', subject: 'refund' },
-      
-      // Orders (view for accounting)
-      { action: 'orders', subject: 'read' },
-      
-      // Inventory (cost tracking)
-      { action: 'inventory', subject: 'read' },
-      { action: 'inventory_items', subject: 'read' },
-      
-      // Bookings (revenue tracking)
-      { action: 'bookings', subject: 'read' },
-      
-      // Discounts (financial impact)
-      { action: 'discounts', subject: 'read' },
-      
-      // Reports (financial reporting)
-      { action: 'reports', subject: 'read' },
-      { action: 'reports', subject: 'generate' },
-      { action: 'reports', subject: 'export' },
-      
-      // Analytics (financial insights)
-      { action: 'analytics', subject: 'read' },
+      { action: 'dashboard.read', subject: null },
+      { action: 'payments.read', subject: null },
+      { action: 'payments.process', subject: null },
+      { action: 'payments.refund', subject: null },
+      { action: 'orders.read', subject: null },
+      { action: 'inventory.read', subject: null },
+      { action: 'bookings.read', subject: null },
+      { action: 'discounts.read', subject: null },
+      { action: 'departments.read', subject: null },
+      { action: 'department_sections.read', subject: null },
+      { action: 'reports.read', subject: null },
+      { action: 'reports.generate', subject: null },
+      { action: 'reports.export', subject: null },
+      { action: 'analytics.read', subject: null },
     ],
+
+    // ==================== CASHIER ====================
+    // Full permissions for: /pos, /pos/orders, /pos/food, /pos/drinks, /pos-terminals
     cashier: [
-      // Orders
-      { action: 'orders', subject: 'read' },
-      { action: 'orders', subject: 'create' },
-      { action: 'orders', subject: 'update' },
-      
-      // Payments (cashier focused)
-      { action: 'payments', subject: 'read' },
-      { action: 'payments', subject: 'process' },
-      { action: 'payments', subject: 'refund' },
-      
-      // Inventory (read-only for reference)
-      { action: 'inventory', subject: 'read' },
-      
-      // Inventory Items
-      { action: 'inventory_items', subject: 'read' },
-      
+      // POS operations
+      { action: 'orders.read', subject: null },
+      { action: 'orders.create', subject: null },
+      { action: 'orders.update', subject: null },
+      { action: 'orders.delete', subject: null },
+      // Payment processing
+      { action: 'payments.read', subject: null },
+      { action: 'payments.process', subject: null },
+      { action: 'payments.refund', subject: null },
+      // Inventory for stock checks
+      { action: 'inventory.read', subject: null },
+      // Department navigation
+      { action: 'departments.read', subject: null },
+      { action: 'department_sections.read', subject: null },
+      // Discount application
+      { action: 'discounts.read', subject: null },
+      { action: 'discounts.apply', subject: null },
+      // POS terminal
+      { action: 'pos_terminal.access', subject: null },
+    ],
+
+    // ==================== STAFF ====================
+    // Staff with broader access (Assistant Manager level) - can manage orders, bookings, customers, rooms
+    staff: [
+      { action: 'dashboard.read', subject: null },
+      // Orders & POS
+      { action: 'orders.read', subject: null },
+      { action: 'orders.create', subject: null },
+      { action: 'orders.update', subject: null },
+      { action: 'orders.cancel', subject: null },
+      // Payments
+      { action: 'payments.read', subject: null },
+      { action: 'payments.process', subject: null },
+      { action: 'payments.refund', subject: null },
+      // Inventory
+      { action: 'inventory.read', subject: null },
+      // Bookings
+      { action: 'bookings.read', subject: null },
+      { action: 'bookings.create', subject: null },
+      { action: 'bookings.update', subject: null },
+      { action: 'bookings.cancel', subject: null },
+      // Customers
+      { action: 'customers.read', subject: null },
+      { action: 'customers.create', subject: null },
+      { action: 'customers.update', subject: null },
+      // Rooms
+      { action: 'rooms.read', subject: null },
+      { action: 'rooms.update', subject: null },
       // Departments
-      { action: 'departments', subject: 'read' },
-      
-      // Department Sections
-      { action: 'department_sections', subject: 'read' },
-      
-      // Reports (transactions)
-      { action: 'reports', subject: 'read' },
+      { action: 'departments.read', subject: null },
+      { action: 'department_sections.read', subject: null },
+      // Discounts
+      { action: 'discounts.read', subject: null },
+      { action: 'discounts.apply', subject: null },
+      // Reports
+      { action: 'reports.read', subject: null },
+    ],
+
+    // ==================== EMPLOYEE ====================
+    // Minimal access, read-only for most features
+    employee: [
+      { action: 'dashboard.read', subject: null },
+      { action: 'orders.read', subject: null },
+      { action: 'inventory.read', subject: null },
+      { action: 'bookings.read', subject: null },
+      { action: 'departments.read', subject: null },
+      { action: 'department_sections.read', subject: null },
+    ],
+
+    // ==================== KITCHEN STAFF ====================
+    // Full permissions for: /departments/kitchen operations
+    kitchen_staff: [
+      { action: 'orders.read', subject: null },
+      { action: 'orders.update', subject: null },
+      { action: 'inventory.read', subject: null },
+      { action: 'departments.read', subject: null },
+      { action: 'department_sections.read', subject: null },
+    ],
+
+    // ==================== BAR STAFF ====================
+    // Full permissions for: /departments/bar operations
+    bar_staff: [
+      { action: 'orders.read', subject: null },
+      { action: 'orders.update', subject: null },
+      { action: 'inventory.read', subject: null },
+      { action: 'departments.read', subject: null },
+      { action: 'department_sections.read', subject: null },
+      { action: 'departments.update', subject: null },
+    ],
+
+    // ==================== POS STAFF ====================
+    // Full permissions for: /pos, /pos/orders, /pos/food, /pos/drinks
+    pos_staff: [
+      { action: 'orders.read', subject: null },
+      { action: 'orders.create', subject: null },
+      { action: 'orders.update', subject: null },
+      { action: 'orders.delete', subject: null },
+      { action: 'payments.read', subject: null },
+      { action: 'payments.process', subject: null },
+      { action: 'payments.refund', subject: null },
+      { action: 'inventory.read', subject: null },
+      { action: 'departments.read', subject: null },
+      { action: 'department_sections.read', subject: null },
+      { action: 'discounts.read', subject: null },
+      { action: 'discounts.apply', subject: null },
+      { action: 'pos_terminal.access', subject: null },
+    ],
+
+    // ==================== HOUSEKEEPING STAFF ====================
+    // Full permissions for: /rooms, /inventory for housekeeping
+    housekeeping_staff: [
+      { action: 'rooms.read', subject: null },
+      { action: 'rooms.update', subject: null },
+      { action: 'bookings.read', subject: null },
+      { action: 'inventory.read', subject: null },
+      { action: 'departments.read', subject: null },
+      { action: 'department_sections.read', subject: null },
+    ],
+
+    // ==================== FRONT DESK ====================
+    // Full permissions for: /bookings, /customers, /rooms, /pos orders
+    front_desk: [
+      { action: 'bookings.read', subject: null },
+      { action: 'bookings.create', subject: null },
+      { action: 'bookings.update', subject: null },
+      { action: 'bookings.checkout', subject: null },
+      { action: 'bookings.cancel', subject: null },
+      { action: 'customers.read', subject: null },
+      { action: 'customers.create', subject: null },
+      { action: 'customers.update', subject: null },
+      { action: 'rooms.read', subject: null },
+      { action: 'rooms.update', subject: null },
+      { action: 'orders.read', subject: null },
+      { action: 'departments.read', subject: null },
+      { action: 'department_sections.read', subject: null },
+      { action: 'discounts.read', subject: null },
+      { action: 'discounts.apply', subject: null },
+    ],
+
+    // ==================== CUSTOMER SERVICE ====================
+    // Full permissions for: /bookings, /customers, /rooms
+    customer_service: [
+      { action: 'bookings.read', subject: null },
+      { action: 'bookings.create', subject: null },
+      { action: 'bookings.update', subject: null },
+      { action: 'bookings.cancel', subject: null },
+      { action: 'customers.read', subject: null },
+      { action: 'customers.create', subject: null },
+      { action: 'customers.update', subject: null },
+      { action: 'rooms.read', subject: null },
+      { action: 'orders.read', subject: null },
+      { action: 'departments.read', subject: null },
+      { action: 'department_sections.read', subject: null },
+      { action: 'discounts.read', subject: null },
+      { action: 'discounts.apply', subject: null },
+    ],
+
+    // ==================== RECEPTIONIST (legacy, same as front_desk) ====================
+    // Full permissions for: /bookings, /customers, /rooms, /pos orders
+    receptionist: [
+      { action: 'bookings.read', subject: null },
+      { action: 'bookings.create', subject: null },
+      { action: 'bookings.update', subject: null },
+      { action: 'bookings.checkout', subject: null },
+      { action: 'bookings.cancel', subject: null },
+      { action: 'customers.read', subject: null },
+      { action: 'customers.create', subject: null },
+      { action: 'customers.update', subject: null },
+      { action: 'rooms.read', subject: null },
+      { action: 'rooms.update', subject: null },
+      { action: 'orders.read', subject: null },
+      { action: 'departments.read', subject: null },
+      { action: 'department_sections.read', subject: null },
+      { action: 'discounts.read', subject: null },
+      { action: 'discounts.apply', subject: null },
+    ],
+
+    // ==================== TERMINAL OPERATOR ====================
+    // Full permissions for: /pos-terminals, /pos operations
+    terminal_operator: [
+      { action: 'orders.read', subject: null },
+      { action: 'orders.create', subject: null },
+      { action: 'orders.update', subject: null },
+      { action: 'orders.delete', subject: null },
+      { action: 'payments.read', subject: null },
+      { action: 'payments.process', subject: null },
+      { action: 'payments.refund', subject: null },
+      { action: 'pos_terminal.access', subject: null },
+      { action: 'inventory.read', subject: null },
+      { action: 'departments.read', subject: null },
+      { action: 'department_sections.read', subject: null },
+      { action: 'discounts.read', subject: null },
+      { action: 'discounts.apply', subject: null },
     ],
   };
 
@@ -408,7 +550,10 @@ async function seedPermissions(roles: Record<string, any>) {
 
   for (const [roleCode, permissions] of Object.entries(permissionSets)) {
     const role = roles[roleCode];
-    if (!role) continue;
+    if (!role) {
+      console.warn(`  ⚠️  Role "${roleCode}" not found, skipping permissions`);
+      continue;
+    }
 
     for (const perm of permissions) {
       // First, get or create the permission (unique by action+subject)

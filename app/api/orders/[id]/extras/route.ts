@@ -5,6 +5,7 @@
 
 import { NextRequest, NextResponse } from 'next/server';
 import { extractUserContext, loadUserWithRoles, hasAnyRole } from '@/lib/user-context';
+import { checkPermission, type PermissionContext } from '@/lib/auth/rbac';
 import { successResponse, errorResponse, ErrorCodes, getStatusCode } from '@/lib/api-response';
 import { extrasService } from '@/services/extras.service';
 
@@ -28,9 +29,23 @@ export async function GET(
     }
 
     const userWithRoles = await loadUserWithRoles(ctx.userId);
-    if (!userWithRoles || !hasAnyRole(userWithRoles, ['admin', 'manager', 'staff'])) {
+    if (!userWithRoles) {
       return NextResponse.json(
-        errorResponse(ErrorCodes.FORBIDDEN, 'Only staff can view order extras'),
+        errorResponse(ErrorCodes.FORBIDDEN, 'User not found'),
+        { status: getStatusCode(ErrorCodes.FORBIDDEN) }
+      );
+    }
+
+    // Check permission to view extras
+    const permCtx: PermissionContext = {
+      userId: ctx.userId!,
+      userType: (userWithRoles.userType as 'admin' | 'employee' | 'other') || 'employee',
+      departmentId: null,
+    };
+    const canRead = await checkPermission(permCtx, 'extras.read', 'extras');
+    if (!canRead) {
+      return NextResponse.json(
+        errorResponse(ErrorCodes.FORBIDDEN, 'Insufficient permissions to view extras'),
         { status: getStatusCode(ErrorCodes.FORBIDDEN) }
       );
     }

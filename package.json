@@ -7,21 +7,7 @@
 		"build": "next build",
 		"start": "next start",
 		"lint": "next lint",
-		"test:endpoints": "tsx ../hotelmanager_v2/test-endpoints.ts",
-		"seed": "tsx scripts/seed.ts",
-		"seed:core": "tsx scripts/seed-core.ts",
-		"seed:users": "tsx scripts/seed-demo-users.ts",
-		"seed:permissions": "tsx scripts/seed-permissions.ts",
-		"seed:employee-roles": "tsx scripts/seed-employee-roles.ts",
-		"seed:dept-inv": "tsx scripts/seed-department-inventories.ts",
-		"seed:dept-inv-fast": "tsx scripts/seed-department-inventories-fast.ts",
-		"reconcile:dept-inv": "tsx scripts/reconcile-department-inventories.ts",
-		"cleanup:depts": "tsx scripts/cleanup-departments.ts",
-		"consolidate:inventory": "tsx scripts/consolidate-inventory.ts",
-		"verify:rbac": "tsx scripts/verify-rbac.ts"
-		,"db:migrate": "prisma migrate dev --name add-organisation-currency"
-		,"db:seed-org": "tsx scripts/seed-organisation-info.ts"
-		,"db:setup": "npm run db:migrate && npm run db:seed-org"
+		"seed:core": "tsx scripts/seed-core.ts"
 	},
 	"engines": {
 		"node": ">=18"

@@ -72,6 +72,7 @@ export async function checkPermission(
 ): Promise<boolean> {
   try {
     await detectSchema();
+    console.log(`[RBAC] checkPermission: userId=${ctx.userId}, userType=${ctx.userType}, action=${action}, subject=${subject}`);
 
     // If legacy admin roles are present and this is an admin user, check legacy admin tables
     // This runs even if unified roles exist, as admin users may only be in the legacy system
@@ -84,16 +85,20 @@ export async function checkPermission(
 
         if (!admin) {
           // Admin not found in legacy system - might have unified roles
+          console.log('[RBAC] Admin user not found in legacy AdminUser table');
         } else {
+          console.log(`[RBAC] Found admin user with ${admin.roles?.length || 0} roles`);
           for (const r of admin.roles || []) {
             for (const p of r.permissions || []) {
               // Check for exact match
               if (p.action === action && (p.subject || null) === (subject || null)) {
+                console.log(`[RBAC] ✓ Permission granted (admin legacy exact match): ${action}.${subject}`);
                 return true;
               }
               // Check for wildcard permission (admin can do anything)
               // Wildcard can be: action='*' subject='*', or action='*' subject=null
               if (p.action === '*' && (p.subject === '*' || p.subject === null)) {
+                console.log('[RBAC] ✓ Permission granted (admin wildcard)');
                 return true;
               }
             }
@@ -102,6 +107,7 @@ export async function checkPermission(
           // No permission match found in legacy admin roles
           // Still check unified roles if they exist
           if (!_hasUserRoles) {
+            console.log('[RBAC] ✗ No permission match in admin roles and no unified roles table');
             return false;
           }
         }
@@ -114,21 +120,75 @@ export async function checkPermission(
       }
     }
 
+    // Normalize all possible permission variants for action/subject
+    function getPermissionVariants(action: string, subject?: string | null) {
+      const variants: { action: string; subject: string | null }[] = [];
+      const sub = subject || null;
+      // Add original action/subject pair
+      variants.push({ action, subject: sub });
+      // Add action with no subject
+      variants.push({ action, subject: null });
+
+      // If subject is present, add dot/colon variants
+      if (sub) {
+        // Remove any trailing .subject or :subject from action for base
+        let base = action;
+        if (action.endsWith('.' + sub)) base = action.slice(0, -1 * (sub.length + 1));
+        if (action.endsWith(':' + sub)) base = action.slice(0, -1 * (sub.length + 1));
+
+        // Dot and colon variants
+        variants.push({ action: `${base}.${sub}`, subject: null });
+        variants.push({ action: `${base}:${sub}`, subject: null });
+        // Repeated subject (e.g., orders.read.orders)
+        variants.push({ action: `${action}.${sub}`, subject: null });
+        variants.push({ action: `${action}:${sub}`, subject: null });
+        // Subject as separate
+        variants.push({ action: base, subject: sub });
+      }
+
+      // If action contains dot/colon, split and add as action/subject
+      if (action.includes('.')) {
+        const [a, s] = action.split('.');
+        if (s) {
+          variants.push({ action: a, subject: s });
+          variants.push({ action: `${a}.${s}`, subject: null });
+          variants.push({ action: `${a}:${s}`, subject: null });
+        }
+      }
+      if (action.includes(':')) {
+        const [a, s] = action.split(':');
+        if (s) {
+          variants.push({ action: a, subject: s });
+          variants.push({ action: `${a}:${s}`, subject: null });
+          variants.push({ action: `${a}.${s}`, subject: null });
+        }
+      }
+
+      // Remove duplicates
+      const seen = new Set();
+      return variants.filter(v => {
+        const key = v.action + '|' + v.subject;
+        if (seen.has(key)) return false;
+        seen.add(key);
+        return true;
+      });
+    }
+
     // Check 1: Direct user permissions (bypasses role)
+    const userVariants = getPermissionVariants(action, subject);
+    console.log(`[RBAC] Checking ${userVariants.length} permission variants:`, userVariants.map(v => `${v.action}:${v.subject}`).join(', '));
+    
     const userPermission = await prisma.userPermission.findFirst({
       where: {
         userId: ctx.userId,
         userType: ctx.userType,
-        permission: {
-          action,
-          subject: subject || null,
-        },
-        // Match department scope
         departmentId: ctx.departmentId || null,
+        OR: userVariants.map(v => ({ permission: { action: v.action, subject: v.subject } })),
       },
+      include: { permission: true },
     });
-
     if (userPermission) {
+      console.log(`[RBAC] ✓ Permission granted (direct user permission): ${userPermission.permission.action}:${userPermission.permission.subject}`);
       return true;
     }
 
@@ -138,66 +198,68 @@ export async function checkPermission(
         where: {
           userId: ctx.userId,
           userType: ctx.userType,
-          permission: {
-            action,
-            subject: subject || null,
-          },
           departmentId: null,
+          OR: userVariants.map(v => ({ permission: { action: v.action, subject: v.subject } })),
         },
+        include: { permission: true },
       });
-
       if (globalUserPermission) {
+        console.log(`[RBAC] ✓ Permission granted (global user permission): ${globalUserPermission.permission.action}:${globalUserPermission.permission.subject}`);
         return true;
       }
     }
 
-    // Check 3: Role-based permissions (department-scoped)
-    const rolePermission = await prisma.userRole.findFirst({
+    // Check 3: Role-based permissions (department-scoped or global)
+    if (ctx.departmentId) {
+      const rolePermission = await prisma.userRole.findFirst({
+        where: {
+          userId: ctx.userId,
+          userType: ctx.userType,
+          departmentId: ctx.departmentId,
+          revokedAt: null,
+          role: {
+            isActive: true,
+            rolePermissions: {
+              some: {
+                OR: userVariants.map(v => ({ permission: { action: v.action, subject: v.subject } })),
+              },
+            },
+          },
+        },
+      });
+      if (rolePermission) {
+        console.log(`[RBAC] ✓ Permission granted (department-scoped role permission)`);
+        return true;
+      }
+    }
+
+    // Check 4: Global role permissions (no department scope)
+    console.log(`[RBAC] Checking global role permissions for userId=${ctx.userId}, userType=${ctx.userType}`);
+    const globalRolePermission = await prisma.userRole.findFirst({
       where: {
         userId: ctx.userId,
         userType: ctx.userType,
-        departmentId: ctx.departmentId || null,
+        departmentId: null,
+        revokedAt: null,
         role: {
+          isActive: true,
           rolePermissions: {
             some: {
-              permission: {
-                action,
-                subject: subject || null,
-              },
+              OR: userVariants.map(v => ({ permission: { action: v.action, subject: v.subject } })),
             },
           },
         },
       },
+      include: {
+        role: true,
+      },
     });
-
-    if (rolePermission) {
+    if (globalRolePermission) {
+      console.log(`[RBAC] ✓ Permission granted (global role permission) - role: ${globalRolePermission.role.code}`);
       return true;
     }
-
-    // Check 4: Global role permissions (no department scope)
-    if (ctx.departmentId) {
-      const globalRolePermission = await prisma.userRole.findFirst({
-        where: {
-          userId: ctx.userId,
-          userType: ctx.userType,
-          departmentId: null,
-          role: {
-            rolePermissions: {
-              some: {
-                permission: {
-                  action,
-                  subject: subject || null,
-                },
-              },
-            },
-          },
-        },
-      });
-
-      if (globalRolePermission) {
-        return true;
-      }
-    }
+    
+    console.log(`[RBAC] ✗ Permission denied: no matching permissions found for ${action}/${subject}`);
 
     return false;
   } catch (error) {

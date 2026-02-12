@@ -2,7 +2,8 @@
 
 import React, { createContext, useContext, useEffect, useState, useCallback } from "react";
 import { useRouter } from 'next/navigation';
-import { pageAccessRules, type PageAccessRule } from "@/lib/auth/page-access";
+import { checkPageAccess, getPageAccessRule } from "@/lib/auth/page-access";
+import { getDefaultLandingPage } from "@/lib/auth/role-landing";
 
 export interface AuthUser {
   id: string;
@@ -104,7 +105,15 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
           const permsJson = await permsRes.json();
           perms = permsJson.permissions || [];
         }
-        setUser({ ...userData, permissions: perms });
+        const userWithPerms = { ...userData, permissions: perms };
+        setUser(userWithPerms);
+
+        // Redirect to role-based landing page
+        const landingPage = getDefaultLandingPage(userWithPerms.roles, userWithPerms.departmentId);
+        // Use a timeout to ensure state is updated before redirecting
+        setTimeout(() => {
+          router.push(landingPage);
+        }, 0);
       } catch (error) {
         console.error("Login error:", error);
         throw error;
@@ -112,7 +121,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         setIsLoading(false);
       }
     },
-    []
+    [router]
   );
 
   const logout = useCallback(async () => {
@@ -214,66 +223,13 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   const canAccessPage = useCallback(
     (path: string): boolean => {
       if (!user) return false;
-
-      // Find matching rule (exact match first, then prefix patterns)
-      let matchedRule: PageAccessRule | null = null;
-      
-      // Try exact match first
-      if (pageAccessRules[path]) {
-        matchedRule = pageAccessRules[path];
-      } else {
-        // Try prefix patterns (longest match wins)
-        const patterns = Object.keys(pageAccessRules)
-          .filter(key => key.endsWith('*'))
-          .sort((a, b) => b.length - a.length); // Longest first
-        
-        for (const pattern of patterns) {
-          const prefix = pattern.slice(0, -1); // Remove the *
-          if (path.startsWith(prefix)) {
-            matchedRule = pageAccessRules[pattern];
-            break;
-          }
-        }
-      }
-
-      if (!matchedRule) {
-        // No rule found - default to authenticated users only
-        return user !== null;
-      }
-
-      // Admin bypass (if rule allows it)
-      if (matchedRule.adminBypass && user.userType === 'admin') {
-        return true;
-      }
-
-      // Authenticated only check
-      if (matchedRule.authenticatedOnly) {
-        return user !== null;
-      }
-
-      // Check required roles
-      if (matchedRule.requiredRoles && matchedRule.requiredRoles.length > 0) {
-        const hasRole = user.roles?.some(r => matchedRule!.requiredRoles!.includes(r));
-        if (!hasRole) return false;
-      }
-
-      // Check required permissions
-      if (matchedRule.requiredPermissions && matchedRule.requiredPermissions.length > 0) {
-        const hasAllPermissions = matchedRule.requiredPermissions.every(perm =>
-          user.permissions?.includes(perm)
-        );
-        if (!hasAllPermissions) return false;
-      }
-
-      // Check required any permissions
-      if (matchedRule.requiredAnyPermissions && matchedRule.requiredAnyPermissions.length > 0) {
-        const hasAnyPermission = user.permissions?.some(perm =>
-          matchedRule!.requiredAnyPermissions!.includes(perm)
-        );
-        if (!hasAnyPermission) return false;
-      }
-
-      return true;
+      const matchedRule = getPageAccessRule(path);
+      return checkPageAccess(
+        matchedRule,
+        user.roles || [],
+        user.permissions || [],
+        user.userType || "employee"
+      );
     },
     [user]
   );

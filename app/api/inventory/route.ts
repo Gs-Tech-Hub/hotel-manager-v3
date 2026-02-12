@@ -19,6 +19,8 @@ import { NextRequest } from 'next/server';
 import { inventoryItemService } from '@/services/inventory.service';
 import { sendSuccess, sendError } from '@/lib/api-handler';
 import { prisma } from '@/lib/auth/prisma';
+import { extractUserContext, loadUserWithRoles } from '@/lib/user-context';
+import { checkPermission, type PermissionContext } from '@/lib/auth/rbac';
 import { mapDeptCodeToCategory } from '@/lib/utils';
 import { ErrorCodes } from '@/lib/api-response';
 import { StockService } from '@/services/stock.service';
@@ -27,6 +29,28 @@ const stockService = new StockService();
 
 export async function GET(req: NextRequest) {
   try {
+    // Check authentication and permissions
+    const ctx = await extractUserContext(req);
+    if (!ctx.userId) {
+      return sendError(ErrorCodes.UNAUTHORIZED, 'Not authenticated');
+    }
+
+    const userWithRoles = await loadUserWithRoles(ctx.userId);
+    if (!userWithRoles) {
+      return sendError(ErrorCodes.FORBIDDEN, 'User not found');
+    }
+
+    // Check permission to read inventory
+    const permCtx: PermissionContext = {
+      userId: ctx.userId!,
+      userType: (userWithRoles.userType as 'admin' | 'employee' | 'other') || 'employee',
+      departmentId: null,
+    };
+    const canRead = await checkPermission(permCtx, 'inventory.read', 'inventory');
+    if (!canRead) {
+      return sendError(ErrorCodes.FORBIDDEN, 'Insufficient permissions to view inventory');
+    }
+
     const { searchParams } = new URL(req.url);
     const page = parseInt(searchParams.get('page') || '1');
     const limit = parseInt(searchParams.get('limit') || '10');

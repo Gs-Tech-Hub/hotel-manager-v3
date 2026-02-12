@@ -1,6 +1,8 @@
 import { jwtVerify, SignJWT } from "jose";
 import { cookies } from "next/headers";
 import { prisma } from "./prisma";
+import { getDefaultRoleForDepartment } from "./department-role-mapping";
+import { getRoleForPosition } from "./position-role-mapping";
 
 const SECRET = new TextEncoder().encode(
   process.env.JWT_SECRET || "hotel-manager-secret-key-change-in-production"
@@ -25,6 +27,25 @@ export interface AuthSession {
   permissions?: string[]; // Cached permissions
   iat?: number; // Issued at
   exp?: number; // Expiration
+}
+
+function addPermissionVariants(
+  permissions: Set<string>,
+  action?: string | null,
+  subject?: string | null
+) {
+  const a = (action || "").trim();
+  const s = (subject || "").trim();
+  if (!a && !s) return;
+
+  // Some seed scripts / DB records may already store full permission in `action` (e.g. "orders.read").
+  if (a) permissions.add(a);
+
+  if (a && s) {
+    // Canonical variants used across the app
+    permissions.add(`${a}.${s}`);
+    permissions.add(`${a}:${s}`);
+  }
 }
 
 /**
@@ -280,12 +301,72 @@ export async function buildSession(
           const permissionsSet = new Set<string>();
           userRoles.forEach((ur) => {
             ur.role.rolePermissions.forEach((rp: any) => {
-              if (rp.permission?.action && rp.permission?.subject) {
-                permissionsSet.add(`${rp.permission.action}:${rp.permission.subject}`);
-              }
+              addPermissionVariants(
+                permissionsSet,
+                rp.permission?.action,
+                rp.permission?.subject
+              );
             });
           });
           permissionsList = Array.from(permissionsSet);
+
+          // If employee has no explicit roles, try to assign based on position or department
+          if (userType === "employee" && rolesList.length === 0) {
+            try {
+              let roleCodeToAssign: string | null = null;
+
+              // First priority: check employee's position field
+              if (user.position) {
+                roleCodeToAssign = await getRoleForPosition(user.position);
+                if (roleCodeToAssign) {
+                  console.log(`[AUTH] Assigning role "${roleCodeToAssign}" to employee ${userId} based on position "${user.position}"`);
+                }
+              }
+
+              // Second priority: check department if no position-based role found
+              if (!roleCodeToAssign && departmentId) {
+                roleCodeToAssign = await getDefaultRoleForDepartment(departmentId);
+                if (roleCodeToAssign) {
+                  console.log(`[AUTH] Assigning role "${roleCodeToAssign}" to employee ${userId} based on department`);
+                }
+              }
+
+              // Apply the role if found
+              if (roleCodeToAssign) {
+                // Always include derived role code in the session even if the role record
+                // (and therefore permissions) doesn't exist yet. This prevents empty-role
+                // sessions that hide the entire sidebar and block role-based page access.
+                if (!rolesList.includes(roleCodeToAssign)) {
+                  rolesList.push(roleCodeToAssign);
+                }
+
+                const role = await prisma.role.findFirst({
+                  where: { code: roleCodeToAssign },
+                  include: {
+                    rolePermissions: {
+                      include: {
+                        permission: true,
+                      },
+                    },
+                  },
+                });
+
+                if (role) {
+                  // Add permissions from the role
+                  role.rolePermissions.forEach((rp: any) => {
+                    addPermissionVariants(
+                      permissionsSet,
+                      rp.permission?.action,
+                      rp.permission?.subject
+                    );
+                  });
+                  permissionsList = Array.from(permissionsSet);
+                }
+              }
+            } catch (err) {
+              console.warn(`[AUTH] Could not auto-assign role for employee ${userId}:`, err);
+            }
+          }
         } else if (userType === "admin") {
           // Fallback for legacy schema: admin users fetch from AdminRole relation
           try {
@@ -306,17 +387,25 @@ export async function buildSession(
             const permissionsSet = new Set<string>();
             (adminWithRoles?.roles || []).forEach((role: any) => {
               (role.permissions || []).forEach((p: any) => {
-                if (p.action && p.subject) {
-                  permissionsSet.add(`${p.action}:${p.subject}`);
-                }
+                addPermissionVariants(permissionsSet, p.action, p.subject);
               });
             });
             permissionsList = Array.from(permissionsSet);
+
+            // Ensure admin users always have 'admin' role for page access control
+            if (!rolesList.includes("admin")) {
+              rolesList.push("admin");
+            }
           } catch (err) {
             console.warn("[AUTH] Legacy admin roles fetch failed:", err);
-            rolesList = [];
+            rolesList = ["admin"]; // Ensure admin users get admin role
             permissionsList = [];
           }
+        }
+
+        // Ensure admin users always have 'admin' role
+        if (userType === "admin" && !rolesList.includes("admin")) {
+          rolesList.push("admin");
         }
 
         return {
@@ -331,6 +420,8 @@ export async function buildSession(
         };
       } catch (err) {
         console.error("Error fetching user roles (schema detection):", err);
+        // Ensure admin users always have admin role even on error
+        const roles = userType === "admin" ? ["admin"] : [];
         return {
           userId,
           userType,
@@ -338,7 +429,7 @@ export async function buildSession(
           firstName,
           lastName,
           departmentId,
-          roles: [],
+          roles,
           permissions: [],
         };
       }
