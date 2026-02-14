@@ -112,9 +112,9 @@ export async function GET(
       distinct: ['customerId'],
     });
 
-    // Revenue by game type
-    const revenueByType = await prisma.gameSession.groupBy({
-      by: ['gameTypeId'],
+    // Revenue by game type (now by section, since section name is game type)
+    const revenueBySectionId = await prisma.gameSession.groupBy({
+      by: ['sectionId'],
       _sum: { totalAmount: true },
       _count: { id: true },
       where: {
@@ -124,16 +124,17 @@ export async function GET(
       },
     });
 
-    // Get game type names
-    const gameTypes = await prisma.gameType.findMany({
-      where: { departmentId: department.id },
+    // Get section names for display
+    const sectionIds = revenueBySectionId.map(item => item.sectionId);
+    const sections = await prisma.departmentSection.findMany({
+      where: { id: { in: sectionIds } },
       select: { id: true, name: true },
     });
 
-    const typeMap = new Map(gameTypes.map(gt => [gt.id, gt.name]));
+    const sectionMap = new Map(sections.map(s => [s.id, s.name]));
 
-    const revenueByTypeWithNames = revenueByType.map(item => ({
-      gameType: typeMap.get(item.gameTypeId) || 'Unknown',
+    const revenueByTypeWithNames = revenueBySectionId.map(item => ({
+      gameType: sectionMap.get(item.sectionId) || 'Unknown',
       revenue: Number(item._sum.totalAmount || 0).toFixed(2),
       sessionCount: item._count.id,
     }));

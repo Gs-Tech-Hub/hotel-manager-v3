@@ -37,7 +37,7 @@ export async function GET(
     const session = await prisma.gameSession.findFirst({
       where: {
         id,
-        gameType: { departmentId: department.id }
+        section: { departmentId: department.id }
       },
       include: {
         customer: true,
@@ -121,13 +121,13 @@ export async function PATCH(
     if (action === 'increment_game') {
       // Increment game count
       const newGameCount = session.gameCount + 1;
-      const newTotalAmount = newGameCount * Number(session.gameType.pricePerGame);
-
+      // Pricing is calculated at checkout, not here
+      
       updatedSession = await prisma.gameSession.update({
         where: { id },
         data: {
           gameCount: newGameCount,
-          totalAmount: newTotalAmount,
+          // totalAmount will be calculated at checkout
         },
         include: {
           customer: true,

@@ -6,23 +6,16 @@ import {
   DialogDescription,
   DialogHeader,
   DialogTitle,
-  DialogTrigger,
 } from '@/components/ui/dialog';
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from '@/components/ui/select';
-import { Plus } from 'lucide-react';
 
 interface StartGameProps {
   open: boolean;
   onOpenChange: (open: boolean) => void;
   customer: any;
-  gameTypes: any[];
+  gameSections: any[]; // Game sections (not game types)
   departmentCode: string;
+  sectionCode?: string; // Optional section code (format: department:section)
+  defaultSection?: any; // Default section to pre-select
   onGameStarted: (session: any) => void;
 }
 
@@ -30,20 +23,23 @@ export function StartGame({
   open,
   onOpenChange,
   customer,
-  gameTypes,
+  gameSections = [],
   departmentCode,
+  sectionCode,
+  defaultSection,
   onGameStarted,
 }: StartGameProps) {
   const [internalOpen, setInternalOpen] = useState(false);
   const isOpen = open !== undefined ? open : internalOpen;
   const setIsOpen = onOpenChange || setInternalOpen;
   const [loading, setLoading] = useState(false);
-  const [selectedGameType, setSelectedGameType] = useState('');
   const [error, setError] = useState('');
 
+  // Since sections are now game type identifiers, we use the section ID as gameTypeId
+  // No need to fetch separately
   const handleStartGame = async () => {
-    if (!selectedGameType) {
-      setError('Please select a game type');
+    if (!defaultSection?.id) {
+      setError('Game section data not loaded. Please wait...');
       return;
     }
 
@@ -51,12 +47,18 @@ export function StartGame({
     setLoading(true);
 
     try {
-      const response = await fetch(`/api/departments/${departmentCode}/games/sessions`, {
+      // departmentCode is already in the format "parent:section" or just "parent"
+      // If it contains a colon, use it as-is; otherwise append the section ID
+      const sectionCode = departmentCode.includes(':') 
+        ? departmentCode 
+        : `${departmentCode}:${defaultSection.slug || defaultSection.id}`;
+      
+      // Section name is the game type identifier - only pass customerId
+      const response = await fetch(`/api/departments/${sectionCode}/games/sessions`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           customerId: customer.id,
-          gameTypeId: selectedGameType,
         }),
       });
 
@@ -68,7 +70,6 @@ export function StartGame({
       }
 
       onGameStarted(data.data.session);
-      setSelectedGameType('');
       setIsOpen(false);
     } catch (err) {
       setError('An error occurred while starting the game');
@@ -84,25 +85,22 @@ export function StartGame({
         <DialogHeader>
           <DialogTitle>Start Game for {customer.firstName} {customer.lastName}</DialogTitle>
           <DialogDescription>
-            Select the game type to start playing.
+            Game section is automatically selected. Click below to start.
           </DialogDescription>
         </DialogHeader>
 
         <div className="space-y-4">
           <div className="space-y-2">
-            <label className="text-sm font-medium">Game Type</label>
-            <Select value={selectedGameType} onValueChange={setSelectedGameType}>
-              <SelectTrigger disabled={loading}>
-                <SelectValue placeholder="Select a game type..." />
-              </SelectTrigger>
-              <SelectContent>
-                {gameTypes.map((type) => (
-                  <SelectItem key={type.id} value={type.id}>
-                    {type.name} - ${Number(type.pricePerGame).toFixed(2)} per game
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
+            <label className="text-sm font-medium">Game Section</label>
+            {defaultSection?.id ? (
+              <div className="rounded-md bg-green-50 p-3 text-sm text-green-700 border border-green-200">
+                ✓ Selected: <span className="font-semibold">{defaultSection.name}</span>
+              </div>
+            ) : (
+              <div className="rounded-md bg-yellow-50 p-3 text-sm text-yellow-700 border border-yellow-200">
+                Loading section data...
+              </div>
+            )}
           </div>
 
           {error && (
@@ -120,7 +118,7 @@ export function StartGame({
             >
               Cancel
             </Button>
-            <Button onClick={handleStartGame} disabled={loading || !selectedGameType}>
+            <Button onClick={handleStartGame} disabled={loading || !defaultSection?.id}>
               {loading ? 'Starting...' : 'Start Game'}
             </Button>
           </div>

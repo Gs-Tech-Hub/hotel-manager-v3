@@ -25,8 +25,10 @@ interface GamesDashboardProps {
 
 export function GamesDashboard({ departmentCode }: GamesDashboardProps) {
   const [customers, setCustomers] = useState<any[]>([]);
-  const [gameTypes, setGameTypes] = useState<any[]>([]);
+  const [gameSections, setGameSections] = useState<any[]>([]); // Now holds sections
   const [activeSessions, setActiveSessions] = useState<any[]>([]);
+  // Initialize with a null section, will be populated with real data from fetch
+  const [defaultSection, setDefaultSection] = useState<any>(null);
   const [searchQuery, setSearchQuery] = useState('');
   const [loading, setLoading] = useState(true);
   const [checkoutOpen, setCheckoutOpen] = useState(false);
@@ -39,10 +41,10 @@ export function GamesDashboard({ departmentCode }: GamesDashboardProps) {
       try {
         setLoading(true);
 
-        const [customersRes, typesRes, sessionsRes] = await Promise.all([
+        const [customersRes, sessionsRes, sectionRes] = await Promise.all([
           fetch(`/api/departments/${departmentCode}/games/players`),
-          fetch(`/api/departments/${departmentCode}/games/types`),
           fetch(`/api/departments/${departmentCode}/games/sessions?status=active`),
+          fetch(`/api/departments/${departmentCode}/section`),
         ]);
 
         if (customersRes.ok) {
@@ -50,15 +52,54 @@ export function GamesDashboard({ departmentCode }: GamesDashboardProps) {
           setCustomers(data.data.customers);
         }
 
-        if (typesRes.ok) {
-          const data = await typesRes.json();
-          setGameTypes(data.data.gameTypes);
-        }
-
         if (sessionsRes.ok) {
           const data = await sessionsRes.json();
           setActiveSessions(data.data.sessions);
         }
+
+        // Check if the fetched department is a section or a parent
+        if (sectionRes.ok) {
+          const data = await sectionRes.json();
+          const dept = data.data.department;
+          
+          // If this is a parent department (_isSection: false), fetch its children
+          if (!dept._isSection) {
+            const childrenRes = await fetch(`/api/departments/${departmentCode}/children`);
+            if (childrenRes.ok) {
+              const childrenData = await childrenRes.json();
+              // The endpoint returns { data: { departments: [], sections: [] } }
+              const sections = childrenData.data.sections || [];
+              
+              if (sections.length > 0) {
+                // Use the first section
+                const section = sections[0];
+                setDefaultSection({
+                  id: section.id,
+                  name: section.name,
+                  slug: section.slug || section.code?.split(':')[1] || section.id,
+                  code: section.code || `${departmentCode}:${section.id}`,
+                });
+              } else {
+                console.warn('No sections found for department:', departmentCode);
+                setDefaultSection(null);
+              }
+            } else {
+              console.error('Failed to fetch children:', childrenRes.status);
+              setDefaultSection(null);
+            }
+          } else {
+            // This is already a section, use it directly
+            setDefaultSection({
+              id: dept.id,
+              name: dept.name,
+              slug: dept.code.split(':')[1] || dept.id,
+              code: dept.code,
+            });
+          }
+        } else {
+          setDefaultSection(null);
+        }
+        setGameSections([]); // Keep empty, not needed
       } catch (error) {
         console.error('Failed to fetch data:', error);
         toast.error('Failed to load data');
@@ -154,7 +195,7 @@ export function GamesDashboard({ departmentCode }: GamesDashboardProps) {
                       {session.customer.firstName} {session.customer.lastName}
                     </p>
                     <p className="text-sm text-slate-600">
-                      {session.gameType.name} • {session.gameCount} game(s) •
+                      {session.section.name} • {session.gameCount} game(s) •
                       Total: ${Number(session.totalAmount).toFixed(2)}
                     </p>
                   </div>
@@ -243,7 +284,7 @@ export function GamesDashboard({ departmentCode }: GamesDashboardProps) {
                           <TableCell>
                             {activeSession ? (
                               <Badge variant="default">
-                                {activeSession.gameType.name} ({activeSession.gameCount})
+                                {activeSession.section.name} ({activeSession.gameCount})
                               </Badge>
                             ) : (
                               <span className="text-slate-400">-</span>
@@ -255,9 +296,10 @@ export function GamesDashboard({ departmentCode }: GamesDashboardProps) {
                                 open={gameStartOpen}
                                 onOpenChange={setGameStartOpen}
                                 customer={customer}
-                                gameTypes={gameTypes}
+                                gameSections={gameSections}
                                 onGameStarted={handleGameStarted}
                                 departmentCode={departmentCode}
+                                defaultSection={defaultSection}
                               />
                             )}
                           </TableCell>

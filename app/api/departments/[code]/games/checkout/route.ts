@@ -63,9 +63,9 @@ export async function POST(
     const session = await prisma.gameSession.findFirst({
       where: {
         id: sessionId,
-        gameType: { departmentId: department.id }
+        section: { departmentId: department.id }
       },
-      include: { gameType: true, customer: true },
+      include: { section: true, customer: true },
     });
 
     if (!session) {
@@ -82,19 +82,19 @@ export async function POST(
       );
     }
 
-    // Get payment type for games - must exist via admin configuration
+    // Get default payment type for checkout (use cash as default)
     const paymentType = await prisma.paymentType.findFirst({
-      where: { type: 'games' },
+      where: { type: 'cash' },
     });
 
     if (!paymentType) {
       return NextResponse.json(
-        errorResponse(ErrorCodes.NOT_FOUND, 'Games payment type not configured. Please contact admin to set up payment type.'),
+        errorResponse(ErrorCodes.NOT_FOUND, 'Default cash payment type not configured. Please contact admin.'),
         { status: 404 }
       );
     }
 
-    // Create Order for the games
+    // Create Order for the games (status: pending payment, ready for terminal checkout)
     // Amount is stored in cents (multiply by 100)
     const totalInCents = Math.round(Number(session.totalAmount) * 100);
 
@@ -118,26 +118,30 @@ export async function POST(
       include: {
         customer: true,
         gameType: true,
+        section: true,
         order: true,
       },
     });
 
-    // Return the order and session data so it can be used with terminal checkout
+    // Return order data formatted for terminal checkout
     return NextResponse.json(
       successResponse({
         data: {
+          orderId: order.id,
+          redirectUrl: `/pos-terminals/default/checkout?orderId=${order.id}`,
           session: updatedSession,
           order: {
             id: order.id,
             customerId: session.customerId,
             customerName: `${session.customer.firstName} ${session.customer.lastName}`,
             gameCount: session.gameCount,
-            gameType: session.gameType.name,
+            gameType: updatedSession.section.name, // Use section name as game type
+            sectionName: updatedSession.section.name,
             amount: Number(session.totalAmount),
             amountInCents: totalInCents,
             paymentTypeId: paymentType.id,
             status: order.orderStatus,
-            message: `Ready to checkout: ${session.gameCount} ${session.gameType.name} games`,
+            message: `Ready for checkout: ${session.gameCount} ${updatedSession.section.name} games`,
           },
           sectionId: resolvedSectionId,
         },

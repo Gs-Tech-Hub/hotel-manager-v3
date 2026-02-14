@@ -53,7 +53,9 @@ export async function GET(
     const status = request.nextUrl.searchParams.get('status') || 'active';
     const customerId = request.nextUrl.searchParams.get('customerId');
 
-    // Build filter: if section is specified, filter by sectionId; otherwise by department's gameType
+    // Build filter: sessions are linked to sections, not gameType anymore
+    // If section is specified, filter by that section
+    // Otherwise, get all sessions in this department via sections
     const where: any = {
       status: status || undefined
     };
@@ -61,7 +63,13 @@ export async function GET(
     if (resolvedSectionId) {
       where.sectionId = resolvedSectionId;
     } else {
-      where.gameType = { departmentId: department.id };
+      // Get all sections in this department first
+      const sections = await prisma.departmentSection.findMany({
+        where: { departmentId: department.id, isActive: true },
+        select: { id: true },
+      });
+      const sectionIds = sections.map(s => s.id);
+      where.sectionId = { in: sectionIds };
     }
     
     if (customerId) {
@@ -141,7 +149,7 @@ export async function POST(
     }
 
     const body = await request.json();
-    const { customerId, gameTypeId } = body;
+    const { customerId } = body;
 
     // Validation: require sectionId (must be resolved from code or provided)
     if (!resolvedSectionId) {
@@ -151,9 +159,9 @@ export async function POST(
       );
     }
 
-    if (!customerId || !gameTypeId) {
+    if (!customerId) {
       return NextResponse.json(
-        errorResponse(ErrorCodes.BAD_REQUEST, 'Customer ID and game type ID are required'),
+        errorResponse(ErrorCodes.BAD_REQUEST, 'Customer ID is required'),
         { status: 400 }
       );
     }
@@ -182,21 +190,6 @@ export async function POST(
       );
     }
 
-    // Check if game type exists and belongs to this department
-    const gameType = await prisma.gameType.findFirst({
-      where: {
-        id: gameTypeId,
-        departmentId: department.id,
-      },
-    });
-
-    if (!gameType) {
-      return NextResponse.json(
-        errorResponse(ErrorCodes.NOT_FOUND, 'Game type not found in this department'),
-        { status: 404 }
-      );
-    }
-
     // Check for active session in this section
     const activeSession = await prisma.gameSession.findFirst({
       where: {
@@ -218,9 +211,8 @@ export async function POST(
       data: {
         customerId,
         sectionId: resolvedSectionId,
-        gameTypeId,
         gameCount: 1,
-        totalAmount: gameType.pricePerGame,
+        totalAmount: 0, // Pricing calculated at checkout
         status: 'active',
       },
       include: {

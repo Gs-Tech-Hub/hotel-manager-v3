@@ -1,4 +1,5 @@
 import { useState } from 'react';
+import { useRouter } from 'next/navigation';
 import { Button } from '@/components/ui/button';
 import {
   Dialog,
@@ -14,6 +15,7 @@ interface GameCheckoutProps {
   onOpenChange: (open: boolean) => void;
   session: any;
   departmentCode: string;
+  sectionCode?: string; // Optional section code (format: department:section)
   onCheckoutComplete: (data: any) => void;
 }
 
@@ -22,8 +24,10 @@ export function GameCheckout({
   onOpenChange,
   session,
   departmentCode,
+  sectionCode,
   onCheckoutComplete,
 }: GameCheckoutProps) {
+  const router = useRouter();
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
 
@@ -32,7 +36,12 @@ export function GameCheckout({
     setLoading(true);
 
     try {
-      const response = await fetch(`/api/departments/${departmentCode}/games/checkout`, {
+      // Determine API endpoint: if sectionCode provided, use section-style code format
+      const apiUrl = sectionCode
+        ? `/api/departments/${sectionCode}/games/checkout`
+        : `/api/departments/${departmentCode}/games/checkout`;
+
+      const response = await fetch(apiUrl, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ sessionId: session.id }),
@@ -47,6 +56,11 @@ export function GameCheckout({
 
       onCheckoutComplete(data.data);
       onOpenChange(false);
+
+      // Redirect to terminal checkout if redirectUrl is provided
+      if (data.data.redirectUrl) {
+        router.push(data.data.redirectUrl);
+      }
     } catch (err) {
       setError('An error occurred during checkout');
       console.error(err);

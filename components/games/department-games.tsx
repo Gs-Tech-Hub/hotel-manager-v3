@@ -26,8 +26,10 @@ interface DepartmentGamesProps {
 
 export function DepartmentGames({ departmentCode, departmentId }: DepartmentGamesProps) {
   const [customers, setCustomers] = useState<any[]>([]);
-  const [gameTypes, setGameTypes] = useState<any[]>([]);
+  const [gameTypes, setGameTypes] = useState<any[]>([]); // Now holds sections
   const [activeSessions, setActiveSessions] = useState<any[]>([]);
+  // Initialize with a null section, will be populated with real data from fetch
+  const [activeSection, setActiveSection] = useState<any>(null);
   const [searchQuery, setSearchQuery] = useState('');
   const [loading, setLoading] = useState(true);
   const [checkoutOpen, setCheckoutOpen] = useState(false);
@@ -43,10 +45,10 @@ export function DepartmentGames({ departmentCode, departmentId }: DepartmentGame
     try {
       setLoading(true);
 
-      const [customersRes, typesRes, sessionsRes] = await Promise.all([
+      const [customersRes, sessionsRes, sectionRes] = await Promise.all([
         fetch(`${apiBase}/players`),
-        fetch(`${apiBase}/types`),
         fetch(`${apiBase}/sessions?status=active`),
+        fetch(`/api/departments/${departmentCode}/section`),
       ]);
 
       if (customersRes.ok) {
@@ -54,15 +56,54 @@ export function DepartmentGames({ departmentCode, departmentId }: DepartmentGame
         setCustomers(data.data.customers);
       }
 
-      if (typesRes.ok) {
-        const data = await typesRes.json();
-        setGameTypes(data.data.gameTypes);
-      }
-
       if (sessionsRes.ok) {
         const data = await sessionsRes.json();
         setActiveSessions(data.data.sessions);
       }
+
+      // Check if the fetched department is a section or a parent
+      if (sectionRes.ok) {
+        const data = await sectionRes.json();
+        const dept = data.data.department;
+        
+        // If this is a parent department (_isSection: false), fetch its children
+        if (!dept._isSection) {
+          const childrenRes = await fetch(`/api/departments/${departmentCode}/children`);
+          if (childrenRes.ok) {
+            const childrenData = await childrenRes.json();
+            // The endpoint returns { data: { departments: [], sections: [] } }
+            const sections = childrenData.data.sections || [];
+            
+            if (sections.length > 0) {
+              // Use the first section
+              const section = sections[0];
+              setActiveSection({
+                id: section.id,
+                name: section.name,
+                slug: section.slug || section.code?.split(':')[1] || section.id,
+                code: section.code || `${departmentCode}:${section.id}`,
+              });
+            } else {
+              console.warn('No sections found for department:', departmentCode);
+              setActiveSection(null);
+            }
+          } else {
+            console.error('Failed to fetch children:', childrenRes.status);
+            setActiveSection(null);
+          }
+        } else {
+          // This is already a section, use it directly
+          setActiveSection({
+            id: dept.id,
+            name: dept.name,
+            slug: dept.code.split(':')[1] || dept.id,
+            code: dept.code,
+          });
+        }
+      } else {
+        setActiveSection(null);
+      }
+      setGameTypes([]); // Keep empty, not needed
     } catch (error) {
       console.error('Failed to fetch data:', error);
       toast.error('Failed to load data');
@@ -110,28 +151,6 @@ export function DepartmentGames({ departmentCode, departmentId }: DepartmentGame
 
   return (
     <div className="space-y-6">
-      {/* Game Types Section */}
-      <Card>
-        <CardHeader>
-          <CardTitle>Game Types</CardTitle>
-          <CardDescription>Available games in this department</CardDescription>
-        </CardHeader>
-        <CardContent>
-          {gameTypes.length === 0 ? (
-            <p className="text-sm text-gray-500">No game types configured yet.</p>
-          ) : (
-            <div className="grid grid-cols-2 gap-3 md:grid-cols-3 lg:grid-cols-4">
-              {gameTypes.map((type) => (
-                <div key={type.id} className="border rounded-lg p-3">
-                  <p className="font-semibold">{type.name}</p>
-                  <p className="text-sm text-gray-600">${Number(type.pricePerGame).toFixed(2)}/game</p>
-                </div>
-              ))}
-            </div>
-          )}
-        </CardContent>
-      </Card>
-
       {/* Active Sessions */}
       <Card>
         <CardHeader className="flex flex-row items-center justify-between">
@@ -164,7 +183,7 @@ export function DepartmentGames({ departmentCode, departmentId }: DepartmentGame
                   {activeSessions.map((session) => (
                     <TableRow key={session.id}>
                       <TableCell>{`${session.customer.firstName} ${session.customer.lastName}`}</TableCell>
-                      <TableCell>{session.gameType.name}</TableCell>
+                      <TableCell>{session.section.name}</TableCell>
                       <TableCell>
                         <Badge variant="outline">{session.gameCount}</Badge>
                       </TableCell>
@@ -262,8 +281,9 @@ export function DepartmentGames({ departmentCode, departmentId }: DepartmentGame
           open={startGameOpen}
           onOpenChange={setStartGameOpen}
           customer={selectedCustomer}
-          gameTypes={gameTypes}
+          gameSections={activeSection ? [activeSection] : []}
           departmentCode={departmentCode}
+          defaultSection={activeSection}
           onGameStarted={handleGameStarted}
         />
       )}

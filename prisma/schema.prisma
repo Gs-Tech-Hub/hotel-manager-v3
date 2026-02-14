@@ -1973,8 +1973,8 @@ model GameSession {
   sectionId     String
   section       DepartmentSection @relation(fields: [sectionId], references: [id], onDelete: Cascade)
   
-  gameTypeId    String
-  gameType      GameType @relation(fields: [gameTypeId], references: [id], onDelete: Restrict)
+  gameTypeId    String?
+  gameType      GameType? @relation(fields: [gameTypeId], references: [id], onDelete: Restrict)
   
   gameCount     Int      @default(1) // Number of games played in this session
   status        String   @default("active") // active, completed, checked_out
