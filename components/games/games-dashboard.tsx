@@ -16,7 +16,7 @@ import { Badge } from '@/components/ui/badge';
 import { RegisterPlayer } from './register-player';
 import { StartGame } from './start-game';
 import { GameCheckout } from './game-checkout';
-import { Plus, RotateCcw } from 'lucide-react';
+import { Plus, RotateCcw, ChevronDown, ChevronUp } from 'lucide-react';
 import { toast } from 'sonner';
 
 interface GamesDashboardProps {
@@ -34,6 +34,7 @@ export function GamesDashboard({ departmentCode }: GamesDashboardProps) {
   const [checkoutOpen, setCheckoutOpen] = useState(false);
   const [gameStartOpen, setGameStartOpen] = useState(false);
   const [selectedSession, setSelectedSession] = useState<any>(null);
+  const [showRegisteredPlayers, setShowRegisteredPlayers] = useState(false);
 
   // Fetch data
   useEffect(() => {
@@ -165,9 +166,9 @@ export function GamesDashboard({ departmentCode }: GamesDashboardProps) {
 
   return (
     <div className="space-y-6">
-      {/* Header */}
-      <div className="flex items-center justify-between">
-        <div>
+      {/* Header with Register Button */}
+      <div className="flex items-center justify-between gap-4">
+        <div className="flex-1">
           <h1 className="text-3xl font-bold">Games Management</h1>
           <p className="text-slate-600">Manage game sessions and player checkout</p>
         </div>
@@ -224,18 +225,28 @@ export function GamesDashboard({ departmentCode }: GamesDashboardProps) {
         </Card>
       )}
 
-      {/* Customers List */}
+      {/* Customers List (Collapsible) */}
       <Card>
-        <CardHeader>
+        <CardHeader className="cursor-pointer" onClick={() => setShowRegisteredPlayers(!showRegisteredPlayers)}>
           <div className="flex items-center justify-between">
-            <div>
-              <CardTitle>Customers</CardTitle>
-              <CardDescription>Total: {filteredCustomers.length} customers</CardDescription>
+            <div className="flex items-center gap-2">
+              <div>
+                <CardTitle>Registered Players</CardTitle>
+                <CardDescription>Total: {filteredCustomers.length} customers</CardDescription>
+              </div>
+              {showRegisteredPlayers ? (
+                <ChevronUp className="h-5 w-5" />
+              ) : (
+                <ChevronDown className="h-5 w-5" />
+              )}
             </div>
             <Button
               size="sm"
               variant="outline"
-              onClick={() => window.location.reload()}
+              onClick={(e) => {
+                e.stopPropagation();
+                window.location.reload();
+              }}
               className="gap-2"
             >
               <RotateCcw className="h-4 w-4" />
@@ -243,75 +254,78 @@ export function GamesDashboard({ departmentCode }: GamesDashboardProps) {
             </Button>
           </div>
         </CardHeader>
-        <CardContent>
-          <div className="space-y-4">
-            <Input
-              placeholder="Search by name or phone..."
-              value={searchQuery}
-              onChange={(e) => setSearchQuery(e.target.value)}
-            />
 
-            {loading ? (
-              <div className="py-8 text-center text-slate-500">Loading...</div>
-            ) : filteredCustomers.length === 0 ? (
-              <div className="py-8 text-center text-slate-500">
-                No customers found. Register a new customer to get started.
-              </div>
-            ) : (
-              <div className="overflow-x-auto">
-                <Table>
-                  <TableHeader>
-                    <TableRow>
-                      <TableHead>Name</TableHead>
-                      <TableHead>Phone</TableHead>
-                      <TableHead>Email</TableHead>
-                      <TableHead>Active Session</TableHead>
-                      <TableHead className="text-right">Actions</TableHead>
-                    </TableRow>
-                  </TableHeader>
-                  <TableBody>
-                    {filteredCustomers.map((customer) => {
-                      const activeSession = activeSessions.find(
-                        (s) => s.customerId === customer.id
-                      );
-                      return (
-                        <TableRow key={customer.id}>
-                          <TableCell className="font-semibold">
-                            {customer.firstName} {customer.lastName}
-                          </TableCell>
-                          <TableCell>{customer.phone}</TableCell>
-                          <TableCell>{customer.email || '-'}</TableCell>
-                          <TableCell>
-                            {activeSession ? (
-                              <Badge variant="default">
-                                {activeSession.section.name} ({activeSession.gameCount})
-                              </Badge>
-                            ) : (
-                              <span className="text-slate-400">-</span>
-                            )}
-                          </TableCell>
-                          <TableCell className="text-right">
-                            {!activeSession && (
-                              <StartGame
-                                open={gameStartOpen}
-                                onOpenChange={setGameStartOpen}
-                                customer={customer}
-                                gameSections={gameSections}
-                                onGameStarted={handleGameStarted}
-                                departmentCode={departmentCode}
-                                defaultSection={defaultSection}
-                              />
-                            )}
-                          </TableCell>
-                        </TableRow>
-                      );
-                    })}
-                  </TableBody>
-                </Table>
-              </div>
-            )}
-          </div>
-        </CardContent>
+        {showRegisteredPlayers && (
+          <CardContent>
+            <div className="space-y-4">
+              <Input
+                placeholder="Search by name or phone..."
+                value={searchQuery}
+                onChange={(e) => setSearchQuery(e.target.value)}
+              />
+
+              {loading ? (
+                <div className="py-8 text-center text-slate-500">Loading...</div>
+              ) : filteredCustomers.length === 0 ? (
+                <div className="py-8 text-center text-slate-500">
+                  No customers found. Register a new customer to get started.
+                </div>
+              ) : (
+                <div className="overflow-x-auto">
+                  <Table>
+                    <TableHeader>
+                      <TableRow>
+                        <TableHead>Name</TableHead>
+                        <TableHead>Phone</TableHead>
+                        <TableHead>Email</TableHead>
+                        <TableHead>Active Session</TableHead>
+                        <TableHead className="text-right">Start Game</TableHead>
+                      </TableRow>
+                    </TableHeader>
+                    <TableBody>
+                      {filteredCustomers.map((customer) => {
+                        const activeSession = activeSessions.find(
+                          (s) => s.customerId === customer.id
+                        );
+                        return (
+                          <TableRow key={customer.id}>
+                            <TableCell className="font-semibold">
+                              {customer.firstName} {customer.lastName}
+                            </TableCell>
+                            <TableCell>{customer.phone}</TableCell>
+                            <TableCell>{customer.email || '-'}</TableCell>
+                            <TableCell>
+                              {activeSession ? (
+                                <Badge variant="default">
+                                  {activeSession.section.name} ({activeSession.gameCount})
+                                </Badge>
+                              ) : (
+                                <span className="text-slate-400">-</span>
+                              )}
+                            </TableCell>
+                            <TableCell className="text-right">
+                              {!activeSession && (
+                                <StartGame
+                                  open={gameStartOpen}
+                                  onOpenChange={setGameStartOpen}
+                                  customer={customer}
+                                  gameSections={gameSections}
+                                  onGameStarted={handleGameStarted}
+                                  departmentCode={departmentCode}
+                                  defaultSection={defaultSection}
+                                />
+                              )}
+                            </TableCell>
+                          </TableRow>
+                        );
+                      })}
+                    </TableBody>
+                  </Table>
+                </div>
+              )}
+            </div>
+          </CardContent>
+        )}
       </Card>
 
       {/* Checkout Dialog */}

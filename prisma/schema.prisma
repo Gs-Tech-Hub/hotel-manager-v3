@@ -338,6 +338,7 @@ model Customer {
   orders           Order[]
   orderHeaders     OrderHeader[]
   gameSessions     GameSession[]
+  serviceUsageSessions  ServiceUsageSession[]
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
@@ -722,6 +723,7 @@ model Order {
 
   bookingItems BookingItem[]
   gameSession  GameSession?
+  serviceUsageSession ServiceUsageSession?
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
@@ -818,6 +820,9 @@ model Department {
 
   // Games types managed by this department
   gameTypes GameType[]
+  
+  // Services managed by this department
+  serviceInventory ServiceInventory[]
 
   // RBAC: Role assignments scoped to this department
   userRoles       UserRole[]
@@ -851,6 +856,9 @@ model DepartmentSection {
   
   // game sessions in this section (games departments only)
   gameSessions GameSession[]
+  
+  // services available in this section
+  serviceInventory ServiceInventory[]
 
   metadata     Json?     @default("{}")
   isActive     Boolean   @default(true)
@@ -860,6 +868,78 @@ model DepartmentSection {
 
   @@index([departmentId])
   @@map("department_sections")
+}
+
+// Service inventory - flexible pricing model for games, swimming, activities, etc.
+// Can be priced per count (per game, per person) or per time unit (per hour, per minute)
+model ServiceInventory {
+  id              String   @id @default(cuid())
+  name            String   // e.g., "Snooker Game", "Swimming", "Gym Pass"
+  description     String?
+  serviceType     String   // e.g., "game", "activity", "facility"
+  
+  // Pricing
+  pricingModel    String   @default("per_count")  // "per_count" or "per_time"
+  pricePerCount   Decimal? @db.Decimal(10, 2)    // Price per unit (game, person, etc.)
+  pricePerMinute  Decimal? @db.Decimal(10, 4)    // Price per minute (calculated to hourly in UI)
+  
+  // Association
+  sectionId       String?
+  section         DepartmentSection? @relation(fields: [sectionId], references: [id], onDelete: Cascade)
+  
+  // Link to department if not section-specific
+  departmentId    String?
+  department      Department? @relation(fields: [departmentId], references: [id], onDelete: Cascade)
+  
+  // Service sessions track usage
+  sessions        ServiceUsageSession[]
+  
+  isActive        Boolean  @default(true)
+  metadata        Json?    @default("{}")
+  
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+  
+  @@index([sectionId])
+  @@index([departmentId])
+  @@map("service_inventory")
+}
+
+// Service usage session - tracks a customer using a service (games, swimming, gym, etc.)
+model ServiceUsageSession {
+  id            String   @id @default(cuid())
+  
+  serviceId     String
+  service       ServiceInventory  @relation(fields: [serviceId], references: [id], onDelete: Cascade)
+  
+  customerId    String
+  customer      Customer @relation(fields: [customerId], references: [id], onDelete: Cascade)
+  
+  // Usage tracking
+  countUsed     Int      @default(0)      // For per_count pricing (e.g., game count, items used)
+  minutesUsed   Int      @default(0)      // For per_time pricing
+  
+  // Calculated amount
+  totalAmount   Decimal  @db.Decimal(10, 2) @default(0)
+  
+  status        String   @default("active")  // active, paused, completed, checked_out
+  
+  // Links to order system
+  orderId       String?  @unique
+  order         Order?   @relation(fields: [orderId], references: [id], onDelete: SetNull)
+  
+  startedAt     DateTime @default(now())
+  pausedAt      DateTime?
+  endedAt       DateTime?
+  checkedOutAt  DateTime?
+  
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+  
+  @@index([customerId])
+  @@index([serviceId])
+  @@index([status])
+  @@map("service_usage_sessions")
 }
 
 // POS Terminals (point-of-sale devices / logical terminals)
