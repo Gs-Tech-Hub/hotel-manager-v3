@@ -890,9 +890,12 @@ model ServiceInventory {
   // Link to department if not section-specific
   departmentId    String?
   department      Department? @relation(fields: [departmentId], references: [id], onDelete: Cascade)
-  
+
   // Service sessions track usage
   sessions        ServiceUsageSession[]
+  
+  // Game sessions linked to this service for pricing
+  gameSessions    GameSession[]
   
   isActive        Boolean  @default(true)
   metadata        Json?    @default("{}")
@@ -2053,13 +2056,16 @@ model GameSession {
   sectionId     String
   section       DepartmentSection @relation(fields: [sectionId], references: [id], onDelete: Cascade)
   
+  serviceId     String?  // Link to ServiceInventory for pricing
+  service       ServiceInventory? @relation(fields: [serviceId], references: [id], onDelete: SetNull)
+  
   gameTypeId    String?
   gameType      GameType? @relation(fields: [gameTypeId], references: [id], onDelete: Restrict)
   
   gameCount     Int      @default(1) // Number of games played in this session
   status        String   @default("active") // active, completed, checked_out
   
-  totalAmount   Decimal  @db.Decimal(10, 2) @default(0) // Calculated: gameCount * gameType.pricePerGame
+  totalAmount   Decimal  @db.Decimal(10, 2) @default(0) // Calculated: gameCount * gameType.pricePerGame or service pricing
   
   orderId       String?  @unique  // Links to Order when checked out (one-to-one)
   order         Order?   @relation(fields: [orderId], references: [id], onDelete: SetNull)

@@ -149,7 +149,7 @@ export async function POST(
     }
 
     const body = await request.json();
-    const { customerId } = body;
+    const { customerId, serviceId } = body;
 
     // Validation: require sectionId (must be resolved from code or provided)
     if (!resolvedSectionId) {
@@ -164,6 +164,28 @@ export async function POST(
         errorResponse(ErrorCodes.BAD_REQUEST, 'Customer ID is required'),
         { status: 400 }
       );
+    }
+
+    // If serviceId provided, validate it
+    if (serviceId) {
+      const service = await prisma.serviceInventory.findUnique({
+        where: { id: serviceId },
+      });
+
+      if (!service) {
+        return NextResponse.json(
+          errorResponse(ErrorCodes.NOT_FOUND, 'Service not found'),
+          { status: 404 }
+        );
+      }
+
+      // Service must belong to this section or department
+      if (service.sectionId !== resolvedSectionId && service.departmentId !== department.id) {
+        return NextResponse.json(
+          errorResponse(ErrorCodes.FORBIDDEN, 'Service does not belong to this section or department'),
+          { status: 403 }
+        );
+      }
     }
 
     // Check if section exists and belongs to this department
@@ -206,11 +228,12 @@ export async function POST(
       );
     }
 
-    // Create new session with sectionId
+    // Create new session with sectionId and optional serviceId
     const session = await prisma.gameSession.create({
       data: {
         customerId,
         sectionId: resolvedSectionId,
+        serviceId: serviceId || null,
         gameCount: 1,
         totalAmount: 0, // Pricing calculated at checkout
         status: 'active',
@@ -219,6 +242,7 @@ export async function POST(
         customer: true,
         gameType: true,
         section: true,
+        service: true,
       },
     });
 

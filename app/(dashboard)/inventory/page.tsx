@@ -10,6 +10,8 @@ import TransferAuditPanel from '@/components/departments/TransferAuditPanel'
 import Price from '@/components/ui/Price'
 import { Plus, Trash2, Zap } from 'lucide-react'
 import { ExtrasFormDialog } from '@/components/admin/ExtrasFormDialog'
+import { ServiceInventoryForm } from '@/components/admin/ServiceInventoryForm'
+import { ServiceList } from '@/components/admin/ServiceList'
 
 type Department = { id: string; code: string; name: string }
 
@@ -42,6 +44,7 @@ export default function InventoryPage() {
   const [autoGenSku, setAutoGenSku] = useState(true)
   const [extrasFormOpen, setExtrasFormOpen] = useState(false)
   const [selectedItemForExtra, setSelectedItemForExtra] = useState<InventoryItem | null>(null)
+  const [activeTab, setActiveTab] = useState<'items' | 'extras' | 'services'>('items')
 
   const generateSku = (cat: string) => {
     if (!cat) return ''
@@ -228,7 +231,7 @@ export default function InventoryPage() {
       <div className="flex items-center justify-between">
         <h1 className="text-2xl font-bold">Inventory</h1>
         <div>
-          {hasPermission('inventory_items.create') && (
+          {activeTab === 'items' && hasPermission('inventory_items.create') && (
             <button 
               onClick={() => setShowForm(!showForm)}
               className="px-3 py-1 bg-green-600 text-white rounded text-sm mr-2 inline-flex items-center gap-2 hover:bg-green-700"
@@ -236,22 +239,87 @@ export default function InventoryPage() {
               <Plus size={16} /> Add Item
             </button>
           )}
-          <button
-            onClick={() => {
-              setSelectedItemForExtra(null)
-              setExtrasFormOpen(true)
-            }}
-            className="px-3 py-1 bg-amber-600 text-white rounded text-sm mr-2 inline-flex items-center gap-2 hover:bg-amber-700"
-          >
-            <Plus size={16} /> Add Extra
-          </button>
-          <button onClick={() => fetchItems(selectedDept)} className="px-3 py-1 border rounded text-sm mr-2">Refresh</button>
-          <Link href={selectedDept ? `/inventory/transfer?source=${encodeURIComponent(selectedDept)}` : '#'} className={`px-3 py-1 border rounded text-sm mr-2 ${!selectedDept ? 'opacity-60 pointer-events-none' : ''}`}>Transfer</Link>
-          <Link href="/inventory/movements" className="px-3 py-1 border rounded text-sm">Movements</Link>
+          {activeTab === 'extras' && (
+            <button
+              onClick={() => {
+                setSelectedItemForExtra(null)
+                setExtrasFormOpen(true)
+              }}
+              className="px-3 py-1 bg-amber-600 text-white rounded text-sm mr-2 inline-flex items-center gap-2 hover:bg-amber-700"
+            >
+              <Plus size={16} /> Add Extra
+            </button>
+          )}
+          {activeTab === 'services' && hasPermission('services.create') && (
+            <button
+              onClick={() => setShowForm(!showForm)}
+              className="px-3 py-1 bg-purple-600 text-white rounded text-sm mr-2 inline-flex items-center gap-2 hover:bg-purple-700"
+            >
+              <Plus size={16} /> Add Service
+            </button>
+          )}
+          <button onClick={() => {
+            if (activeTab === 'items') fetchItems(selectedDept)
+          }} className="px-3 py-1 border rounded text-sm mr-2">Refresh</button>
+          {activeTab === 'items' && (
+            <>
+              <Link href={selectedDept ? `/inventory/transfer?source=${encodeURIComponent(selectedDept)}` : '#'} className={`px-3 py-1 border rounded text-sm mr-2 ${!selectedDept ? 'opacity-60 pointer-events-none' : ''}`}>Transfer</Link>
+              <Link href="/inventory/movements" className="px-3 py-1 border rounded text-sm">Movements</Link>
+            </>
+          )}
         </div>
       </div>
 
-      {showForm && hasPermission('inventory_items.create') && (
+      {/* Tabs */}
+      <div className="flex gap-2 border-b">
+        <button
+          onClick={() => setActiveTab('items')}
+          className={`px-4 py-2 font-medium border-b-2 transition-colors ${
+            activeTab === 'items'
+              ? 'border-blue-600 text-blue-600'
+              : 'border-transparent text-gray-600 hover:text-gray-900'
+          }`}
+        >
+          Items
+        </button>
+        <button
+          onClick={() => setActiveTab('extras')}
+          className={`px-4 py-2 font-medium border-b-2 transition-colors ${
+            activeTab === 'extras'
+              ? 'border-amber-600 text-amber-600'
+              : 'border-transparent text-gray-600 hover:text-gray-900'
+          }`}
+        >
+          Extras
+        </button>
+        <button
+          onClick={() => setActiveTab('services')}
+          className={`px-4 py-2 font-medium border-b-2 transition-colors ${
+            activeTab === 'services'
+              ? 'border-purple-600 text-purple-600'
+              : 'border-transparent text-gray-600 hover:text-gray-900'
+          }`}
+        >
+          Services
+        </button>
+      </div>
+
+      {/* Department Filter - Available for all tabs */}
+      <div className="flex items-center gap-4">
+        <div>
+          <label className="text-sm mr-2">Filter by department</label>
+          <select value={selectedDept ?? ''} onChange={(e) => setSelectedDept(e.target.value || null)} className="border px-2 py-1">
+            <option value="">All Departments</option>
+            {departments
+              .filter((d) => !String(d.code).includes(':')) // only top-level departments
+              .map((d) => (
+                <option key={d.code} value={d.code}>{d.name} ({d.code})</option>
+              ))}
+          </select>
+        </div>
+      </div>
+
+      {showForm && hasPermission('inventory_items.create') && activeTab === 'items' && (
         <div className="border rounded p-4 bg-gray-50 space-y-4">
           <h3 className="font-semibold">Create New Inventory Item</h3>
           {formError && <div className="text-sm text-red-600">{formError}</div>}
@@ -363,88 +431,106 @@ export default function InventoryPage() {
       {loading && <div className="text-sm text-muted-foreground">Loading inventory...</div>}
       {error && <div className="text-sm text-red-600">{error}</div>}
 
-      <div className="flex items-center gap-4">
-        <div>
-          <label className="text-sm mr-2">Filter by department</label>
-          <select value={selectedDept ?? ''} onChange={(e) => setSelectedDept(e.target.value || null)} className="border px-2 py-1">
-            <option value="">All Departments</option>
-            {departments
-              .filter((d) => !String(d.code).includes(':')) // only top-level departments
-              .map((d) => (
-                <option key={d.code} value={d.code}>{d.name} ({d.code})</option>
-              ))}
-          </select>
-        </div>
-      </div>
+      {/* Items Tab */}
+      {activeTab === 'items' && (
+        <>
+          <div className="overflow-x-auto">
+            <table className="w-full table-auto border-collapse">
+              <thead>
+                <tr className="text-left">
+                  <th className="p-2">Name</th>
+                  <th className="p-2">SKU</th>
+                  <th className="p-2">Category</th>
+                  <th className="p-2">Quantity</th>
+                  <th className="p-2">Price</th>
+                  <th className="p-2">Type</th>
+                  <th className="p-2">Actions</th>
+                </tr>
+              </thead>
+              <tbody>
+                {items.map((it) => (
+                  <tr key={it.id} className="border-t hover:bg-gray-50">
+                    <td className="p-2">
+                      <div className="font-medium">{it.name}</div>
+                    </td>
+                    <td className="p-2 text-xs text-muted-foreground">{it.sku}</td>
+                    <td className="p-2 text-sm">{it.category}</td>
+                    <td className="p-2 text-right">
+                      <span className="inline-block bg-blue-50 px-3 py-1 rounded font-mono text-sm">
+                        {formatQuantityWithUnit(it.quantity, getDisplayUnit(it.category, it.itemType))}
+                      </span>
+                    </td>
+                    <td className="p-2 font-medium">
+                      <Price amount={Number(it.unitPrice)} isMinor={false} />
+                    </td>
+                    <td className="p-2">
+                      {it.itemType === 'extra' ? (
+                        <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-purple-100 text-purple-800">
+                          Extra (Standalone)
+                        </span>
+                      ) : it.usedAsExtras && it.usedAsExtras.length > 0 ? (
+                        <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-blue-100 text-blue-800">
+                          Extra (From Inventory)
+                        </span>
+                      ) : (
+                        <span className="text-xs text-slate-400">Standard</span>
+                      )}
+                    </td>
+                    <td className="p-2 space-x-2">
+                      <Link href={`/inventory/${encodeURIComponent(it.id)}`} className="px-2 py-1 bg-sky-600 text-white rounded text-sm inline-block">Open</Link>
+                      {hasPermission('inventory_items.delete') && (
+                        <button
+                          onClick={() => handleDeleteInventoryItem(it.id)}
+                          className="px-2 py-1 bg-red-600 text-white rounded text-sm inline-flex items-center gap-1 hover:bg-red-700"
+                        >
+                          <Trash2 size={14} /> Delete
+                        </button>
+                      )}
+                      {it.usedAsExtras && it.usedAsExtras.length > 0 && (
+                        <button
+                          onClick={() => handleConvertToExtra(it)}
+                          className="px-2 py-1 bg-amber-600 text-white rounded text-sm inline-flex items-center gap-1 hover:bg-amber-700"
+                          title="Edit Extra"
+                        >
+                          <Zap size={14} /> Extra
+                        </button>
+                      )}
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        </>
+      )}
 
-      <div className="overflow-x-auto">
-        <table className="w-full table-auto border-collapse">
-          <thead>
-            <tr className="text-left">
-              <th className="p-2">Name</th>
-              <th className="p-2">SKU</th>
-              <th className="p-2">Category</th>
-              <th className="p-2">Quantity</th>
-              <th className="p-2">Price</th>
-              <th className="p-2">Type</th>
-              <th className="p-2">Actions</th>
-            </tr>
-          </thead>
-          <tbody>
-            {items.map((it) => (
-              <tr key={it.id} className="border-t hover:bg-gray-50">
-                <td className="p-2">
-                  <div className="font-medium">{it.name}</div>
-                </td>
-                <td className="p-2 text-xs text-muted-foreground">{it.sku}</td>
-                <td className="p-2 text-sm">{it.category}</td>
-                <td className="p-2 text-right">
-                  <span className="inline-block bg-blue-50 px-3 py-1 rounded font-mono text-sm">
-                    {formatQuantityWithUnit(it.quantity, getDisplayUnit(it.category, it.itemType))}
-                  </span>
-                </td>
-                <td className="p-2 font-medium">
-                  <Price amount={Number(it.unitPrice)} isMinor={false} />
-                </td>
-                <td className="p-2">
-                  {it.itemType === 'extra' ? (
-                    <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-purple-100 text-purple-800">
-                      Extra (Standalone)
-                    </span>
-                  ) : it.usedAsExtras && it.usedAsExtras.length > 0 ? (
-                    <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-blue-100 text-blue-800">
-                      Extra (From Inventory)
-                    </span>
-                  ) : (
-                    <span className="text-xs text-slate-400">Standard</span>
-                  )}
-                </td>
-                <td className="p-2 space-x-2">
-                  <Link href={`/inventory/${encodeURIComponent(it.id)}`} className="px-2 py-1 bg-sky-600 text-white rounded text-sm inline-block">Open</Link>
-                  {hasPermission('inventory_items.delete') && (
-                    <button
-                      onClick={() => handleDeleteInventoryItem(it.id)}
-                      className="px-2 py-1 bg-red-600 text-white rounded text-sm inline-flex items-center gap-1 hover:bg-red-700"
-                    >
-                      <Trash2 size={14} /> Delete
-                    </button>
-                  )}
-                  {it.usedAsExtras && it.usedAsExtras.length > 0 && (
-                    <button
-                      onClick={() => handleConvertToExtra(it)}
-                      className="px-2 py-1 bg-amber-600 text-white rounded text-sm inline-flex items-center gap-1 hover:bg-amber-700"
-                      title="Edit Extra"
-                    >
-                      <Zap size={14} /> Extra
-                    </button>
-                  )}
-                </td>
-              </tr>
-            ))}
-          </tbody>
-        </table>
-      </div>
-      {/* Transfer audit removed from inventory page to avoid movement artifact */}
+      {/* Extras Tab */}
+      {activeTab === 'extras' && (
+        <div className="text-sm text-gray-600">
+          Use the &quot;Add Extra&quot; button to create extras linked to inventory items.
+        </div>
+      )}
+
+      {/* Services Tab */}
+      {activeTab === 'services' && (
+        <div className="space-y-6">
+          {showForm && hasPermission('services.create') && (
+            <ServiceInventoryForm
+              departments={departments.filter((d) => !String(d.code).includes(':'))}
+              departmentId={selectedDept}
+              sections={selectedDept ? [{ id: selectedDept, name: 'Service' }] : []}
+              onServiceCreated={() => setShowForm(false)}
+            />
+          )}
+          {selectedDept ? (
+            <ServiceList departmentId={selectedDept} />
+          ) : (
+            <div className="p-4 bg-blue-50 border border-blue-200 rounded text-sm text-blue-700">
+              Select a department in the form above to create services, or use the filter below to view services for a specific department.
+            </div>
+          )}
+        </div>
+      )}
 
       {/* Extras Form Dialog */}
       <ExtrasFormDialog

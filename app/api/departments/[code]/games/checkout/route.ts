@@ -65,7 +65,11 @@ export async function POST(
         id: sessionId,
         section: { departmentId: department.id }
       },
-      include: { section: true, customer: true },
+      include: { 
+        section: true, 
+        customer: true,
+        service: true,
+      },
     });
 
     if (!session) {
@@ -96,7 +100,24 @@ export async function POST(
 
     // Create Order for the games (status: pending payment, ready for terminal checkout)
     // Amount is stored in cents (multiply by 100)
-    const totalInCents = Math.round(Number(session.totalAmount) * 100);
+    // Calculate total based on service pricing or session amount
+    let totalAmount = Number(session.totalAmount);
+    
+    if (session.service) {
+      // Calculate pricing from service
+      if (session.service.pricingModel === 'per_count') {
+        // Price per game
+        totalAmount = Number(session.service.pricePerCount) * session.gameCount;
+      } else if (session.service.pricingModel === 'per_time') {
+        // For per_time, use configured minutes or estimate
+        // Default: 15 minutes per game for pricing purposes
+        const minutesPerGame = 15;
+        const totalMinutes = session.gameCount * minutesPerGame;
+        totalAmount = Number(session.service.pricePerMinute) * totalMinutes;
+      }
+    }
+    
+    const totalInCents = Math.round(totalAmount * 100);
 
     const order = await prisma.order.create({
       data: {
@@ -114,11 +135,13 @@ export async function POST(
         status: 'completed',
         endedAt: new Date(),
         orderId: order.id,
+        totalAmount: totalAmount, // Store calculated amount
       },
       include: {
         customer: true,
         gameType: true,
         section: true,
+        service: true,
         order: true,
       },
     });
