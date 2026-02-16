@@ -9,6 +9,7 @@ import {
   DialogTitle,
 } from '@/components/ui/dialog';
 import { AlertCircle, ShoppingCart } from 'lucide-react';
+import { formatTablePrice } from '@/lib/formatters';
 
 interface GameCheckoutProps {
   open: boolean;
@@ -69,6 +70,18 @@ export function GameCheckout({
     }
   };
 
+  // Calculate amount in cents based on service pricing
+  let calculatedAmountCents = 0;
+  if (session.service && session.service.pricingModel === 'per_count') {
+    const priceInCents = Number(session.service.pricePerCount || 0) * 100;
+    calculatedAmountCents = Math.round(priceInCents * session.gameCount);
+  } else if (session.service && session.service.pricingModel === 'per_time') {
+    const minutesPerUnit = 15;
+    const totalMinutes = session.gameCount * minutesPerUnit;
+    const priceInCents = Number(session.service.pricePerMinute || 0) * 100;
+    calculatedAmountCents = Math.round(priceInCents * totalMinutes);
+  }
+
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent>
@@ -88,7 +101,7 @@ export function GameCheckout({
             <div className="flex justify-between text-sm">
               <span className="text-slate-700">Total Amount:</span>
               <span className="font-semibold text-lg text-green-600">
-                ${Number(session.totalAmount).toFixed(2)}
+                {formatTablePrice(calculatedAmountCents)}
               </span>
             </div>
           </div>

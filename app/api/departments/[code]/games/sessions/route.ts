@@ -82,6 +82,7 @@ export async function GET(
         customer: true,
         gameType: true,
         section: true,
+        service: true,
         order: true,
       },
       orderBy: { startedAt: 'desc' },

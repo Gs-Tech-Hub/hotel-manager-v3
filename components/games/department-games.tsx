@@ -15,6 +15,7 @@ import {
 import { Badge } from '@/components/ui/badge';
 import { Plus, RotateCcw } from 'lucide-react';
 import { toast } from 'sonner';
+import { formatTablePrice } from '@/lib/formatters';
 import { RegisterPlayer } from './register-player';
 import { StartGame } from './start-game';
 import { GameCheckout } from './game-checkout';
@@ -172,34 +173,91 @@ export function DepartmentGames({ departmentCode, departmentId }: DepartmentGame
                 <TableHeader>
                   <TableRow>
                     <TableHead>Player</TableHead>
-                    <TableHead>Game Type</TableHead>
-                    <TableHead>Games Count</TableHead>
-                    <TableHead>Total Amount</TableHead>
+                    <TableHead>Service</TableHead>
+                    <TableHead>Count</TableHead>
+                    <TableHead>Amount</TableHead>
                     <TableHead>Started</TableHead>
                     <TableHead>Actions</TableHead>
                   </TableRow>
                 </TableHeader>
                 <TableBody>
-                  {activeSessions.map((session) => (
-                    <TableRow key={session.id}>
-                      <TableCell>{`${session.customer.firstName} ${session.customer.lastName}`}</TableCell>
-                      <TableCell>{session.section.name}</TableCell>
-                      <TableCell>
-                        <Badge variant="outline">{session.gameCount}</Badge>
-                      </TableCell>
-                      <TableCell>${Number(session.totalAmount).toFixed(2)}</TableCell>
-                      <TableCell>{new Date(session.startedAt).toLocaleTimeString()}</TableCell>
-                      <TableCell>
-                        <Button
-                          size="sm"
-                          variant="default"
-                          onClick={() => handleCheckout(session)}
-                        >
-                          Checkout
-                        </Button>
-                      </TableCell>
-                    </TableRow>
-                  ))}
+                  {activeSessions.map((session) => {
+                    // Calculate amount in cents based on service pricing
+                    let calculatedAmountCents = 0;
+                    if (session.service && session.service.pricingModel === 'per_count') {
+                      // Price per count (e.g., per game)
+                      const priceInCents = Number(session.service.pricePerCount || 0) * 100;
+                      calculatedAmountCents = Math.round(priceInCents * session.gameCount);
+                    } else if (session.service && session.service.pricingModel === 'per_time') {
+                      // Price per time - estimate using gameCount * 15 minutes default
+                      const minutesPerUnit = 15;
+                      const totalMinutes = session.gameCount * minutesPerUnit;
+                      const priceInCents = Number(session.service.pricePerMinute || 0) * 100;
+                      calculatedAmountCents = Math.round(priceInCents * totalMinutes);
+                    }
+
+                    return (
+                      <TableRow key={session.id}>
+                        <TableCell className="font-medium">{`${session.customer.firstName} ${session.customer.lastName}`}</TableCell>
+                        <TableCell>{session.service?.name || session.section.name}</TableCell>
+                        <TableCell>
+                          <div className="flex items-center gap-2">
+                            <Badge variant="outline">{session.gameCount}</Badge>
+                            {session.service && (
+                              <Button
+                                size="sm"
+                                variant="ghost"
+                                onClick={async () => {
+                                  try {
+                                    const response = await fetch(
+                                      `/api/departments/${departmentCode}/games/sessions/${session.id}`,
+                                      {
+                                        method: 'PATCH',
+                                        headers: { 'Content-Type': 'application/json' },
+                                        body: JSON.stringify({ action: 'increment_game' }),
+                                      }
+                                    );
+                                    if (response.ok) {
+                                      const data = await response.json();
+                                      setActiveSessions(
+                                        activeSessions.map((s) =>
+                                          s.id === session.id ? data.data.session : s
+                                        )
+                                      );
+                                      toast.success('Count incremented');
+                                    } else {
+                                      toast.error('Failed to increment count');
+                                    }
+                                  } catch (error) {
+                                    console.error('Error incrementing count:', error);
+                                    toast.error('Error incrementing count');
+                                  }
+                                }}
+                                className="h-6 w-6 p-0"
+                              >
+                                <Plus className="h-3 w-3" />
+                              </Button>
+                            )}
+                          </div>
+                        </TableCell>
+                        <TableCell className="font-semibold">
+                          {formatTablePrice(calculatedAmountCents)}
+                        </TableCell>
+                        <TableCell className="text-sm text-gray-600">
+                          {new Date(session.startedAt).toLocaleTimeString()}
+                        </TableCell>
+                        <TableCell>
+                          <Button
+                            size="sm"
+                            variant="default"
+                            onClick={() => handleCheckout(session)}
+                          >
+                            Checkout
+                          </Button>
+                        </TableCell>
+                      </TableRow>
+                    );
+                  })}
                 </TableBody>
               </Table>
             </div>

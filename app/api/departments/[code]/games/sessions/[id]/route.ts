@@ -104,9 +104,9 @@ export async function PATCH(
     const session = await prisma.gameSession.findFirst({
       where: {
         id,
-        gameType: { departmentId: department.id }
+        section: { departmentId: department.id }
       },
-      include: { gameType: true },
+      include: { section: true },
     });
 
     if (!session) {
@@ -132,6 +132,8 @@ export async function PATCH(
         include: {
           customer: true,
           gameType: true,
+          service: true,
+          section: true,
           order: true,
         },
       });
