@@ -33,7 +33,7 @@ export default function InventoryPage() {
   const { hasPermission } = useAuth()
   const [items, setItems] = useState<InventoryItem[]>([])
   const [departments, setDepartments] = useState<Department[]>([])
-  const [selectedDept, setSelectedDept] = useState<string | null>(null)
+  const [selectedDept, setSelectedDept] = useState<string | undefined>(undefined)
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [showForm, setShowForm] = useState(false)
@@ -59,7 +59,7 @@ export default function InventoryPage() {
   }
   
 
-  const fetchItems = async (dept?: string | null) => {
+  const fetchItems = async (dept?: string) => {
     setLoading(true)
     setError(null)
     try {
@@ -206,7 +206,7 @@ export default function InventoryPage() {
     try {
       const params = new URLSearchParams(window.location.search)
       const dept = params.get('department')
-      if (dept) setSelectedDept(dept)
+      if (dept) setSelectedDept(dept as string)
     } catch (e) {
       // ignore
     }
@@ -308,7 +308,7 @@ export default function InventoryPage() {
       <div className="flex items-center gap-4">
         <div>
           <label className="text-sm mr-2">Filter by department</label>
-          <select value={selectedDept ?? ''} onChange={(e) => setSelectedDept(e.target.value || null)} className="border px-2 py-1">
+          <select value={selectedDept ?? ''} onChange={(e) => setSelectedDept(e.target.value || undefined)} className="border px-2 py-1">
             <option value="">All Departments</option>
             {departments
               .filter((d) => !String(d.code).includes(':')) // only top-level departments
