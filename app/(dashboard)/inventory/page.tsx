@@ -7,8 +7,11 @@ import { mapDeptCodeToCategory } from '@/lib/utils'
 import { getDisplayUnit, formatQuantityWithUnit } from '@/lib/unit-mapper'
 // avoid next/navigation useSearchParams here to prevent prerender/suspense issues
 import TransferAuditPanel from '@/components/departments/TransferAuditPanel'
+import { ServiceTransferPanel } from '@/components/departments/ServiceTransferPanel'
+import { ExtraTransferPanel } from '@/components/departments/ExtraTransferPanel'
+import { ExtrasList } from '@/components/departments/ExtrasList'
 import Price from '@/components/ui/Price'
-import { Plus, Trash2, Zap } from 'lucide-react'
+import { Plus, Trash2, Zap, ArrowRight } from 'lucide-react'
 import { ExtrasFormDialog } from '@/components/admin/ExtrasFormDialog'
 import { ServiceInventoryForm } from '@/components/admin/ServiceInventoryForm'
 import { ServiceList } from '@/components/admin/ServiceList'
@@ -29,11 +32,28 @@ type InventoryItem = {
   departmentExtraId?: string
 }
 
+type Extra = {
+  id: string
+  name: string
+  unit: string
+  price: number
+  sectionId?: string | null
+  section?: { id: string; name: string }
+  departmentExtras?: Array<{
+    id: string
+    quantity: number
+    reserved: number
+    sectionId?: string | null
+  }>
+}
+
 export default function InventoryPage() {
   const { hasPermission } = useAuth()
   const [items, setItems] = useState<InventoryItem[]>([])
+  const [extras, setExtras] = useState<Extra[]>([])
   const [departments, setDepartments] = useState<Department[]>([])
   const [selectedDept, setSelectedDept] = useState<string | undefined>(undefined)
+  const [sections, setSections] = useState<Array<{ id: string; name: string }>>([])
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [showForm, setShowForm] = useState(false)
@@ -45,6 +65,8 @@ export default function InventoryPage() {
   const [extrasFormOpen, setExtrasFormOpen] = useState(false)
   const [selectedItemForExtra, setSelectedItemForExtra] = useState<InventoryItem | null>(null)
   const [activeTab, setActiveTab] = useState<'items' | 'extras' | 'services'>('items')
+  const [showExtraTransferPanel, setShowExtraTransferPanel] = useState(false)
+  const [showServiceTransferPanel, setShowServiceTransferPanel] = useState(false)
 
   const generateSku = (cat: string) => {
     if (!cat) return ''
@@ -92,6 +114,29 @@ export default function InventoryPage() {
     } catch (err: any) {
       console.error('Failed to load inventory', err)
       setError(err?.message || 'Failed to load inventory')
+    } finally {
+      setLoading(false)
+    }
+  }
+
+  const fetchExtras = async (dept?: string) => {
+    if (!dept) {
+      setExtras([])
+      return
+    }
+    
+    setLoading(true)
+    try {
+      const res = await fetch(`/api/departments/${encodeURIComponent(dept)}/extras?level=department`)
+      if (!res.ok) throw new Error(`Failed to fetch extras (${res.status})`)
+      const json = await res.json()
+      if (!json?.success) throw new Error(json?.error || 'Invalid response')
+      
+      const fetched: any[] = json.data?.extras || []
+      setExtras(fetched)
+    } catch (err: any) {
+      console.error('Failed to load extras', err)
+      setError(err?.message || 'Failed to load extras')
     } finally {
       setLoading(false)
     }
@@ -195,9 +240,28 @@ export default function InventoryPage() {
     }
   }
 
+  const fetchSections = async (departmentCode: string) => {
+    try {
+      const res = await fetch(`/api/departments/${encodeURIComponent(departmentCode)}/sections`)
+      if (!res.ok) throw new Error('Failed to fetch sections')
+      const json = await res.json()
+      const data = json.data?.sections || json.sections || []
+      setSections(data)
+    } catch (err) {
+      console.warn('Could not load sections for department', err)
+      setSections([])
+    }
+  }
+
   useEffect(() => {
     fetchDepartments()
     fetchItems(selectedDept)
+    fetchExtras(selectedDept)
+    if (selectedDept) {
+      fetchSections(selectedDept)
+    } else {
+      setSections([])
+    }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [selectedDept])
 
@@ -266,6 +330,28 @@ export default function InventoryPage() {
               <Link href={selectedDept ? `/inventory/transfer?source=${encodeURIComponent(selectedDept)}` : '#'} className={`px-3 py-1 border rounded text-sm mr-2 ${!selectedDept ? 'opacity-60 pointer-events-none' : ''}`}>Transfer</Link>
               <Link href="/inventory/movements" className="px-3 py-1 border rounded text-sm">Movements</Link>
             </>
+          )}
+          {activeTab === 'extras' && (
+            <button
+              onClick={() => setShowExtraTransferPanel(!showExtraTransferPanel)}
+              disabled={!selectedDept || sections.length === 0}
+              className={`px-3 py-1 border rounded text-sm mr-2 inline-flex items-center gap-2 ${
+                !selectedDept || sections.length === 0 ? 'opacity-60 cursor-not-allowed' : 'hover:bg-gray-100'
+              }`}
+            >
+              <ArrowRight size={14} /> Transfer
+            </button>
+          )}
+          {activeTab === 'services' && (
+            <button
+              onClick={() => setShowServiceTransferPanel(!showServiceTransferPanel)}
+              disabled={!selectedDept || sections.length === 0}
+              className={`px-3 py-1 border rounded text-sm mr-2 inline-flex items-center gap-2 ${
+                !selectedDept || sections.length === 0 ? 'opacity-60 cursor-not-allowed' : 'hover:bg-gray-100'
+              }`}
+            >
+              <ArrowRight size={14} /> Transfer
+            </button>
           )}
         </div>
       </div>
@@ -506,8 +592,33 @@ export default function InventoryPage() {
 
       {/* Extras Tab */}
       {activeTab === 'extras' && (
-        <div className="text-sm text-gray-600">
-          Use the &quot;Add Extra&quot; button to create extras linked to inventory items.
+        <div className="space-y-6">
+          {showExtraTransferPanel && selectedDept && sections.length > 0 && (
+            <ExtraTransferPanel
+              departmentCode={selectedDept}
+              sections={sections}
+              onTransferComplete={() => {
+                setShowExtraTransferPanel(false)
+                // Extras list will auto-refresh
+              }}
+            />
+          )}
+          {selectedDept ? (
+            <ExtrasList
+              departmentCode={selectedDept}
+              extras={extras}
+              loading={loading}
+              onDelete={() => {
+                // Refresh extras list
+                fetchExtras(selectedDept)
+              }}
+              onTransfer={() => setShowExtraTransferPanel(true)}
+            />
+          ) : (
+            <div className="p-4 bg-blue-50 border border-blue-200 rounded text-sm text-blue-700">
+              Select a department in the form above to view extras, or use the filter below to view extras for a specific department.
+            </div>
+          )}
         </div>
       )}
 
@@ -518,12 +629,22 @@ export default function InventoryPage() {
             <ServiceInventoryForm
               departments={departments.filter((d) => !String(d.code).includes(':'))}
               departmentId={selectedDept}
-              sections={selectedDept ? [{ id: selectedDept, name: 'Service' }] : []}
+              sections={sections}
               onServiceCreated={() => setShowForm(false)}
             />
           )}
+          {showServiceTransferPanel && selectedDept && sections.length > 0 && (
+            <ServiceTransferPanel
+              departmentCode={selectedDept}
+              sections={sections}
+              onTransferComplete={() => {
+                setShowServiceTransferPanel(false)
+                // Refresh service list after transfer
+              }}
+            />
+          )}
           {selectedDept ? (
-            <ServiceList departmentId={selectedDept} />
+            <ServiceList departmentCode={selectedDept} />
           ) : (
             <div className="p-4 bg-blue-50 border border-blue-200 rounded text-sm text-blue-700">
               Select a department in the form above to create services, or use the filter below to view services for a specific department.

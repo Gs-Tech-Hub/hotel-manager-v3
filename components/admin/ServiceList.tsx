@@ -18,33 +18,39 @@ type Service = {
 }
 
 type ServiceListProps = {
-  departmentId: string
+  departmentId?: string
+  departmentCode?: string
   onDeleteSuccess?: () => void
 }
 
-export function ServiceList({ departmentId, onDeleteSuccess }: ServiceListProps) {
+export function ServiceList({ departmentId, departmentCode, onDeleteSuccess }: ServiceListProps) {
   const [services, setServices] = useState<Service[]>([])
   const [loading, setLoading] = useState(true)
   const [deleting, setDeleting] = useState<string | null>(null)
   const { toast } = useToast()
 
+  const code = departmentCode || departmentId
+
   useEffect(() => {
+    if (!code) {
+      setServices([])
+      setLoading(false)
+      return
+    }
     fetchServices()
-  }, [departmentId])
+  }, [code])
 
   const fetchServices = async () => {
+    if (!code) return
     setLoading(true)
     try {
-      // Fetch all services (this would need a dedicated endpoint)
-      const response = await fetch(`/api/services?departmentId=${departmentId}`)
+      // Use the department-specific endpoint
+      const response = await fetch(`/api/departments/${encodeURIComponent(code)}/services?level=all`)
       if (response.ok) {
         const data = await response.json()
         setServices(data.data?.services || [])
       } else {
-        toast({ 
-          title: 'Info', 
-          description: 'Services endpoint not yet implemented. Use form to create services.'
-        })
+        console.warn('Failed to fetch services')
       }
     } catch (error) {
       console.error('Failed to fetch services:', error)
@@ -55,10 +61,11 @@ export function ServiceList({ departmentId, onDeleteSuccess }: ServiceListProps)
 
   const handleDelete = async (serviceId: string) => {
     if (!confirm('Are you sure you want to delete this service?')) return
+    if (!code) return
 
     setDeleting(serviceId)
     try {
-      const response = await fetch(`/api/services/${serviceId}`, {
+      const response = await fetch(`/api/departments/${encodeURIComponent(code)}/services/${serviceId}`, {
         method: 'DELETE',
       })
 
