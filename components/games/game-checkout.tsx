@@ -58,7 +58,7 @@ export function GameCheckout({
       onCheckoutComplete(data.data);
       onOpenChange(false);
 
-      // Redirect to terminal checkout if redirectUrl is provided
+      // Redirect to the terminal-specific checkout if terminal is assigned
       if (data.data.redirectUrl) {
         router.push(data.data.redirectUrl);
       }
@@ -106,13 +106,26 @@ export function GameCheckout({
             </div>
           </div>
 
+          <div className="rounded-md bg-sky-50 border border-sky-200 p-3 space-y-2">
+            <div className="text-sm">
+              <span className="text-slate-700 font-medium">Section:</span>
+              <span className="text-slate-900 ml-2">{session.section?.name}</span>
+            </div>
+            {session.service && (
+              <div className="text-sm">
+                <span className="text-slate-700 font-medium">Service:</span>
+                <span className="text-slate-900 ml-2">{session.service.name}</span>
+              </div>
+            )}
+          </div>
+
           <div className="rounded-md bg-amber-50 border border-amber-200 p-3 flex gap-3">
             <AlertCircle className="h-5 w-5 text-amber-600 flex-shrink-0 mt-0.5" />
             <div className="text-sm text-amber-800">
               <p className="font-medium mb-1">Payment will be processed</p>
               <p>
-                This will create an order and open the terminal checkout system to accept
-                payment.
+                This will prepare the order for payment. The terminal checkout system will
+                handle tax, discounts, and payment processing.
               </p>
             </div>
           </div>

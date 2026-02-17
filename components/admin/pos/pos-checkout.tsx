@@ -24,6 +24,7 @@ export default function POSCheckoutShell({ terminalId }: { terminalId?: string }
   const searchParams = useSearchParams()
   const terminalIdFromQuery = searchParams.get('terminal')
   const addToOrderId = searchParams.get('addToOrder')
+  const existingOrderId = searchParams.get('orderId')
   
   const [category, setCategory] = useState<string | null>(null)
   const [cart, setCart] = useState<CartLine[]>([])
@@ -48,11 +49,14 @@ export default function POSCheckoutShell({ terminalId }: { terminalId?: string }
   const [showEmployeeTargeting, setShowEmployeeTargeting] = useState(false)
   const [selectedEmployee, setSelectedEmployee] = useState<any | null>(null)
   const [isChargingEmployee, setIsChargingEmployee] = useState(false)
+  const [existingOrder, setExistingOrder] = useState<any | null>(null)
+  const [loadingExistingOrder, setLoadingExistingOrder] = useState(false)
 
   const categories = [
     { id: 'foods', name: 'Foods' },
     { id: 'drinks', name: 'Drinks' },
     { id: 'retail', name: 'Retail' },
+    { id: 'services', name: 'Services' },
   ]
 
   const handleAdd = (p: POSProduct) => {
@@ -331,6 +335,37 @@ export default function POSCheckoutShell({ terminalId }: { terminalId?: string }
     })()
   }
 
+  // Load existing order if orderId is provided (games/services checkout)
+  useEffect(() => {
+    if (!existingOrderId) return
+
+    let mounted = true
+    setLoadingExistingOrder(true)
+
+    fetch(`/api/orders/${existingOrderId}`, { credentials: 'include' })
+      .then((r) => r.json())
+      .then((json) => {
+        if (!mounted) return
+        if (json?.success && json.data) {
+          setExistingOrder(json.data)
+          // Skip directly to payment for existing orders
+          setShowPayment(true)
+        } else {
+          setTerminalError('Failed to load order for payment')
+        }
+      })
+      .catch((err) => {
+        console.error('Failed to load existing order:', err)
+        if (!mounted) return
+        setTerminalError('Failed to load order for payment')
+      })
+      .finally(() => { if (mounted) setLoadingExistingOrder(false) })
+
+    return () => {
+      mounted = false
+    }
+  }, [existingOrderId])
+
   // Fetch tax settings on mount
   useEffect(() => {
     const fetchTaxSettings = async () => {
@@ -575,18 +610,57 @@ export default function POSCheckoutShell({ terminalId }: { terminalId?: string }
 
   return (
     <div className="space-y-4">
-      <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
-        <div className="lg:col-span-2 space-y-4">
-          {loadingTerminal && <div className="text-sm text-muted-foreground">Loading terminal...</div>}
-          {terminalError && <div className="text-sm text-red-600 p-2 bg-red-50 border border-red-200 rounded">{terminalError}</div>}
-          {loadingProducts && <div className="text-sm text-muted-foreground">Loading menu...</div>}
+      {/* If we have an existing order (from games/services checkout), skip straight to payment */}
+      {existingOrderId && existingOrder && (
+        <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
+          <div className="lg:col-span-2">
+            <div className="p-4 bg-blue-50 border border-blue-200 rounded">
+              <h3 className="text-lg font-semibold mb-2">Payment Processing</h3>
+              <p className="text-sm text-gray-700 mb-3">
+                Processing order for payment. This order was created externally and is ready for payment.
+              </p>
+              <div className="text-sm space-y-1">
+                <div><strong>Order ID:</strong> {existingOrder.id}</div>
+                <div><strong>Items:</strong> {existingOrder.lines?.length || 0}</div>
+                <div><strong>Amount:</strong> {formatTablePrice(existingOrder.totalAmountCents || 0)}</div>
+              </div>
+            </div>
+          </div>
+          <div>
+            {/* Only show payment UI when explicitly requested */}
+            {showPayment && (
+              <POSPayment
+                total={existingOrder.totalAmountCents || 0}
+                onComplete={handlePaymentComplete}
+                onCancel={() => setShowPayment(false)}
+              />
+            )}
+            {!showPayment && (
+              <button
+                onClick={() => setShowPayment(true)}
+                className="w-full bg-green-600 hover:bg-green-700 text-white font-semibold py-3 px-4 rounded"
+              >
+                Process Payment
+              </button>
+            )}
+          </div>
+        </div>
+      )}
 
-          {departmentSection && (
-            <div className="flex items-center gap-3 p-3 bg-blue-50 border border-blue-200 rounded">
-              <div>
-                <div className="text-sm font-medium text-gray-700">Section</div>
-                <div className="text-lg font-semibold text-gray-900">{departmentSection.name}</div>
-                <div className="text-xs text-gray-500">{departmentSection.departmentName}</div>
+      {/* Regular POS checkout flow - only show if no existing order */}
+      {!existingOrderId && (
+        <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
+          <div className="lg:col-span-2 space-y-4">
+            {loadingTerminal && <div className="text-sm text-muted-foreground">Loading terminal...</div>}
+            {terminalError && <div className="text-sm text-red-600 p-2 bg-red-50 border border-red-200 rounded">{terminalError}</div>}
+            {loadingProducts && <div className="text-sm text-muted-foreground">Loading menu...</div>}
+
+            {departmentSection && (
+              <div className="flex items-center gap-3 p-3 bg-blue-50 border border-blue-200 rounded">
+                <div>
+                  <div className="text-sm font-medium text-gray-700">Section</div>
+                  <div className="text-lg font-semibold text-gray-900">{departmentSection.name}</div>
+                  <div className="text-xs text-gray-500">{departmentSection.departmentName}</div>
               </div>
             </div>
           )}
@@ -597,7 +671,7 @@ export default function POSCheckoutShell({ terminalId }: { terminalId?: string }
             const source = products
             let displayed = source || []
             if (category) {
-              const mapCategoryToType: Record<string, string> = { foods: 'food', drinks: 'drink', retail: 'retail' }
+              const mapCategoryToType: Record<string, string> = { foods: 'food', drinks: 'drink', retail: 'retail', services: 'service' }
               const t = mapCategoryToType[category]
               if (t) {
                 displayed = source.filter((p: any) => {
@@ -784,6 +858,7 @@ export default function POSCheckoutShell({ terminalId }: { terminalId?: string }
           </div>
         </div>
       </div>
+      )}
 
       {/* Employee Targeting Modal - SINGLE ENTRY POINT for payment flow */}
       {showEmployeeTargeting && (
@@ -947,6 +1022,7 @@ export default function POSCheckoutShell({ terminalId }: { terminalId?: string }
 
       {showPayment && <POSPayment total={estimatedTotal} onComplete={handlePaymentComplete} onCancel={() => setShowPayment(false)} isProcessing={isProcessingPayment} />}
       {receipt && <POSReceipt receipt={receipt} onClose={() => setReceipt(null)} />}
+      )
     </div>
   )
 }

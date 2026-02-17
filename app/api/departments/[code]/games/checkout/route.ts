@@ -66,7 +66,7 @@ export async function POST(
         section: { departmentId: department.id }
       },
       include: { 
-        section: true, 
+        section: true,
         customer: true,
         service: true,
       },
@@ -119,6 +119,7 @@ export async function POST(
     
     const totalInCents = Math.round(totalAmount * 100);
 
+    // Create order with service as order line (don't add to inventory items)
     const order = await prisma.order.create({
       data: {
         customerId: session.customerId,
@@ -126,7 +127,50 @@ export async function POST(
         total: totalInCents,
         orderStatus: 'Pending Payment',
       },
+      include: {
+        customer: true,
+        paymentType: true,
+      },
     });
+
+    // Find terminal that matches this section
+    // Match terminal by section ID - the terminal ID is the section ID
+    const terminal = {
+      id: session.sectionId,
+      name: session.section.name,
+      departmentCode: department.code,
+      status: 'online',
+    };
+
+    console.log('[Games Checkout] Terminal matched to section:', {
+      departmentId: department.id,
+      departmentCode: department.code,
+      sectionId: session.sectionId,
+      sectionName: session.section.name,
+      terminalId: terminal.id,
+    });
+
+    // Calculate game statistics for this section
+    const gameStats = await prisma.gameSession.groupBy({
+      by: ['status'],
+      where: { sectionId: session.sectionId },
+      _count: true,
+    });
+
+    const stats = {
+      totalGames: 0,
+      activeGames: 0,
+      concludedGames: 0,
+    };
+
+    for (const stat of gameStats) {
+      stats.totalGames += stat._count;
+      if (stat.status === 'active') {
+        stats.activeGames = stat._count;
+      } else if (stat.status === 'completed') {
+        stats.concludedGames = stat._count;
+      }
+    }
 
     // Update game session with the order reference
     const updatedSession = await prisma.gameSession.update({
@@ -146,27 +190,56 @@ export async function POST(
       },
     });
 
+    // Build redirect URL with proper terminal routing
+    // Redirect to the terminal that matches this section
+    // Use department code and section name in path, with section ID as terminal query param
+    let redirectUrl = '/pos-terminals';
+    if (terminal) {
+      // Route format: /pos-terminals/[section-name]/checkout?terminal=[section-id]
+      // The orderId is stored in the gameSession, NOT passed as a query parameter
+      const sectionName = terminal.name.toLowerCase().replace(/\s+/g, '-');
+      redirectUrl = `/pos-terminals/${sectionName}/checkout?terminal=${terminal.id}`;
+      console.log('[Games Checkout] Using terminal redirect:', {
+        terminalId: terminal.id,
+        terminalName: terminal.name,
+        sectionName: sectionName,
+        redirectUrl,
+      });
+    } else {
+      console.log('[Games Checkout] No terminal found, using default redirect:', redirectUrl);
+    }
+
     // Return order data formatted for terminal checkout
     return NextResponse.json(
       successResponse({
         data: {
           orderId: order.id,
-          redirectUrl: `/pos-terminals/default/checkout?orderId=${order.id}`,
+          terminalId: terminal?.id,
+          terminalName: terminal?.name,
+          sectionId: session.sectionId,
+          sectionName: session.section.name,
+          departmentId: department.id,
+          departmentCode: departmentCode,
+          redirectUrl: redirectUrl,
           session: updatedSession,
+          stats: stats,
           order: {
             id: order.id,
             customerId: session.customerId,
             customerName: `${session.customer.firstName} ${session.customer.lastName}`,
             gameCount: session.gameCount,
-            gameType: updatedSession.section.name, // Use section name as game type
-            sectionName: updatedSession.section.name,
-            amount: Number(session.totalAmount),
+            serviceName: session.service?.name || session.section.name,
+            sectionName: session.section.name,
             amountInCents: totalInCents,
             paymentTypeId: paymentType.id,
             status: order.orderStatus,
-            message: `Ready for checkout: ${session.gameCount} ${updatedSession.section.name} games`,
+            message: `Ready for payment: ${session.gameCount} ${session.service?.name || session.section.name} session(s)`,
+            // Support for tax and discount application at POS terminal
+            taxSupport: true,
+            discountSupport: true,
+            // Order preparation for terminal - no inventory items added
+            preparationNote: 'Service order - counter already incremented. Prepare for payment only.',
           },
-          sectionId: resolvedSectionId,
         },
       }),
       { status: 200 }
