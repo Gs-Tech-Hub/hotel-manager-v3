@@ -92,7 +92,7 @@ export default function POSCheckoutShell({ terminalId }: { terminalId?: string }
       productId: p.id,
       productName: p.name,
       quantity: 1,
-      unitPrice: p.price,
+      unitPrice: p.price,  // Price in cents
       type: p.type,
     }
     

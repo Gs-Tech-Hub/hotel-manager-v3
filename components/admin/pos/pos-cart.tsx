@@ -10,6 +10,13 @@ export interface CartLine {
   quantity: number
   unitPrice: number
   type?: string
+  serviceData?: {    // Service-specific pricing details
+    id: string
+    pricingModel: 'per_count' | 'per_time'
+    pricePerCount: number
+    pricePerMinute: number
+    description?: string
+  }
 }
 
 export function POSCart({ items, onRemove, onQty }: { items: CartLine[]; onRemove: (id: string) => void; onQty: (id: string, qty: number) => void }) {

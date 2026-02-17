@@ -1,12 +1,13 @@
 import { NextRequest, NextResponse } from 'next/server';
+import { Decimal } from '@prisma/client/runtime/library';
 import { prisma } from '@/lib/auth/prisma';
 import { successResponse, errorResponse, ErrorCodes } from '@/lib/api-response';
 import { extractUserContext } from '@/lib/user-context';
 
 /**
  * POST /api/departments/[code]/games/checkout
- * Checkout and create order for games using existing Order/Payment system
- * Returns the order data that can be passed to the terminal/POS checkout
+ * End game session and redirect to payment
+ * Order was created when game started, now just prepare for payment
  */
 export async function POST(
   request: NextRequest,
@@ -49,12 +50,19 @@ export async function POST(
     }
 
     const body = await request.json();
-    const { sessionId } = body;
+    const { sessionId, terminalId } = body;
 
     // Validation
     if (!sessionId) {
       return NextResponse.json(
         errorResponse(ErrorCodes.BAD_REQUEST, 'Session ID is required'),
+        { status: 400 }
+      );
+    }
+
+    if (!terminalId) {
+      return NextResponse.json(
+        errorResponse(ErrorCodes.BAD_REQUEST, 'Terminal ID is required'),
         { status: 400 }
       );
     }
@@ -86,171 +94,149 @@ export async function POST(
       );
     }
 
-    // Get default payment type for checkout (use cash as default)
-    const paymentType = await prisma.paymentType.findFirst({
-      where: { type: 'cash' },
+    // Find the OrderHeader for this game session
+    // Query by customerId and look for order with game session context
+    // OrderHeader notes field contains "Game session started"
+    const orderHeader = await prisma.orderHeader.findFirst({
+      where: {
+        customerId: session.customerId,
+        notes: { contains: 'Game session started' },
+      },
+      include: {
+        customer: true,
+      },
     });
 
-    if (!paymentType) {
+    if (!orderHeader) {
       return NextResponse.json(
-        errorResponse(ErrorCodes.NOT_FOUND, 'Default cash payment type not configured. Please contact admin.'),
+        errorResponse(ErrorCodes.NOT_FOUND, 'Order not found for this game session'),
         { status: 404 }
       );
     }
 
-    // Create Order for the games (status: pending payment, ready for terminal checkout)
-    // Amount is stored in cents (multiply by 100)
-    // Calculate total based on service pricing or session amount
-    let totalAmount = Number(session.totalAmount);
+    // Verify the order belongs to the right department via OrderDepartment
+    const orderDept = await prisma.orderDepartment.findFirst({
+      where: {
+        orderHeaderId: orderHeader.id,
+        departmentId: department.id,
+      },
+    });
+
+    if (!orderDept) {
+      return NextResponse.json(
+        errorResponse(ErrorCodes.FORBIDDEN, 'Order does not belong to this department'),
+        { status: 403 }
+      );
+    }
+
+    // Final price calculation with current game count
+    let totalAmount = new Decimal(session.totalAmount || 0);
     
     if (session.service) {
-      // Calculate pricing from service
-      if (session.service.pricingModel === 'per_count') {
+      // Recalculate pricing from service based on final game count
+      if (session.service.pricingModel === 'per_count' && session.service.pricePerCount) {
         // Price per game
-        totalAmount = Number(session.service.pricePerCount) * session.gameCount;
-      } else if (session.service.pricingModel === 'per_time') {
-        // For per_time, use configured minutes or estimate
-        // Default: 15 minutes per game for pricing purposes
+        totalAmount = new Decimal(session.service.pricePerCount).times(session.gameCount);
+      } else if (session.service.pricingModel === 'per_time' && session.service.pricePerMinute) {
+        // For per_time, calculate based on game count
         const minutesPerGame = 15;
         const totalMinutes = session.gameCount * minutesPerGame;
-        totalAmount = Number(session.service.pricePerMinute) * totalMinutes;
+        totalAmount = new Decimal(session.service.pricePerMinute).times(totalMinutes);
       }
     }
-    
-    const totalInCents = Math.round(totalAmount * 100);
 
-    // Create order with service as order line (don't add to inventory items)
-    const order = await prisma.order.create({
+    // Convert Decimal to cents as integer for database
+    const totalInCents = Math.round(totalAmount.toNumber() * 100);
+
+    // Recalculate tax
+    let taxRate = 0;
+    try {
+      const taxSettings = await (prisma as any).taxSettings.findFirst();
+      if (taxSettings) {
+        taxRate = taxSettings.taxRate ?? 0;
+      }
+    } catch (err) {
+      console.warn('TaxSettings fetch failed, using default tax rate');
+    }
+
+    const taxCents = Math.round(totalInCents * (taxRate / 100));
+    const finalTotalCents = totalInCents + taxCents;
+
+    // Update order header with final totals
+    const updatedOrderHeader = await prisma.orderHeader.update({
+      where: { id: orderHeader.id },
       data: {
-        customerId: session.customerId,
-        paymentTypeId: paymentType.id,
-        total: totalInCents,
-        orderStatus: 'Pending Payment',
+        subtotal: totalInCents,
+        tax: taxCents,
+        total: finalTotalCents,
       },
       include: {
         customer: true,
-        paymentType: true,
       },
     });
 
-    // Find terminal that matches this section
-    // Match terminal by section ID - the terminal ID is the section ID
-    const terminal = {
-      id: session.sectionId,
-      name: session.section.name,
-      departmentCode: department.code,
-      status: 'online',
-    };
-
-    console.log('[Games Checkout] Terminal matched to section:', {
-      departmentId: department.id,
-      departmentCode: department.code,
-      sectionId: session.sectionId,
-      sectionName: session.section.name,
-      terminalId: terminal.id,
+    // Update order line with final pricing
+    await prisma.orderLine.updateMany({
+      where: { orderHeaderId: orderHeader.id },
+      data: {
+        unitPrice: totalInCents,
+        lineTotal: totalInCents,
+      },
     });
 
-    // Calculate game statistics for this section
-    const gameStats = await prisma.gameSession.groupBy({
-      by: ['status'],
-      where: { sectionId: session.sectionId },
-      _count: true,
-    });
-
-    const stats = {
-      totalGames: 0,
-      activeGames: 0,
-      concludedGames: 0,
-    };
-
-    for (const stat of gameStats) {
-      stats.totalGames += stat._count;
-      if (stat.status === 'active') {
-        stats.activeGames = stat._count;
-      } else if (stat.status === 'completed') {
-        stats.concludedGames = stat._count;
-      }
-    }
-
-    // Update game session with the order reference
+    // Update game session to mark as completed
     const updatedSession = await prisma.gameSession.update({
       where: { id: sessionId },
       data: {
         status: 'completed',
         endedAt: new Date(),
-        orderId: order.id,
-        totalAmount: totalAmount, // Store calculated amount
+        totalAmount: totalAmount,
       },
       include: {
         customer: true,
         gameType: true,
         section: true,
         service: true,
-        order: true,
       },
     });
 
-    // Build redirect URL with proper terminal routing
-    // Redirect to the terminal that matches this section
-    // Use department code and section name in path, with section ID as terminal query param
-    let redirectUrl = '/pos-terminals';
-    if (terminal) {
-      // Route format: /pos-terminals/[section-name]/checkout?terminal=[section-id]
-      // The orderId is stored in the gameSession, NOT passed as a query parameter
-      const sectionName = terminal.name.toLowerCase().replace(/\s+/g, '-');
-      redirectUrl = `/pos-terminals/${sectionName}/checkout?terminal=${terminal.id}`;
-      console.log('[Games Checkout] Using terminal redirect:', {
-        terminalId: terminal.id,
-        terminalName: terminal.name,
-        sectionName: sectionName,
-        redirectUrl,
-      });
-    } else {
-      console.log('[Games Checkout] No terminal found, using default redirect:', redirectUrl);
-    }
+    // Prepare order data for frontend payment processing
 
-    // Return order data formatted for terminal checkout
-    // Include service details for price calculation in cart
+    console.log('[Games Checkout] Game session completed, ready for payment:', {
+      sessionId: sessionId,
+      orderId: orderHeader.id,
+      gameCount: session.gameCount,
+      totalAmount: totalAmount,
+      terminalId,
+    });
+
+    // Build redirect URL to terminal checkout with order ID
+    const terminalCheckoutUrl = `/pos-terminals/${session.section.name.toLowerCase().replace(/\s+/g, '-')}/checkout?terminal=${terminalId}&addToOrder=${orderHeader.id}`;
+
+    // Return order data and redirect URL for payment processing
     return NextResponse.json(
       successResponse({
         data: {
-          orderId: order.id,
-          terminalId: terminal?.id,
-          terminalName: terminal?.name,
-          sectionId: session.sectionId,
-          sectionName: session.section.name,
-          departmentId: department.id,
-          departmentCode: departmentCode,
-          redirectUrl: redirectUrl,
+          orderId: orderHeader.id,
+          orderNumber: orderHeader.orderNumber,
+          terminalId: terminalId,
+          checkoutUrl: terminalCheckoutUrl,
           session: updatedSession,
-          stats: stats,
-          // Service information for cart to calculate prices
-          service: session.service ? {
-            id: session.service.id,
-            name: session.service.name,
-            pricingModel: session.service.pricingModel,
-            pricePerCount: Number(session.service.pricePerCount),
-            pricePerMinute: Number(session.service.pricePerMinute),
-            description: session.service.description,
-          } : null,
-          // Count of games for cart quantity
           gameCount: session.gameCount,
           order: {
-            id: order.id,
+            id: orderHeader.id,
+            orderNumber: orderHeader.orderNumber,
             customerId: session.customerId,
             customerName: `${session.customer.firstName} ${session.customer.lastName}`,
             gameCount: session.gameCount,
             serviceName: session.service?.name || session.section.name,
             sectionName: session.section.name,
-            amountInCents: totalInCents,
-            paymentTypeId: paymentType.id,
-            status: order.orderStatus,
-            message: `Ready for payment: ${session.gameCount} ${session.service?.name || session.section.name} session(s)`,
-            // Support for tax and discount application at POS terminal
-            taxSupport: true,
-            discountSupport: true,
-            // Order preparation for terminal - no inventory items added
-            preparationNote: 'Service order - counter already incremented. Prepare for payment only.',
+            subtotal: totalInCents,
+            tax: taxCents,
+            total: finalTotalCents,
+            status: orderHeader.status,
+            paymentStatus: orderHeader.paymentStatus,
+            message: `Game session completed. Ready for payment: ${session.gameCount} ${session.service?.name || session.section.name} session(s)`,
           },
         },
       }),

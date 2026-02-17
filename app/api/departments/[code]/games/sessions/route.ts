@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
+import { Decimal } from '@prisma/client/runtime/library';
 import { prisma } from '@/lib/auth/prisma';
 import { successResponse, errorResponse, ErrorCodes } from '@/lib/api-response';
 import { extractUserContext } from '@/lib/user-context';
@@ -247,8 +248,110 @@ export async function POST(
       },
     });
 
+    // Create order for this game session
+    // Calculate initial price (for one game initially)
+    let initialPrice = 0;
+    const service = session.service;
+    if (service) {
+      if (service.pricingModel === 'per_count') {
+        initialPrice = Number(service.pricePerCount);
+      } else if (service.pricingModel === 'per_time') {
+        // For per_time, estimate price for one game (15 minutes default)
+        initialPrice = Number(service.pricePerMinute) * 15;
+      }
+    }
+
+    const initialPriceInCents = Math.round(initialPrice * 100);
+
+    // Generate order number
+    const orderNumber = `ORD-${Date.now()}-${Math.random().toString(36).substr(2, 9).toUpperCase()}`;
+
+    // Get tax settings
+    let taxRate = 0;
+    try {
+      const taxSettings = await (prisma as any).taxSettings.findFirst();
+      if (taxSettings) {
+        taxRate = taxSettings.taxRate ?? 0;
+      }
+    } catch (err) {
+      console.warn('TaxSettings fetch failed, using default tax rate');
+    }
+
+    const taxCents = Math.round(initialPriceInCents * (taxRate / 100));
+    const totalCents = initialPriceInCents + taxCents;
+
+    // Create order header using proper structure matching OrderHeader schema
+    const orderHeader = await prisma.orderHeader.create({
+      data: {
+        orderNumber,
+        customerId,
+        status: 'fulfilled', // Game is being fulfilled as it's being played
+        paymentStatus: 'unpaid', // Will be paid at checkout
+        subtotal: initialPriceInCents,
+        discountTotal: 0,
+        tax: taxCents,
+        total: totalCents,
+        notes: `Game session started - ${service?.name || 'Game Session'}`,
+        createdBy: ctx.userId,
+      } as any,
+    });
+
+    // Create order line for the game service
+    await prisma.orderLine.create({
+      data: {
+        lineNumber: 1,
+        orderHeaderId: orderHeader.id,
+        departmentCode: departmentCode,
+        departmentSectionId: resolvedSectionId,
+        productId: serviceId || '',
+        productType: 'service',
+        productName: service?.name || 'Game Session',
+        quantity: 1,
+        unitPrice: initialPriceInCents,
+        unitDiscount: 0,
+        lineTotal: initialPriceInCents,
+        status: 'fulfilled',
+      } as any,
+    });
+
+    // Create order department mapping
+    await prisma.orderDepartment.create({
+      data: {
+        orderHeaderId: orderHeader.id,
+        departmentId: department.id,
+        status: 'fulfilled',
+      } as any,
+    });
+
+    // Update session with total amount (orderId is NOT linked since it references old Order model)
+    const updatedSession = await prisma.gameSession.update({
+      where: { id: session.id },
+      data: {
+        totalAmount: new Decimal(initialPrice),
+      },
+      include: {
+        customer: true,
+        gameType: true,
+        section: true,
+        service: true,
+      },
+    });
+
     return NextResponse.json(
-      successResponse({ data: { session, sectionId: resolvedSectionId } }),
+      successResponse({ 
+        data: { 
+          session: updatedSession, 
+          sectionId: resolvedSectionId, 
+          orderId: orderHeader.id,
+          order: {
+            id: orderHeader.id,
+            orderNumber: orderHeader.orderNumber,
+            status: orderHeader.status,
+            paymentStatus: orderHeader.paymentStatus,
+            total: totalCents,
+          }
+        } 
+      }),
       { status: 201 }
     );
   } catch (error) {

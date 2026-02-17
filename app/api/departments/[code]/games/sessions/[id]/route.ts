@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
+import { Decimal } from '@prisma/client/runtime/library';
 import { prisma } from '@/lib/auth/prisma';
 import { successResponse, errorResponse, ErrorCodes } from '@/lib/api-response';
 import { extractUserContext } from '@/lib/user-context';
@@ -106,7 +107,11 @@ export async function PATCH(
         id,
         section: { departmentId: department.id }
       },
-      include: { section: true },
+      include: { 
+        section: true,
+        service: true,
+        order: true,
+      },
     });
 
     if (!session) {
@@ -121,22 +126,80 @@ export async function PATCH(
     if (action === 'increment_game') {
       // Increment game count
       const newGameCount = session.gameCount + 1;
-      // Pricing is calculated at checkout, not here
       
+      // Calculate new price based on service pricing model
+      let newTotalAmount = new Decimal(session.totalAmount || 0);
+      if (session.service) {
+        if (session.service.pricingModel === 'per_count' && session.service.pricePerCount) {
+          // Price per game
+          newTotalAmount = new Decimal(session.service.pricePerCount).times(newGameCount);
+        } else if (session.service.pricingModel === 'per_time' && session.service.pricePerMinute) {
+          // For per_time, estimate price (15 minutes per game default)
+          const minutesPerGame = 15;
+          const totalMinutes = newGameCount * minutesPerGame;
+          newTotalAmount = new Decimal(session.service.pricePerMinute).times(totalMinutes);
+        }
+      }
+
+      // Update session
       updatedSession = await prisma.gameSession.update({
         where: { id },
         data: {
           gameCount: newGameCount,
-          // totalAmount will be calculated at checkout
+          totalAmount: newTotalAmount,
         },
         include: {
           customer: true,
           gameType: true,
           service: true,
           section: true,
-          order: true,
         },
       });
+
+      // Update associated order header if exists
+      // Find OrderHeader by customerId and notes containing "Game session"
+      const orderHeader = await prisma.orderHeader.findFirst({
+        where: {
+          customerId: session.customerId,
+          notes: { contains: 'Game session started' },
+        },
+      });
+
+      if (orderHeader) {
+        const totalInCents = Math.round(newTotalAmount.toNumber() * 100);
+        
+        // Recalculate tax
+        let taxRate = 0;
+        try {
+          const taxSettings = await (prisma as any).taxSettings.findFirst();
+          if (taxSettings) {
+            taxRate = taxSettings.taxRate ?? 0;
+          }
+        } catch (err) {
+          console.warn('TaxSettings fetch failed, using default tax rate');
+        }
+
+        const taxCents = Math.round(totalInCents * (taxRate / 100));
+        const finalTotalCents = totalInCents + taxCents;
+
+        await prisma.orderHeader.update({
+          where: { id: orderHeader.id },
+          data: {
+            subtotal: totalInCents,
+            tax: taxCents,
+            total: finalTotalCents,
+          },
+        });
+
+        // Update order line
+        await prisma.orderLine.updateMany({
+          where: { orderHeaderId: orderHeader.id },
+          data: {
+            unitPrice: totalInCents,
+            lineTotal: totalInCents,
+          },
+        });
+      }
     } else if (action === 'end_game') {
       // End game
       updatedSession = await prisma.gameSession.update({

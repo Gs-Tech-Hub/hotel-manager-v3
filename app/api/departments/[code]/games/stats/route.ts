@@ -78,72 +78,81 @@ export async function GET(
       baseWhere.gameType = { departmentId: department.id };
     }
 
-    // Total games played
-    const totalGamesResult = await prisma.gameSession.aggregate({
-      _sum: { gameCount: true },
+    // Get all game sessions for this department with their associated orders
+    const gameSessions = await prisma.gameSession.findMany({
       where: {
         ...baseWhere,
-        checkedOutAt: Object.keys(dateFilter).length > 0 ? dateFilter : undefined,
+        createdAt: Object.keys(dateFilter).length > 0 ? dateFilter : undefined,
+      },
+      include: {
+        order: {
+          include: {
+            payment: true,
+          },
+        },
+        section: {
+          select: { id: true, name: true },
+        },
       },
     });
 
-    // Total revenue - filtered by department
-    const totalRevenueResult = await prisma.gameSession.aggregate({
-      _sum: { totalAmount: true },
-      where: {
-        ...baseWhere,
-        status: { in: ['completed', 'checked_out'] },
-        checkedOutAt: Object.keys(dateFilter).length > 0 ? dateFilter : undefined,
-      },
-    });
+    // Calculate stats from game sessions and their orders
+    let totalGames = 0;
+    let completedGames = 0; // Paid games
+    let pendingGames = 0; // Unpaid games
+    let totalRevenue = 0; // Paid revenue (cents)
+    let pendingRevenue = 0; // Unpaid revenue (cents)
+    const revenueBySectionMap = new Map<string, { name: string; revenue: number; count: number }>();
 
-    // Active sessions
-    const activeSessions = await prisma.gameSession.count({
-      where: {
-        ...baseWhere,
-        status: 'active'
-      },
-    });
+    for (const session of gameSessions) {
+      totalGames += 1;
 
-    // Total unique customers
-    const totalCustomers = await prisma.gameSession.findMany({
-      where: { ...baseWhere },
-      select: { customerId: true },
-      distinct: ['customerId'],
-    });
+      // Track revenue by section
+      const sectionKey = session.sectionId;
+      const sectionName = session.section?.name || 'Unknown';
+      if (!revenueBySectionMap.has(sectionKey)) {
+        revenueBySectionMap.set(sectionKey, { name: sectionName, revenue: 0, count: 0 });
+      }
+      const sectionStats = revenueBySectionMap.get(sectionKey)!;
+      sectionStats.count += 1;
 
-    // Revenue by game type (now by section, since section name is game type)
-    const revenueBySectionId = await prisma.gameSession.groupBy({
-      by: ['sectionId'],
-      _sum: { totalAmount: true },
-      _count: { id: true },
-      where: {
-        ...baseWhere,
-        status: { in: ['completed', 'checked_out'] },
-        checkedOutAt: Object.keys(dateFilter).length > 0 ? dateFilter : undefined,
-      },
-    });
+      if (session.order) {
+        const orderTotal = Number(session.order.total) || 0;
+        let totalPaid = 0;
+        if (session.order.payment) {
+          totalPaid = Array.isArray(session.order.payment) 
+            ? (session.order.payment).reduce((sum: number, p: any) => sum + Number(p.totalPrice ?? 0), 0)
+            : Number(session.order.payment.totalPrice ?? 0);
+        }
+        const isPaid = totalPaid >= orderTotal && orderTotal > 0;
 
-    // Get section names for display
-    const sectionIds = revenueBySectionId.map(item => item.sectionId);
-    const sections = await prisma.departmentSection.findMany({
-      where: { id: { in: sectionIds } },
-      select: { id: true, name: true },
-    });
+        if (isPaid) {
+          completedGames += 1;
+          totalRevenue += orderTotal;
+          sectionStats.revenue += orderTotal;
+        } else {
+          pendingGames += 1;
+          pendingRevenue += orderTotal;
+        }
+      } else {
+        // Game session without order (shouldn't happen with new flow)
+        pendingGames += 1;
+      }
+    }
 
-    const sectionMap = new Map(sections.map(s => [s.id, s.name]));
-
-    const revenueByTypeWithNames = revenueBySectionId.map(item => ({
-      gameType: sectionMap.get(item.sectionId) || 'Unknown',
-      revenue: Number(item._sum.totalAmount || 0).toFixed(2),
-      sessionCount: item._count.id,
+    const revenueByTypeWithNames = Array.from(revenueBySectionMap.values()).map(item => ({
+      gameType: item.name,
+      revenue: item.revenue, // in cents
+      sessionCount: item.count,
     }));
 
     const stats = {
-      totalGamesPlayed: totalGamesResult._sum.gameCount || 0,
-      totalRevenue: Number(totalRevenueResult._sum.totalAmount || 0).toFixed(2),
-      activeSessions,
-      totalCustomers: totalCustomers.length,
+      totalGames, // Total game sessions/orders created
+      completedGames, // Paid games (orders with full payment)
+      pendingGames, // Unpaid games (orders without full payment)
+      totalRevenue, // Revenue from paid games (cents)
+      pendingRevenue, // Revenue pending from unpaid games (cents)
+      completionRate: totalGames > 0 ? Math.round((completedGames / totalGames) * 100) : 0, // Percentage of games paid
       revenueByType: revenueByTypeWithNames,
     };
 
