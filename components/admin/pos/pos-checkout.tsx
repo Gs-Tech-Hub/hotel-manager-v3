@@ -32,6 +32,8 @@ export default function POSCheckoutShell({ terminalId }: { terminalId?: string }
   const [receipt, setReceipt] = useState<any | null>(null)
   const [products, setProducts] = useState<POSProduct[]>([])
   const [loadingProducts, setLoadingProducts] = useState(false)
+  const [services, setServices] = useState<POSProduct[]>([])
+  const [loadingServices, setLoadingServices] = useState(false)
   const [terminalError, setTerminalError] = useState<string | null>(null)
   const [salesSummary, setSalesSummary] = useState<{ count: number; total: number } | null>(null)
   const [loadingSummary, setLoadingSummary] = useState(false)
@@ -62,27 +64,43 @@ export default function POSCheckoutShell({ terminalId }: { terminalId?: string }
   const handleAdd = (p: POSProduct) => {
     const existing = cart.find((c) => c.productId === p.id)
     const totalQty = (existing?.quantity ?? 0) + 1
-    const availableQty = p.quantity ?? 0
     
-    // Client-side stock validation
-    if (availableQty <= 0) {
-      setTerminalError(`"${p.name}" is out of stock`)
-      return
-    }
-    
-    if (totalQty > availableQty) {
-      setTerminalError(`Only ${availableQty} of "${p.name}" available. Cannot add more.`)
-      return
+    // For services, skip stock validation (services don't have stock limits)
+    if (p.type !== 'service') {
+      const availableQty = p.quantity ?? 0
+      
+      // Client-side stock validation for products
+      if (availableQty <= 0) {
+        setTerminalError(`"${p.name}" is out of stock`)
+        return
+      }
+      
+      if (totalQty > availableQty) {
+        setTerminalError(`Only ${availableQty} of "${p.name}" available. Cannot add more.`)
+        return
+      }
     }
     
     if (existing) {
       setCart((s) => s.map((l) => (l.productId === p.id ? { ...l, quantity: l.quantity + 1 } : l)))
       return
     }
-    setCart((s) => [
-      ...s,
-      { lineId: Math.random().toString(36).slice(2), productId: p.id, productName: p.name, quantity: 1, unitPrice: p.price, type: p.type },
-    ])
+    
+    // Pass service data through to cart if it's a service
+    const cartItem: CartLine & { serviceData?: any } = {
+      lineId: Math.random().toString(36).slice(2),
+      productId: p.id,
+      productName: p.name,
+      quantity: 1,
+      unitPrice: p.price,
+      type: p.type,
+    }
+    
+    if (p.serviceData) {
+      (cartItem as any).serviceData = p.serviceData
+    }
+    
+    setCart((s) => [...s, cartItem])
   }
 
   const handleRemove = (lineId: string) => setCart((s) => s.filter((l) => l.lineId !== lineId))
@@ -431,6 +449,12 @@ export default function POSCheckoutShell({ terminalId }: { terminalId?: string }
 
   // Load products for selected section
   useEffect(() => {
+    // Skip loading menu for games sections (games don't have menu items)
+    if (departmentSection?.departmentCode === 'games') {
+      setProducts([])
+      return
+    }
+
     // Construct the code: if section is specified use section code, otherwise use department code
     const code = departmentSection?.sectionCode ? `${departmentSection.departmentCode}:${departmentSection.sectionCode}` : departmentSection?.departmentCode
     if (!code) {
@@ -474,6 +498,63 @@ export default function POSCheckoutShell({ terminalId }: { terminalId?: string }
       mounted = false
     }
   }, [departmentSection?.sectionCode, departmentSection?.departmentCode])
+
+  // Load services for selected department
+  useEffect(() => {
+    // Only load services if we have a departmentCode
+    if (!departmentSection?.departmentCode) {
+      setServices([])
+      return
+    }
+
+    let mounted = true
+    setLoadingServices(true)
+
+    // For services, we query by department code (or section code if available)
+    // Services can be at department level or section level
+    let code = departmentSection.departmentCode
+    if (departmentSection.sectionCode) {
+      code = `${departmentSection.departmentCode}:${departmentSection.sectionCode}`
+    }
+
+    fetch(`/api/departments/${encodeURIComponent(code)}/services`, { credentials: 'include' })
+      .then((r) => r.json())
+      .then((json) => {
+        if (!mounted) return
+        if (json && json.success && Array.isArray(json.data?.services)) {
+          const mapped: POSProduct[] = json.data.services.map((s: any) => ({
+            id: s.id,
+            name: s.name,
+            // Calculate price based on pricing model for display
+            price: s.pricingModel === 'per_count' ? Number(s.pricePerCount || 0) * 100 : Number(s.pricePerMinute || 0) * 100,
+            available: s.isActive,
+            type: 'service',
+            quantity: s.isActive ? 1 : 0,
+            // Preserve service-specific details for proper pricing calculation
+            serviceData: {
+              id: s.id,
+              pricingModel: s.pricingModel,
+              pricePerCount: Number(s.pricePerCount || 0),
+              pricePerMinute: Number(s.pricePerMinute || 0),
+              description: s.description,
+            },
+          }))
+          setServices(mapped)
+        } else {
+          setServices([])
+        }
+      })
+      .catch((err) => {
+        console.error('Failed to fetch services', err)
+        if (!mounted) return
+        setServices([])
+      })
+      .finally(() => { if (mounted) setLoadingServices(false) })
+
+    return () => {
+      mounted = false
+    }
+  }, [departmentSection?.departmentCode, departmentSection?.sectionCode])
 
   // Fetch sales summary
   useEffect(() => {
@@ -668,18 +749,26 @@ export default function POSCheckoutShell({ terminalId }: { terminalId?: string }
           <POSCategorySelector categories={categories} selectedId={category ?? undefined} onSelect={(id) => setCategory(id)} />
 
           {(() => {
-            const source = products
-            let displayed = source || []
-            if (category) {
-              const mapCategoryToType: Record<string, string> = { foods: 'food', drinks: 'drink', retail: 'retail', services: 'service' }
-              const t = mapCategoryToType[category]
-              if (t) {
-                displayed = source.filter((p: any) => {
-                    if (p.type) return p.type === t
-                    return false
-                })
+            let displayed: POSProduct[] = []
+            
+            if (category === 'services') {
+              // Show services when services category is selected
+              displayed = services || []
+            } else {
+              // Show regular products for other categories
+              displayed = products || []
+              if (category) {
+                const mapCategoryToType: Record<string, string> = { foods: 'food', drinks: 'drink', retail: 'retail' }
+                const t = mapCategoryToType[category]
+                if (t) {
+                  displayed = displayed.filter((p: any) => {
+                      if (p.type) return p.type === t
+                      return false
+                  })
+                }
               }
             }
+            
             return <POSProductGrid products={displayed} onAdd={handleAdd} />
           })()}
         </div>

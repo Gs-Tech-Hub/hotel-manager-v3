@@ -9,7 +9,14 @@ export interface POSProduct {
   price: number
   available?: boolean
   quantity?: number  // Stock quantity for validation
-  type?: string      // Product type (food, drink, etc.)
+  type?: string      // Product type (food, drink, service, etc.)
+  serviceData?: {    // Service-specific pricing details
+    id: string
+    pricingModel: 'per_count' | 'per_time'
+    pricePerCount: number
+    pricePerMinute: number
+    description?: string
+  }
 }
 
 export function POSProductGrid({ products, onAdd }: { products: POSProduct[]; onAdd: (p: POSProduct) => void }) {

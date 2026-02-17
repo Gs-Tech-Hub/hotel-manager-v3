@@ -30,9 +30,19 @@ export async function GET(
     const { code: departmentCode } = await params;
     const level = request.nextUrl.searchParams.get('level') || 'all'; // all, department, section
 
+    // Parse the code - it can be either "departmentCode" or "departmentCode:sectionId"
+    let actualDeptCode = departmentCode;
+    let sectionId: string | null = null;
+
+    if (departmentCode.includes(':')) {
+      const parts = departmentCode.split(':');
+      actualDeptCode = parts[0];
+      sectionId = parts.slice(1).join(':'); // In case section ID has colons
+    }
+
     // Get department
     const dept = await prisma.department.findFirst({
-      where: { code: departmentCode },
+      where: { code: actualDeptCode },
       select: { id: true, name: true, code: true },
     });
 
@@ -46,7 +56,10 @@ export async function GET(
     // Build where clause based on level filter
     const whereClause: any = { departmentId: dept.id };
     
-    if (level === 'department') {
+    // If section ID is provided, filter by that section
+    if (sectionId) {
+      whereClause.sectionId = sectionId;
+    } else if (level === 'department') {
       // Only department-level services (no section assigned)
       whereClause.sectionId = null;
     } else if (level === 'section') {

@@ -210,6 +210,7 @@ export async function POST(
     }
 
     // Return order data formatted for terminal checkout
+    // Include service details for price calculation in cart
     return NextResponse.json(
       successResponse({
         data: {
@@ -223,6 +224,17 @@ export async function POST(
           redirectUrl: redirectUrl,
           session: updatedSession,
           stats: stats,
+          // Service information for cart to calculate prices
+          service: session.service ? {
+            id: session.service.id,
+            name: session.service.name,
+            pricingModel: session.service.pricingModel,
+            pricePerCount: Number(session.service.pricePerCount),
+            pricePerMinute: Number(session.service.pricePerMinute),
+            description: session.service.description,
+          } : null,
+          // Count of games for cart quantity
+          gameCount: session.gameCount,
           order: {
             id: order.id,
             customerId: session.customerId,
