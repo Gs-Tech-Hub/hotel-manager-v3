@@ -85,9 +85,9 @@ export async function GET(
         createdAt: Object.keys(dateFilter).length > 0 ? dateFilter : undefined,
       },
       include: {
-        order: {
+        orderHeader: {
           include: {
-            payment: true,
+            payments: true,
           },
         },
         section: {
@@ -116,13 +116,11 @@ export async function GET(
       const sectionStats = revenueBySectionMap.get(sectionKey)!;
       sectionStats.count += 1;
 
-      if (session.order) {
-        const orderTotal = Number(session.order.total) || 0;
+      if (session.orderHeader) {
+        const orderTotal = Number(session.orderHeader.total) || 0;
         let totalPaid = 0;
-        if (session.order.payment) {
-          totalPaid = Array.isArray(session.order.payment) 
-            ? (session.order.payment).reduce((sum: number, p: any) => sum + Number(p.totalPrice ?? 0), 0)
-            : Number(session.order.payment.totalPrice ?? 0);
+        if (session.orderHeader.payments && session.orderHeader.payments.length > 0) {
+          totalPaid = session.orderHeader.payments.reduce((sum: number, p: any) => sum + Number(p.total ?? 0), 0);
         }
         const isPaid = totalPaid >= orderTotal && orderTotal > 0;
 

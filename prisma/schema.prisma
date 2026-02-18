@@ -722,7 +722,6 @@ model Order {
   orderStatus String @default("Active")
 
   bookingItems BookingItem[]
-  gameSession  GameSession?
   serviceUsageSession ServiceUsageSession?
 
   createdAt DateTime @default(now())
@@ -1021,6 +1020,7 @@ model OrderHeader {
   extras       OrderExtra[] @relation("OrderExtras")
   reservations InventoryReservation[]
   legacyOrders Order[]
+  gameSession  GameSession?  // Link to game session if this order is for a game
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
@@ -2067,8 +2067,8 @@ model GameSession {
   
   totalAmount   Decimal  @db.Decimal(10, 2) @default(0) // Calculated: gameCount * gameType.pricePerGame or service pricing
   
-  orderId       String?  @unique  // Links to Order when checked out (one-to-one)
-  order         Order?   @relation(fields: [orderId], references: [id], onDelete: SetNull)
+  orderHeaderId String?  @unique  // Links to OrderHeader when checked out (one-to-one)
+  orderHeader   OrderHeader? @relation(fields: [orderHeaderId], references: [id], onDelete: SetNull)
   
   startedAt     DateTime @default(now())
   endedAt       DateTime?

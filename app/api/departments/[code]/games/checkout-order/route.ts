@@ -5,6 +5,14 @@ import { extractUserContext } from '@/lib/user-context';
 
 /**
  * POST /api/departments/[code]/games/checkout-order
+ * DEPRECATED: Use POST /api/departments/[code]/games/pay instead
+ * 
+ * This endpoint is kept for backward compatibility.
+ * The new /games/pay endpoint handles:
+ * - Dynamic tax calculation (respects TaxSettings.enabled)
+ * - Game session closure
+ * - Order completion marking
+ * 
  * Finalize payment for a game order
  * Processes payment and updates order status
  */
@@ -44,7 +52,7 @@ export async function POST(
     }
 
     const body = await request.json();
-    const { orderId, paymentMethod, amountPaid } = body;
+    const { orderId, paymentMethod, amountPaid, sessionId } = body;
 
     // Validation
     if (!orderId) {
@@ -154,6 +162,22 @@ export async function POST(
       },
     });
 
+    // BACKWARD COMPATIBILITY: If sessionId provided, close the game session
+    let closedSession = null;
+    if (sessionId) {
+      try {
+        closedSession = await prisma.gameSession.update({
+          where: { id: sessionId },
+          data: {
+            status: 'closed',
+            endedAt: new Date(),
+          },
+        });
+      } catch (err) {
+        console.warn('Failed to close game session:', err);
+      }
+    }
+
     console.log('[Games Checkout] Order payment completed:', {
       orderId,
       orderNumber: orderHeader.orderNumber,
@@ -191,6 +215,11 @@ export async function POST(
             status: payment.paymentStatus,
             amount: payment.totalPrice,
           },
+          session: closedSession ? {
+            id: closedSession.id,
+            status: closedSession.status,
+            endedAt: closedSession.endedAt,
+          } : null,
           message: 'Game order payment completed successfully',
         },
       }),

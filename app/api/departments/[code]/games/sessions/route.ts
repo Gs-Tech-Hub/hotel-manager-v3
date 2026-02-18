@@ -84,7 +84,7 @@ export async function GET(
         gameType: true,
         section: true,
         service: true,
-        order: true,
+        orderHeader: true,
       },
       orderBy: { startedAt: 'desc' },
       take: 100,
@@ -266,18 +266,23 @@ export async function POST(
     // Generate order number
     const orderNumber = `ORD-${Date.now()}-${Math.random().toString(36).substr(2, 9).toUpperCase()}`;
 
-    // Get tax settings
+    // Get tax settings - only apply if enabled
     let taxRate = 0;
+    let taxEnabled = true;
     try {
       const taxSettings = await (prisma as any).taxSettings.findFirst();
       if (taxSettings) {
+        taxEnabled = taxSettings.enabled ?? true;
         taxRate = taxSettings.taxRate ?? 0;
       }
     } catch (err) {
-      console.warn('TaxSettings fetch failed, using default tax rate');
+      console.warn('TaxSettings fetch failed, using defaults (enabled=true, rate=0)');
+      taxEnabled = true;
+      taxRate = 0;
     }
 
-    const taxCents = Math.round(initialPriceInCents * (taxRate / 100));
+    // Only apply tax if enabled in organisation settings
+    const taxCents = taxEnabled ? Math.round(initialPriceInCents * (taxRate / 100)) : 0;
     const totalCents = initialPriceInCents + taxCents;
 
     // Create order header using proper structure matching OrderHeader schema
@@ -323,11 +328,12 @@ export async function POST(
       } as any,
     });
 
-    // Update session with total amount (orderId is NOT linked since it references old Order model)
+    // Update session with total amount and link to order
     const updatedSession = await prisma.gameSession.update({
       where: { id: session.id },
       data: {
         totalAmount: new Decimal(initialPrice),
+        orderHeaderId: orderHeader.id,
       },
       include: {
         customer: true,

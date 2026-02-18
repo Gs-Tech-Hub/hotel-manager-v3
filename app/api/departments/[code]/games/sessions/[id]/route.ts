@@ -43,7 +43,7 @@ export async function GET(
       include: {
         customer: true,
         gameType: true,
-        order: true,
+        orderHeader: true,
       },
     });
 
@@ -110,7 +110,7 @@ export async function PATCH(
       include: { 
         section: true,
         service: true,
-        order: true,
+        orderHeader: true,
       },
     });
 
@@ -211,7 +211,7 @@ export async function PATCH(
         include: {
           customer: true,
           gameType: true,
-          order: true,
+          orderHeader: true,
         },
       });
     } else if (status) {
@@ -222,7 +222,7 @@ export async function PATCH(
         include: {
           customer: true,
           gameType: true,
-          order: true,
+          orderHeader: true,
         },
       });
     } else {

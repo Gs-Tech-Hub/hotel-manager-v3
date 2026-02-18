@@ -2,6 +2,7 @@
 
 import { useEffect, useState } from 'react'
 import Price from '@/components/ui/Price'
+import { OrderPaymentDialog } from './order-payment-dialog'
 
 interface OpenOrder {
   id: string
@@ -46,12 +47,7 @@ export function OpenOrdersDashboard() {
   const [error, setError] = useState<string | null>(null)
   const [filter, setFilter] = useState<'all' | 'overdue'>('all')
   const [selectedOrder, setSelectedOrder] = useState<OpenOrder | null>(null)
-  const [showPaymentForm, setShowPaymentForm] = useState(false)
-  const [paymentAmount, setPaymentAmount] = useState<number>(0)
-  const [paymentMethod, setPaymentMethod] = useState<'cash' | 'card' | 'check'>('cash')
-  const [paymentRef, setPaymentRef] = useState('')
-  const [paymentNote, setPaymentNote] = useState('')
-  const [settlingOrderId, setSettlingOrderId] = useState<string | null>(null)
+  const [showPaymentDialog, setShowPaymentDialog] = useState(false)
   const [showAddItems, setShowAddItems] = useState(false)
   const [addingItemsToOrderId, setAddingItemsToOrderId] = useState<string | null>(null)
   const [newItemProductId, setNewItemProductId] = useState('')
@@ -98,67 +94,6 @@ export function OpenOrdersDashboard() {
   const totalOpenAmount = orders.reduce((sum, o) => sum + o.amountDue, 0)
   const totalFullyPaid = orders.filter((o) => o.amountDue <= 0).length
   const totalPending = orders.length - totalFullyPaid
-
-  const handlePayment = async () => {
-    if (!selectedOrder || !paymentAmount) {
-      setError('Please select an order and enter payment amount')
-      return
-    }
-
-    if (paymentAmount > selectedOrder.amountDue) {
-      setError(`Payment amount cannot exceed amount due: ${selectedOrder.amountDue}`)
-      return
-    }
-
-    try {
-      setSettlingOrderId(selectedOrder.id)
-      const payload: SettlementPayload = {
-        orderId: selectedOrder.id,
-        amount: paymentAmount,
-        paymentMethod,
-        transactionReference: paymentRef || undefined,
-        notes: paymentNote || undefined,
-      }
-
-      const res = await fetch('/api/orders/settle', {
-        method: 'POST',
-        credentials: 'include',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(payload),
-      })
-
-      if (!res.ok) {
-        const json = await res.json()
-        throw new Error(json.error?.message || 'Failed to record payment')
-      }
-
-      const json = await res.json()
-      if (json.success) {
-        // Refresh orders list
-        const freshRes = await fetch('/api/orders/open?limit=100', {
-          credentials: 'include',
-        })
-        const freshJson = await freshRes.json()
-        if (freshJson.success && freshJson.data?.orders) {
-          setOrders(freshJson.data.orders)
-        }
-
-        // Reset form
-        setShowPaymentForm(false)
-        setSelectedOrder(null)
-        setPaymentAmount(0)
-        setPaymentMethod('cash')
-        setPaymentRef('')
-        setPaymentNote('')
-        setError(null)
-      }
-    } catch (err) {
-      console.error('Failed to record payment:', err)
-      setError(err instanceof Error ? err.message : 'Failed to record payment')
-    } finally {
-      setSettlingOrderId(null)
-    }
-  }
 
   const handleAddItem = async () => {
     if (!selectedOrder || !newItemProductId || !newItemProductName || newItemQuantity <= 0 || newItemUnitPrice <= 0) {
@@ -346,8 +281,7 @@ export function OpenOrdersDashboard() {
                       <button
                         onClick={() => {
                           setSelectedOrder(order)
-                          setPaymentAmount(order.amountDue)
-                          setShowPaymentForm(true)
+                          setShowPaymentDialog(true)
                         }}
                         disabled={order.amountDue <= 0}
                         className={`px-3 py-1 rounded text-sm transition ${
@@ -370,108 +304,17 @@ export function OpenOrdersDashboard() {
         )}
       </div>
 
-      {/* Payment Modal */}
-      {showPaymentForm && selectedOrder && (
-        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
-          <div className="bg-white rounded-lg shadow-xl max-w-md w-full p-6">
-            <h2 className="text-xl font-bold mb-4">Settle Order Payment</h2>
-
-            <div className="bg-blue-50 rounded p-4 mb-4">
-              <div className="text-sm text-gray-600">Order Number</div>
-              <div className="font-mono font-semibold mb-3">{selectedOrder.orderNumber}</div>
-
-              <div className="grid grid-cols-2 gap-2 text-sm">
-                <div>
-                  <div className="text-gray-600">Total</div>
-                  <div className="font-semibold">
-                    <Price amount={selectedOrder.total} isMinor={true} />
-                  </div>
-                </div>
-                <div>
-                  <div className="text-gray-600">Already Paid</div>
-                  <div className="font-semibold text-green-600">
-                    <Price amount={selectedOrder.totalPaid} isMinor={true} />
-                  </div>
-                </div>
-              </div>
-            </div>
-
-            <div className="mb-4">
-              <label className="block text-sm font-semibold mb-2">Payment Amount</label>
-              <div className="flex items-center gap-2">
-                <span className="text-xl">$</span>
-                <input
-                  type="number"
-                  value={paymentAmount / 100}
-                  onChange={(e) => setPaymentAmount(Math.round(Number(e.target.value) * 100))}
-                  max={selectedOrder.amountDue / 100}
-                  step="0.01"
-                  className="flex-1 border rounded px-3 py-2"
-                />
-              </div>
-              <div className="text-xs text-gray-600 mt-1">
-                Max: <Price amount={selectedOrder.amountDue} isMinor={true} />
-              </div>
-            </div>
-
-            <div className="mb-4">
-              <label className="block text-sm font-semibold mb-2">Payment Method</label>
-              <select
-                value={paymentMethod}
-                onChange={(e) => setPaymentMethod(e.target.value as any)}
-                className="w-full border rounded px-3 py-2"
-              >
-                <option value="cash">💵 Cash</option>
-                <option value="card">💳 Card</option>
-                <option value="check">🏦 Check</option>
-              </select>
-            </div>
-
-            {paymentMethod === 'check' && (
-              <div className="mb-4">
-                <label className="block text-sm font-semibold mb-2">Check Number</label>
-                <input
-                  type="text"
-                  value={paymentRef}
-                  onChange={(e) => setPaymentRef(e.target.value)}
-                  placeholder="e.g., CHK-12345"
-                  className="w-full border rounded px-3 py-2"
-                />
-              </div>
-            )}
-
-            <div className="mb-4">
-              <label className="block text-sm font-semibold mb-2">Notes (Optional)</label>
-              <textarea
-                value={paymentNote}
-                onChange={(e) => setPaymentNote(e.target.value)}
-                placeholder="Any settlement notes..."
-                className="w-full border rounded px-3 py-2 text-sm"
-                rows={2}
-              />
-            </div>
-
-            <div className="flex gap-2">
-              <button
-                onClick={() => {
-                  setShowPaymentForm(false)
-                  setSelectedOrder(null)
-                }}
-                className="flex-1 px-4 py-2 border rounded hover:bg-gray-50"
-              >
-                Cancel
-              </button>
-              <button
-                onClick={handlePayment}
-                disabled={settlingOrderId === selectedOrder.id}
-                className="flex-1 px-4 py-2 bg-emerald-600 text-white rounded hover:bg-emerald-700 disabled:opacity-60"
-              >
-                {settlingOrderId === selectedOrder.id ? 'Processing...' : 'Record Payment'}
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
+      {/* Payment Dialog */}
+      <OrderPaymentDialog
+        open={showPaymentDialog}
+        onOpenChange={setShowPaymentDialog}
+        order={selectedOrder}
+        departmentCode={selectedOrder?.departmentCodes?.[0] || ''}
+        onPaymentComplete={() => {
+          setShowPaymentDialog(false)
+          setSelectedOrder(null)
+        }}
+      />
 
       {/* Add Items Modal */}
       {showAddItems && selectedOrder && (
