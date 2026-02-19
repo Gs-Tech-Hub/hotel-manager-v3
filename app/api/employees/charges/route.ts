@@ -9,12 +9,12 @@ const CreateChargeSchema = z.object({
   userId: z.string().min(1),
   chargeType: z.string().min(1),
   amount: z.coerce.number().positive(),
-  description: z.string().optional(),
-  reason: z.string().optional(),
+  description: z.string().optional().nullable(),
+  reason: z.string().optional().nullable(),
   date: z.string().datetime(),
-  dueDate: z.string().datetime().optional(),
+  dueDate: z.string().datetime().optional().nullable(),
   status: z.enum(['pending', 'paid', 'partially_paid', 'waived', 'cancelled']).default('pending'),
-  notes: z.string().optional(),
+  notes: z.string().optional().nullable(),
 });
 
 /**

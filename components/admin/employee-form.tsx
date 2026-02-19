@@ -594,7 +594,8 @@ export function EmployeeForm({
                 <button
                   type="button"
                   onClick={addRole}
-                  className="flex items-center gap-1 px-3 py-1 bg-green-600 text-white rounded text-sm hover:bg-green-700"
+                  disabled={loading}
+                  className="flex items-center gap-1 px-3 py-1 bg-green-600 text-white rounded text-sm hover:bg-green-700 disabled:opacity-60 disabled:cursor-not-allowed"
                 >
                   <Plus size={16} /> Add Role
                 </button>
@@ -711,7 +712,7 @@ export function EmployeeForm({
               <button
                 type="submit"
                 disabled={loading}
-                className="flex-1 px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 disabled:bg-blue-400"
+                className="flex-1 px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 disabled:opacity-60 disabled:cursor-not-allowed"
               >
                 {loading ? 'Saving...' : isEditMode ? 'Update' : 'Create'}
               </button>

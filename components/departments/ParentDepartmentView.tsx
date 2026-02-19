@@ -8,6 +8,7 @@ type ParentDepartmentViewProps = {
   loading?: boolean
   onCreateSection?: () => void
   canCreateSection?: boolean
+  createSectionLoading?: boolean
 }
 
 export default function ParentDepartmentView({
@@ -15,6 +16,7 @@ export default function ParentDepartmentView({
   loading = false,
   onCreateSection,
   canCreateSection = false,
+  createSectionLoading = false,
 }: ParentDepartmentViewProps) {
   const router = useRouter()
 
@@ -29,9 +31,10 @@ export default function ParentDepartmentView({
         {canCreateSection && onCreateSection && (
           <button
             onClick={onCreateSection}
-            className="px-3 py-1 bg-green-600 text-white rounded text-sm hover:bg-green-700"
+            disabled={createSectionLoading}
+            className="px-3 py-1 bg-green-600 text-white rounded text-sm hover:bg-green-700 disabled:opacity-60 disabled:cursor-not-allowed"
           >
-            Create Section
+            {createSectionLoading ? 'Creating...' : 'Create Section'}
           </button>
         )}
       </div>

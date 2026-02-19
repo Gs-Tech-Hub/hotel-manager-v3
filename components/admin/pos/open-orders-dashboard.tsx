@@ -380,7 +380,7 @@ export function OpenOrdersDashboard() {
               <button
                 onClick={handleAddItem}
                 disabled={addingItemsToOrderId === selectedOrder.id}
-                className="flex-1 px-4 py-2 bg-sky-600 text-white rounded hover:bg-sky-700 disabled:opacity-60"
+                className="flex-1 px-4 py-2 bg-sky-600 text-white rounded hover:bg-sky-700 disabled:opacity-60 disabled:cursor-not-allowed"
               >
                 {addingItemsToOrderId === selectedOrder.id ? 'Adding...' : 'Add Item'}
               </button>

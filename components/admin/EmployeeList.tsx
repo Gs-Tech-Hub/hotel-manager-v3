@@ -31,8 +31,8 @@ function EmployeeForm({ onCreated, onClose }: { onCreated: (e: any) => void, onC
           <option value="admin">Admin</option>
         </select>
         <div className="flex gap-2 mt-2">
-          <button type="submit" className="px-3 py-1 bg-blue-600 text-white rounded" disabled={loading}>Create</button>
-          <button type="button" className="px-3 py-1 bg-gray-300 rounded" onClick={onClose}>Cancel</button>
+          <button type="submit" className="px-3 py-1 bg-blue-600 text-white rounded disabled:opacity-60 disabled:cursor-not-allowed" disabled={loading}>{loading ? 'Creating...' : 'Create'}</button>
+          <button type="button" className="px-3 py-1 bg-gray-300 rounded disabled:opacity-50" onClick={onClose} disabled={loading}>Cancel</button>
         </div>
       </form>
     </div>
@@ -72,7 +72,7 @@ export default function EmployeeList() {
       <div className="flex items-center justify-between">
         <h2 className="text-2xl font-semibold">Employees</h2>
         {hasPermission('employees.create') && (
-          <button className="px-3 py-2 bg-blue-600 text-white rounded" onClick={() => setShowCreate(true)}>Create Employee</button>
+          <button className="px-3 py-2 bg-blue-600 text-white rounded hover:bg-blue-700 disabled:opacity-60 disabled:cursor-not-allowed" onClick={() => setShowCreate(true)} disabled={loading}>Create Employee</button>
         )}
       </div>
       <div className="mt-4">

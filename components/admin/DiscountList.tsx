@@ -53,8 +53,8 @@ function DiscountForm({ onCreated, onClose }: { onCreated: (d: any) => void, onC
         <input className="w-full mb-2 p-2 border rounded" placeholder="Description" value={description} onChange={e => setDescription(e.target.value)} />
         <input className="w-full mb-2 p-2 border rounded" type="datetime-local" value={startDate} onChange={e => setStartDate(e.target.value)} required />
         <div className="flex gap-2 mt-4">
-          <button type="submit" className="px-3 py-1 bg-blue-600 text-white rounded" disabled={loading}>Create</button>
-          <button type="button" className="px-3 py-1 bg-gray-300 rounded" onClick={onClose}>Cancel</button>
+          <button type="submit" className="px-3 py-1 bg-blue-600 text-white rounded disabled:opacity-60 disabled:cursor-not-allowed" disabled={loading}>{loading ? 'Creating...' : 'Create'}</button>
+          <button type="button" className="px-3 py-1 bg-gray-300 rounded disabled:opacity-50" onClick={onClose} disabled={loading}>Cancel</button>
         </div>
       </form>
     </div>
@@ -105,7 +105,7 @@ export default function DiscountList() {
       <div className="flex items-center justify-between mb-4">
         <h2 className="text-2xl font-semibold">Discounts</h2>
         {hasPermission('discounts.create') && (
-          <button className="px-3 py-2 bg-blue-600 text-white rounded hover:bg-blue-700" onClick={() => setShowCreate(true)}>
+          <button className="px-3 py-2 bg-blue-600 text-white rounded hover:bg-blue-700 disabled:opacity-60 disabled:cursor-not-allowed" onClick={() => setShowCreate(true)} disabled={loading}>
             + Create Discount
           </button>
         )}

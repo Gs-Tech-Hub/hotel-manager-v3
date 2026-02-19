@@ -31,8 +31,8 @@ function SectionForm({ departmentId, onCreated, onClose }: { departmentId: strin
         <input className="w-full mb-2 p-2 border rounded" placeholder="Name" value={name} onChange={e => setName(e.target.value)} required />
         <input className="w-full mb-2 p-2 border rounded" placeholder="Slug" value={slug} onChange={e => setSlug(e.target.value)} required />
         <div className="flex gap-2 mt-2">
-          <button type="submit" className="px-3 py-1 bg-blue-600 text-white rounded" disabled={loading}>Create</button>
-          <button type="button" className="px-3 py-1 bg-gray-300 rounded" onClick={onClose}>Cancel</button>
+          <button type="submit" className="px-3 py-1 bg-blue-600 text-white rounded disabled:opacity-60 disabled:cursor-not-allowed" disabled={loading}>{loading ? 'Creating...' : 'Create'}</button>
+          <button type="button" className="px-3 py-1 bg-gray-300 rounded disabled:opacity-50" onClick={onClose} disabled={loading}>Cancel</button>
         </div>
       </form>
     </div>
@@ -78,7 +78,7 @@ export default function DepartmentSectionList({ departmentId }: { departmentId: 
     <div className="p-4">
       <div className="flex items-center justify-between">
         <h2 className="text-xl font-semibold">Sections</h2>
-        <button className="px-3 py-2 bg-blue-600 text-white rounded" onClick={() => setShowCreate(true)}>Create Section</button>
+        <button className="px-3 py-2 bg-blue-600 text-white rounded hover:bg-blue-700 disabled:opacity-60 disabled:cursor-not-allowed" onClick={() => setShowCreate(true)} disabled={loading}>Create Section</button>
       </div>
       <div className="mt-4">
         {loading && <div>Loading...</div>}

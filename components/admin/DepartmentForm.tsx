@@ -59,8 +59,8 @@ export default function DepartmentForm({ initial = {}, onCreated, onClose }: Pro
           </label>
         </div>
         <div className="mt-4 flex justify-end gap-2">
-          <button type="button" className="px-4 py-2 bg-gray-200 rounded" onClick={onClose} disabled={loading}>Cancel</button>
-          <button type="submit" className="px-4 py-2 bg-blue-600 text-white rounded" disabled={loading}>{loading ? 'Creating...' : 'Create'}</button>
+          <button type="button" className="px-4 py-2 bg-gray-200 rounded disabled:opacity-50" onClick={onClose} disabled={loading}>Cancel</button>
+          <button type="submit" className="px-4 py-2 bg-blue-600 text-white rounded hover:bg-blue-700 disabled:opacity-60 disabled:cursor-not-allowed" disabled={loading}>{loading ? 'Creating...' : 'Create'}</button>
         </div>
       </form>
     </div>

@@ -118,13 +118,14 @@ export default function DepartmentsPage() {
           {canManage && (
             <button 
               onClick={() => setShowForm(!showForm)}
-              className="px-4 py-2 bg-blue-600 text-white rounded-lg flex items-center gap-2 hover:bg-blue-700"
+              disabled={loading}
+              className="px-4 py-2 bg-blue-600 text-white rounded-lg flex items-center gap-2 hover:bg-blue-700 disabled:opacity-60 disabled:cursor-not-allowed"
             >
               <Plus className="h-4 w-4" />
               Add Department
             </button>
           )}
-          <button onClick={fetchDepartments} className="px-3 py-2 border rounded text-sm hover:bg-muted">Refresh</button>
+          <button onClick={fetchDepartments} className="px-3 py-2 border rounded text-sm hover:bg-muted" disabled={loading}>Refresh</button>
         </div>
       </div>
 

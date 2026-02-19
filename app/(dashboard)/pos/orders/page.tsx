@@ -598,8 +598,9 @@ export default function PosOrdersPage() {
                         </Button>
                         <Button 
                             onClick={handleAddItems}
+                            disabled={isPaymentProcessing}
                         >
-                            Open Terminal
+                            {isPaymentProcessing ? 'Opening...' : 'Open Terminal'}
                         </Button>
                     </DialogFooter>
                 </DialogContent>

@@ -46,7 +46,7 @@ export default function DepartmentList() {
       <div className="flex items-center justify-between">
         <h2 className="text-2xl font-semibold">Departments</h2>
         {hasPermission('departments.create') && (
-          <button className="px-3 py-2 bg-blue-600 text-white rounded" onClick={() => setShowCreate(true)}>Create Department</button>
+          <button className="px-3 py-2 bg-blue-600 text-white rounded hover:bg-blue-700 disabled:opacity-60 disabled:cursor-not-allowed" onClick={() => setShowCreate(true)} disabled={loading}>Create Department</button>
         )}
       </div>
 

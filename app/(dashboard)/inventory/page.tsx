@@ -298,7 +298,8 @@ export default function InventoryPage() {
           {activeTab === 'items' && hasPermission('inventory_items.create') && (
             <button 
               onClick={() => setShowForm(!showForm)}
-              className="px-3 py-1 bg-green-600 text-white rounded text-sm mr-2 inline-flex items-center gap-2 hover:bg-green-700"
+              disabled={loading || formLoading}
+              className="px-3 py-1 bg-green-600 text-white rounded text-sm mr-2 inline-flex items-center gap-2 hover:bg-green-700 disabled:opacity-60 disabled:cursor-not-allowed"
             >
               <Plus size={16} /> Add Item
             </button>
@@ -309,7 +310,8 @@ export default function InventoryPage() {
                 setSelectedItemForExtra(null)
                 setExtrasFormOpen(true)
               }}
-              className="px-3 py-1 bg-amber-600 text-white rounded text-sm mr-2 inline-flex items-center gap-2 hover:bg-amber-700"
+              disabled={loading || formLoading}
+              className="px-3 py-1 bg-amber-600 text-white rounded text-sm mr-2 inline-flex items-center gap-2 hover:bg-amber-700 disabled:opacity-60 disabled:cursor-not-allowed"
             >
               <Plus size={16} /> Add Extra
             </button>
@@ -500,7 +502,7 @@ export default function InventoryPage() {
             <button
               onClick={handleCreateInventoryItem}
               disabled={formLoading}
-              className="px-4 py-2 bg-blue-600 text-white rounded hover:bg-blue-700 disabled:opacity-60"
+              className="px-4 py-2 bg-blue-600 text-white rounded hover:bg-blue-700 disabled:opacity-60 disabled:cursor-not-allowed"
             >
               {formLoading ? 'Creating...' : 'Create'}
             </button>

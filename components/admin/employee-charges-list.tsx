@@ -69,10 +69,18 @@ export function EmployeeChargesList({ employeeId }: EmployeeChargesListProps) {
     setSubmitting(true);
 
     try {
+      // Clean up empty optional fields before sending
+      const cleanData = {
+        ...formData,
+        description: formData.description || undefined,
+        reason: formData.reason || undefined,
+        dueDate: formData.dueDate ? new Date(formData.dueDate).toISOString() : undefined,
+      };
+
       const response = await fetch(`/api/employees/${employeeId}/charges`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(formData),
+        body: JSON.stringify(cleanData),
       });
 
       const data = await response.json();
@@ -132,7 +140,7 @@ export function EmployeeChargesList({ employeeId }: EmployeeChargesListProps) {
             <CardTitle>Charges & Debts</CardTitle>
             <CardDescription>Track employee charges, fines, and debts</CardDescription>
           </div>
-          <Button onClick={() => setShowForm(!showForm)} size="sm">
+          <Button onClick={() => setShowForm(!showForm)} size="sm" disabled={submitting}>
             <Plus className="mr-2 h-4 w-4" />
             New Charge
           </Button>
@@ -237,9 +245,16 @@ export function EmployeeChargesList({ employeeId }: EmployeeChargesListProps) {
             </div>
             <div className="flex gap-2">
               <Button type="submit" disabled={submitting}>
-                {submitting ? <Loader2 className="h-4 w-4 animate-spin" /> : 'Add Charge'}
+                {submitting ? (
+                  <>
+                    <Loader2 className="h-4 w-4 animate-spin mr-2" />
+                    Adding...
+                  </>
+                ) : (
+                  'Add Charge'
+                )}
               </Button>
-              <Button variant="outline" onClick={() => setShowForm(false)}>
+              <Button variant="outline" onClick={() => setShowForm(false)} disabled={submitting}>
                 Cancel
               </Button>
             </div>

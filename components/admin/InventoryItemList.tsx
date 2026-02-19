@@ -36,8 +36,8 @@ function InventoryForm({ onCreated, onClose }: { onCreated: (item: any) => void,
         <input className="w-full mb-2 p-2 border rounded" placeholder="SKU" value={sku} onChange={e => setSku(e.target.value)} required />
         <input className="w-full mb-2 p-2 border rounded" placeholder="Price" value={price} onChange={e => setPrice(e.target.value)} required />
         <div className="flex gap-2 mt-2">
-          <button type="submit" className="px-3 py-1 bg-blue-600 text-white rounded" disabled={loading}>Create</button>
-          <button type="button" className="px-3 py-1 bg-gray-300 rounded" onClick={onClose}>Cancel</button>
+          <button type="submit" className="px-3 py-1 bg-blue-600 text-white rounded disabled:opacity-60 disabled:cursor-not-allowed" disabled={loading}>{loading ? 'Creating...' : 'Create'}</button>
+          <button type="button" className="px-3 py-1 bg-gray-300 rounded disabled:opacity-50" onClick={onClose} disabled={loading}>Cancel</button>
         </div>
       </form>
     </div>
@@ -77,7 +77,7 @@ export default function InventoryItemList() {
       <div className="flex items-center justify-between">
         <h2 className="text-2xl font-semibold">Inventory Items</h2>
         {hasPermission('inventory_items.create') && (
-          <button className="px-3 py-2 bg-blue-600 text-white rounded" onClick={() => setShowCreate(true)}>Create Item</button>
+          <button className="px-3 py-2 bg-blue-600 text-white rounded hover:bg-blue-700 disabled:opacity-60 disabled:cursor-not-allowed" onClick={() => setShowCreate(true)} disabled={loading}>Create Item</button>
         )}
       </div>
       <div className="mt-4">

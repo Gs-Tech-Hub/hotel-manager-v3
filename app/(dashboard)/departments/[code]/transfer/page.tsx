@@ -239,7 +239,7 @@ export default function DepartmentTransferPage() {
               </div>
 
               <div className="mt-4">
-                <button className="px-3 py-2 bg-sky-600 text-white rounded" disabled={!canSubmit || creating}>{creating ? 'Creating...' : 'Create Transfer'}</button>
+                <button className="px-3 py-2 bg-sky-600 text-white rounded hover:bg-sky-700 disabled:opacity-60 disabled:cursor-not-allowed" disabled={!canSubmit || creating}>{creating ? 'Creating...' : 'Create Transfer'}</button>
               </div>
               {message && <div className="text-sm mt-2">{message}</div>}
             </form>

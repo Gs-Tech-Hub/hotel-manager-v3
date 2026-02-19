@@ -30,6 +30,7 @@ export default function InventoryTransferPage() {
   const [total, setTotal] = useState(0)
   const [products, setProducts] = useState<Item[]>([])
   const [loading, setLoading] = useState(false)
+  const [submitting, setSubmitting] = useState(false)
 
   const [sections, setSections] = useState<Array<{ id: string; code: string; name: string }>>([])
   const [destination, setDestination] = useState<string | null>(null)
@@ -139,6 +140,7 @@ export default function InventoryTransferPage() {
     if (!source) return alert('Missing source department')
     if (!destination) return alert('Choose a destination section')
     if (cart.length === 0) return alert('Add items')
+    setSubmitting(true)
     try {
       const items = cart.map((c) => ({ type: c.itemType === 'extra' ? 'extra' : 'inventoryItem', id: c.id, quantity: c.quantity }))
       const res = await fetch(`/api/departments/${encodeURIComponent(source)}/transfer`, {
@@ -156,6 +158,8 @@ export default function InventoryTransferPage() {
     } catch (e) {
       console.error('submit error', e)
       alert('Failed to create transfer')
+    } finally {
+      setSubmitting(false)
     }
   }
 
@@ -263,7 +267,7 @@ export default function InventoryTransferPage() {
             </div>
 
             <div className="mt-4">
-              <button onClick={submit} className="px-3 py-2 bg-sky-600 text-white rounded">Create Transfer</button>
+              <button onClick={submit} disabled={submitting} className="px-3 py-2 bg-sky-600 text-white rounded hover:bg-sky-700 disabled:opacity-60 disabled:cursor-not-allowed">{submitting ? 'Creating...' : 'Create Transfer'}</button>
             </div>
           </div>
         </div>
