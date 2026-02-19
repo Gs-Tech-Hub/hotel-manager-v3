@@ -40,7 +40,8 @@ async function withRetries<T>(fn: () => Promise<T>, attempts = 3, delayMs = 200)
 }
 
 async function ensureOrganization() {
-  console.log('Seeding organization...');
+  const timer = Date.now();
+  console.log('→ Seeding organization...');
 
   const org = await withRetries(() =>
     prisma.organisationInfo.upsert({
@@ -64,12 +65,14 @@ async function ensureOrganization() {
     })
   );
 
-  console.log(`✓ Organization ready: ${org.name}`);
+  const duration = Date.now() - timer;
+  console.log(`✓ Organization ready: ${org.name} (${duration}ms)`);
   return org;
 }
 
 async function seedAdminRoles() {
-  console.log('Seeding admin roles and permissions...');
+  const timer = Date.now();
+  console.log('→ Seeding admin roles and permissions...');
 
   const rolesToSeed = [
     { code: 'admin', name: 'Administrator', description: 'Full system administrator access' },
@@ -146,12 +149,14 @@ async function seedAdminRoles() {
     }
   }
 
-  console.log(`✓ Seeded ${Object.keys(adminRoles).length} admin roles with permissions`);
+  const duration = Date.now() - timer;
+  console.log(`✓ Seeded ${Object.keys(adminRoles).length} admin roles with permissions (${duration}ms)`);
   return adminRoles;
 }
 
 async function seedRoles() {
-  console.log('Seeding unified roles...');
+  const timer = Date.now();
+  console.log('→ Seeding unified roles...');
 
   interface RoleData {
     code: string;
@@ -207,12 +212,14 @@ async function seedRoles() {
     }
   }
 
-  console.log(`✓ Seeded ${Object.keys(roles).length} unified roles`);
+  const duration = Date.now() - timer;
+  console.log(`✓ Seeded ${Object.keys(roles).length} unified roles (${duration}ms)`);
   return roles;
 }
 
 async function seedPermissions(roles: Record<string, any>) {
-  console.log('Seeding comprehensive permissions for all roles...');
+  const timer = Date.now();
+  console.log('→ Seeding comprehensive permissions for all roles...');
 
   interface PermissionData {
     action: string;
@@ -231,6 +238,9 @@ async function seedPermissions(roles: Record<string, any>) {
     // ==================== ADMIN ====================
     admin: [
       { action: '*', subject: '*' }, // Full access
+      // Core dashboard and analytics
+      { action: 'dashboard.read', subject: null },
+      { action: 'analytics.read', subject: null },
       { action: 'admin.view', subject: null },
       { action: 'admin.create', subject: null },
       { action: 'admin.edit', subject: null },
@@ -613,13 +623,19 @@ async function seedPermissions(roles: Record<string, any>) {
 
   let totalPermissions = 0;
   const createdRolePermissions: Set<string> = new Set();
+  const roleArray = Object.entries(permissionSets);
+  let roleIndex = 0;
 
-  for (const [roleCode, permissions] of Object.entries(permissionSets)) {
+  for (const [roleCode, permissions] of roleArray) {
     const role = roles[roleCode];
     if (!role) {
       console.warn(`  ⚠️  Role "${roleCode}" not found, skipping permissions`);
       continue;
     }
+
+    roleIndex++;
+    const roleTimer = Date.now();
+    let rolePermCount = 0;
 
     for (const perm of permissions) {
       // First, get or create the permission (unique by action+subject)
@@ -659,21 +675,27 @@ async function seedPermissions(roles: Record<string, any>) {
           })
         );
         totalPermissions++;
+        rolePermCount++;
       }
       createdRolePermissions.add(rolePermKey);
     }
+
+    const roleDuration = Date.now() - roleTimer;
+    console.log(`  → ${roleCode.padEnd(20)} (${rolePermCount} perms, ${roleDuration}ms) [${roleIndex}/${roleArray.length}]`);
   }
 
-  console.log(`✓ Seeded ${totalPermissions} role-permission links`);
+  const duration = Date.now() - timer;
+  console.log(`✓ Seeded ${totalPermissions} role-permission links (${duration}ms)`);
 }
 
 async function ensureAdminUserWithRole(
   adminRoles: Record<string, any>,
   roles: Record<string, any>,
-  email = process.env.SEED_ADMIN_EMAIL || 'admin@hotel.test',
-  password = process.env.SEED_ADMIN_PASSWORD || 'admin123'
+  email = process.env.SEED_ADMIN_EMAIL || 'admin@hotelmanager.com',
+  password = process.env.SEED_ADMIN_PASSWORD || 'admin@123'
 ) {
-  console.log('Seeding admin user...');
+  const timer = Date.now();
+  console.log('→ Seeding admin user...');
 
   const adminRole = adminRoles['admin'];
   if (!adminRole) throw new Error('Admin role not found');
@@ -746,15 +768,19 @@ async function ensureAdminUserWithRole(
           },
         })
       );
-      console.log(`✓ Admin user also assigned to unified admin role`);
+      console.log(`  → Assigned to unified admin role`);
     }
   }
 
+  const duration = Date.now() - timer;
+  console.log(`✓ Admin user ready: ${email} (${duration}ms)`);
   return user;
 }
 
+
 async function seedCanonicalDepartments() {
-  console.log('Seeding canonical departments...');
+  const timer = Date.now();
+  console.log('→ Seeding canonical departments...');
 
   const departments = [
     { code: 'restaurant', name: 'Restaurant', description: 'Restaurant department' },
@@ -790,11 +816,13 @@ async function seedCanonicalDepartments() {
     }
   }
 
-  console.log(`✓ Seeded ${created} canonical departments`);
+  const duration = Date.now() - timer;
+  console.log(`✓ Seeded ${created} canonical departments (${duration}ms)`);
 }
 
 async function seedPaymentTypes() {
-  console.log('Seeding payment types...');
+  const timer = Date.now();
+  console.log('→ Seeding payment types...');
 
   const paymentTypes = [
     { type: 'cash', description: 'Cash payment' },
@@ -824,10 +852,12 @@ async function seedPaymentTypes() {
     }
   }
 
-  console.log(`✓ Seeded ${created} payment types`);
+  const duration = Date.now() - timer;
+  console.log(`✓ Seeded ${created} payment types (${duration}ms)`);
 }
 
 async function main() {
+  const startTime = Date.now();
   try {
     console.log('\n🌱 Starting core application seed...\n');
 
@@ -840,7 +870,8 @@ async function main() {
     await seedCanonicalDepartments();
     await seedPaymentTypes();
 
-    console.log('\n✅ Core application seed completed successfully.\n');
+    const totalDuration = Date.now() - startTime;
+    console.log(`\n✅ Core application seed completed successfully in ${totalDuration}ms (${(totalDuration / 1000).toFixed(2)}s)\n`);
   } catch (err) {
     console.error('\n❌ Seed failed:', err);
     process.exitCode = 1;
