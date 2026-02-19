@@ -236,6 +236,15 @@ async function seedPermissions(roles: Record<string, any>) {
       { action: 'admin.edit', subject: null },
       { action: 'admin.delete', subject: null },
       { action: 'admin.manage', subject: null },
+      // Services permissions
+      { action: 'services.read', subject: null },
+      { action: 'services.create', subject: null },
+      { action: 'services.update', subject: null },
+      { action: 'services.delete', subject: null },
+      // Department Sections permissions
+      { action: 'department_sections.create', subject: null },
+      { action: 'department_sections.update', subject: null },
+      { action: 'department_sections.delete', subject: null },
     ],
 
     // ==================== MANAGER ====================
@@ -285,6 +294,15 @@ async function seedPermissions(roles: Record<string, any>) {
       { action: 'reports.generate', subject: null },
       { action: 'reports.export', subject: null },
       { action: 'analytics.read', subject: null },
+      // Services permissions
+      { action: 'services.read', subject: null },
+      { action: 'services.create', subject: null },
+      { action: 'services.update', subject: null },
+      { action: 'services.delete', subject: null },
+      // Department Sections permissions
+      { action: 'department_sections.create', subject: null },
+      { action: 'department_sections.update', subject: null },
+      { action: 'department_sections.delete', subject: null },
     ],
 
     // ==================== POS MANAGER ====================
@@ -302,10 +320,15 @@ async function seedPermissions(roles: Record<string, any>) {
       { action: 'inventory.update', subject: null },
       { action: 'inventory.transfer', subject: null },
       { action: 'extras.read', subject: null },
+      { action: 'services.read', subject: null },
       { action: 'games.read', subject: null },
       { action: 'games.create', subject: null },
       { action: 'games.update', subject: null },
       { action: 'games.checkout', subject: null },
+      // Services permissions
+      { action: 'services.read', subject: null },
+      { action: 'services.create', subject: null },
+      { action: 'services.update', subject: null },
       { action: 'bookings.read', subject: null },
       { action: 'rooms.read', subject: null },
       { action: 'departments.read', subject: null },
@@ -331,9 +354,14 @@ async function seedPermissions(roles: Record<string, any>) {
       { action: 'extras.delete', subject: null },
       { action: 'extras.allocate', subject: null },
       { action: 'extras.transfer', subject: null },
-      { action: 'departments.read', subject: null },
       { action: 'department_sections.read', subject: null },
+      { action: 'department_sections.update', subject: null },
+      { action: 'departments.read', subject: null },
       { action: 'reports.read', subject: null },
+      // Services permissions
+      { action: 'services.read', subject: null },
+      { action: 'services.create', subject: null },
+      { action: 'services.update', subject: null },
     ],
 
     // ==================== ACCOUNTANT ====================
@@ -343,6 +371,8 @@ async function seedPermissions(roles: Record<string, any>) {
       { action: 'payments.process', subject: null },
       { action: 'payments.refund', subject: null },
       { action: 'orders.read', subject: null },
+      // Services permissions
+      { action: 'services.read', subject: null },
       { action: 'inventory.read', subject: null },
       { action: 'bookings.read', subject: null },
       { action: 'discounts.read', subject: null },
@@ -365,6 +395,8 @@ async function seedPermissions(roles: Record<string, any>) {
       // Payment processing
       { action: 'payments.read', subject: null },
       { action: 'payments.process', subject: null },
+      // Services access
+      { action: 'services.read', subject: null },
       { action: 'payments.refund', subject: null },
       // Inventory for stock checks
       { action: 'inventory.read', subject: null },
@@ -395,9 +427,16 @@ async function seedPermissions(roles: Record<string, any>) {
       { action: 'inventory.read', subject: null },
       // Bookings
       { action: 'bookings.read', subject: null },
-      { action: 'bookings.create', subject: null },
-      { action: 'bookings.update', subject: null },
-      { action: 'bookings.cancel', subject: null },
+      { action: 'department_sections.update', subject: null },
+      // Discounts
+      { action: 'discounts.read', subject: null },
+      { action: 'discounts.apply', subject: null },
+      // Reports
+      { action: 'reports.read', subject: null },
+      // Services
+      { action: 'services.read', subject: null },
+      { action: 'services.create', subject: null },
+      { action: 'services.update', subject: null },
       // Customers
       { action: 'customers.read', subject: null },
       { action: 'customers.create', subject: null },
@@ -408,13 +447,13 @@ async function seedPermissions(roles: Record<string, any>) {
       // Departments
       { action: 'departments.read', subject: null },
       { action: 'department_sections.read', subject: null },
+      { action: 'department_sections.update', subject: null },
       // Discounts
       { action: 'discounts.read', subject: null },
       { action: 'discounts.apply', subject: null },
       // Reports
       { action: 'reports.read', subject: null },
     ],
-
     // ==================== EMPLOYEE ====================
     // Minimal access, read-only for most features
     employee: [
@@ -424,6 +463,7 @@ async function seedPermissions(roles: Record<string, any>) {
       { action: 'bookings.read', subject: null },
       { action: 'departments.read', subject: null },
       { action: 'department_sections.read', subject: null },
+      { action: 'services.read', subject: null },
     ],
 
     // ==================== KITCHEN STAFF ====================
@@ -434,6 +474,8 @@ async function seedPermissions(roles: Record<string, any>) {
       { action: 'inventory.read', subject: null },
       { action: 'departments.read', subject: null },
       { action: 'department_sections.read', subject: null },
+      { action: 'department_sections.update', subject: null },
+      { action: 'services.read', subject: null },
     ],
 
     // ==================== BAR STAFF ====================
@@ -444,7 +486,9 @@ async function seedPermissions(roles: Record<string, any>) {
       { action: 'inventory.read', subject: null },
       { action: 'departments.read', subject: null },
       { action: 'department_sections.read', subject: null },
+      { action: 'department_sections.update', subject: null },
       { action: 'departments.update', subject: null },
+      { action: 'services.read', subject: null },
     ],
 
     // ==================== POS STAFF ====================
@@ -460,9 +504,11 @@ async function seedPermissions(roles: Record<string, any>) {
       { action: 'inventory.read', subject: null },
       { action: 'departments.read', subject: null },
       { action: 'department_sections.read', subject: null },
+      { action: 'department_sections.update', subject: null },
       { action: 'discounts.read', subject: null },
       { action: 'discounts.apply', subject: null },
       { action: 'pos_terminal.access', subject: null },
+      { action: 'services.read', subject: null },
     ],
 
     // ==================== HOUSEKEEPING STAFF ====================
@@ -474,6 +520,7 @@ async function seedPermissions(roles: Record<string, any>) {
       { action: 'inventory.read', subject: null },
       { action: 'departments.read', subject: null },
       { action: 'department_sections.read', subject: null },
+      { action: 'services.read', subject: null },
     ],
 
     // ==================== FRONT DESK ====================
@@ -492,6 +539,9 @@ async function seedPermissions(roles: Record<string, any>) {
       { action: 'orders.read', subject: null },
       { action: 'departments.read', subject: null },
       { action: 'department_sections.read', subject: null },
+      { action: 'services.read', subject: null },
+      { action: 'services.create', subject: null },
+      { action: 'services.update', subject: null },
       { action: 'discounts.read', subject: null },
       { action: 'discounts.apply', subject: null },
     ],
@@ -509,6 +559,9 @@ async function seedPermissions(roles: Record<string, any>) {
       { action: 'rooms.read', subject: null },
       { action: 'orders.read', subject: null },
       { action: 'departments.read', subject: null },
+      { action: 'services.read', subject: null },
+      { action: 'services.create', subject: null },
+      { action: 'services.update', subject: null },
       { action: 'department_sections.read', subject: null },
       { action: 'discounts.read', subject: null },
       { action: 'discounts.apply', subject: null },
@@ -532,6 +585,9 @@ async function seedPermissions(roles: Record<string, any>) {
       { action: 'department_sections.read', subject: null },
       { action: 'discounts.read', subject: null },
       { action: 'discounts.apply', subject: null },
+      { action: 'services.read', subject: null },
+      { action: 'services.create', subject: null },
+      { action: 'services.update', subject: null },
     ],
 
     // ==================== TERMINAL OPERATOR ====================
@@ -548,8 +604,10 @@ async function seedPermissions(roles: Record<string, any>) {
       { action: 'inventory.read', subject: null },
       { action: 'departments.read', subject: null },
       { action: 'department_sections.read', subject: null },
+      { action: 'department_sections.update', subject: null },
       { action: 'discounts.read', subject: null },
       { action: 'discounts.apply', subject: null },
+      { action: 'services.read', subject: null },
     ],
   };
 

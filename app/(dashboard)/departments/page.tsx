@@ -109,28 +109,30 @@ export default function DepartmentsPage() {
   useEffect(() => { fetchDepartments() }, [])
 
   const canManage = hasPermission('departments.create') || hasPermission('departments.delete')
+  
+  // NOTE: Create department button is disabled because we haven't added automatic permission
+  // seeding for newly created departments. New departments require manual permission setup
+  // via seed-core.ts or the admin panel. Enable this when auto-permission provisioning is implemented.
+  const canCreateNewDepartment = false // hasPermission('departments.create')
 
   return (
     <div className="space-y-6">
       <div className="flex items-center justify-between">
         <h1 className="text-2xl font-bold">Departments</h1>
         <div className="flex gap-2">
-          {canManage && (
-            <button 
-              onClick={() => setShowForm(!showForm)}
-              disabled={loading}
-              className="px-4 py-2 bg-blue-600 text-white rounded-lg flex items-center gap-2 hover:bg-blue-700 disabled:opacity-60 disabled:cursor-not-allowed"
-            >
-              <Plus className="h-4 w-4" />
-              Add Department
-            </button>
-          )}
+          {/* Create Department button is hidden - new departments require manual permission setup */}
+          {/* 
+            TODO: Implement auto-permission seeding for new departments:
+            1. When a department is created, automatically create department-scoped roles
+            2. Seed default permissions for those roles
+            3. Then re-enable the button with: canCreateNewDepartment
+          */}
           <button onClick={fetchDepartments} className="px-3 py-2 border rounded text-sm hover:bg-muted" disabled={loading}>Refresh</button>
         </div>
       </div>
 
-      {/* Create Form */}
-      {showForm && canManage && (
+      {/* Create Form - Hidden until auto-permission seeding is implemented */}
+      {false && showForm && canManage && (
         <div className="border rounded-lg p-4 bg-muted">
           <form onSubmit={handleCreateDepartment} className="space-y-4">
             <div className="grid grid-cols-2 gap-4">
