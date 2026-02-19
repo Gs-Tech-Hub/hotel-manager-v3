@@ -7,6 +7,7 @@ import useDepartmentData from '../../../../components/departments/useDepartmentD
 import SectionProductsTable from '../../../../components/departments/SectionProductsTable'
 import DepartmentHeader from '../../../../components/departments/DepartmentHeader'
 import OrderStatsCard from '../../../../components/departments/OrderStatsCard'
+import GameStatsCard from '../../../../components/departments/GameStatsCard'
 import CreateSectionModal from '../../../../components/departments/CreateSectionModal'
 import IncomingTransfersModal from '../../../../components/departments/IncomingTransfersModal'
 import ParentDepartmentView from '../../../../components/departments/ParentDepartmentView'
@@ -311,7 +312,9 @@ export default function DepartmentDetail() {
         <div className="fixed inset-0 z-50 bg-black/50 flex items-center justify-center p-4">
           <div className="bg-white rounded-lg max-w-2xl w-full max-h-[90vh] overflow-auto">
             <div className="sticky top-0 bg-white border-b p-4 flex items-center justify-between">
-              <h2 className="text-lg font-semibold">Order Statistics</h2>
+              <h2 className="text-lg font-semibold">
+                {department?.type === 'games' ? 'Game Statistics' : 'Order Statistics'}
+              </h2>
               <button
                 onClick={() => setShowStatsModal(false)}
                 className="text-gray-400 hover:text-gray-600 text-xl"
@@ -320,11 +323,15 @@ export default function DepartmentDetail() {
               </button>
             </div>
             <div className="p-6">
-              <OrderStatsCard
-                unpaidStats={sectionStats.unpaid}
-                paidStats={sectionStats.paid}
-                aggregatedStats={sectionStats.aggregated}
-              />
+              {department?.type === 'games' ? (
+                <GameStatsCard stats={sectionStats} />
+              ) : (
+                <OrderStatsCard
+                  unpaidStats={sectionStats.unpaid}
+                  paidStats={sectionStats.paid}
+                  aggregatedStats={sectionStats.aggregated}
+                />
+              )}
             </div>
           </div>
         </div>

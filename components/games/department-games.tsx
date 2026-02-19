@@ -13,7 +13,7 @@ import {
   TableRow,
 } from '@/components/ui/table';
 import { Badge } from '@/components/ui/badge';
-import { Plus, RotateCcw } from 'lucide-react';
+import { Plus, ChevronDown, ChevronUp } from 'lucide-react';
 import { toast } from 'sonner';
 import { formatTablePrice } from '@/lib/formatters';
 import { RegisterPlayer } from './register-player';
@@ -38,6 +38,7 @@ export function DepartmentGames({ departmentCode, departmentId }: DepartmentGame
   const [registerOpen, setRegisterOpen] = useState(false);
   const [startGameOpen, setStartGameOpen] = useState(false);
   const [selectedCustomer, setSelectedCustomer] = useState<any>(null);
+  const [showCustomers, setShowCustomers] = useState(false);
 
   const apiBase = `/api/departments/${departmentCode}/games`;
 
@@ -152,21 +153,54 @@ export function DepartmentGames({ departmentCode, departmentId }: DepartmentGame
 
   return (
     <div className="space-y-6">
-      {/* Active Sessions */}
-      <Card>
-        <CardHeader className="flex flex-row items-center justify-between">
-          <div>
-            <CardTitle>Active Sessions</CardTitle>
-            <CardDescription>Currently playing games</CardDescription>
-          </div>
-          <Button size="sm" variant="outline" onClick={fetchData}>
-            <RotateCcw className="w-4 h-4 mr-2" />
-            Refresh
+      {/* Header with Action Buttons */}
+      <div className="flex items-center justify-between gap-4">
+        <div className="flex-1">
+          <h1 className="text-3xl font-bold">Games & Entertainment</h1>
+          <p className="text-slate-600">Manage game sessions and player checkout</p>
+        </div>
+        <div className="flex gap-2">
+          <Button
+            size="sm"
+            onClick={() => setRegisterOpen(true)}
+            className="gap-2"
+          >
+            <Plus className="w-4 h-4" />
+            Add Player
           </Button>
+          <Button
+            variant="outline"
+            size="sm"
+            onClick={() => setShowCustomers(!showCustomers)}
+            className="gap-2"
+          >
+            Players
+            {showCustomers ? (
+              <ChevronUp className="h-4 w-4" />
+            ) : (
+              <ChevronDown className="h-4 w-4" />
+            )}
+          </Button>
+        </div>
+      </div>
+
+      {/* Active Sessions - Primary Display */}
+      <Card className="border-blue-200 bg-blue-50">
+        <CardHeader>
+          <div className="flex items-center justify-between">
+            <div>
+              <CardTitle className="text-blue-900">Active Sessions</CardTitle>
+              <CardDescription className="text-blue-800">
+                {activeSessions.length} customer(s) currently playing
+              </CardDescription>
+            </div>
+          </div>
         </CardHeader>
         <CardContent>
           {activeSessions.length === 0 ? (
-            <p className="text-sm text-gray-500">No active game sessions.</p>
+            <div className="text-center py-8 text-slate-600">
+              No active game sessions. Add a player and start a game to begin.
+            </div>
           ) : (
             <div className="overflow-x-auto">
               <Table>
@@ -265,75 +299,70 @@ export function DepartmentGames({ departmentCode, departmentId }: DepartmentGame
         </CardContent>
       </Card>
 
-      {/* Customers */}
-      <Card>
-        <CardHeader className="flex flex-row items-center justify-between">
-          <div>
-            <CardTitle>Customers</CardTitle>
-            <CardDescription>Registered game players</CardDescription>
-          </div>
-          <Button
-            size="sm"
-            onClick={() => setRegisterOpen(true)}
-          >
-            <Plus className="w-4 h-4 mr-2" />
-            Register Player
-          </Button>
-        </CardHeader>
-        <CardContent className="space-y-4">
-          <Input
-            placeholder="Search by name or phone..."
-            value={searchQuery}
-            onChange={(e) => setSearchQuery(e.target.value)}
-          />
-          {filteredCustomers.length === 0 ? (
-            <p className="text-sm text-gray-500">No customers found.</p>
-          ) : (
-            <div className="overflow-x-auto">
-              <Table>
-                <TableHeader>
-                  <TableRow>
-                    <TableHead>Name</TableHead>
-                    <TableHead>Phone</TableHead>
-                    <TableHead>Email</TableHead>
-                    <TableHead>Actions</TableHead>
-                  </TableRow>
-                </TableHeader>
-                <TableBody>
-                  {filteredCustomers.map((customer) => (
-                    <TableRow key={customer.id}>
-                      <TableCell>{`${customer.firstName} ${customer.lastName}`}</TableCell>
-                      <TableCell>{customer.phone}</TableCell>
-                      <TableCell>{customer.email}</TableCell>
-                      <TableCell>
-                        <Button
-                          size="sm"
-                          variant="outline"
-                          onClick={() => {
-                            setSelectedCustomer(customer);
-                            setStartGameOpen(true);
-                          }}
-                        >
-                          Start Game
-                        </Button>
-                      </TableCell>
-                    </TableRow>
-                  ))}
-                </TableBody>
-              </Table>
+      {/* Customers (Collapsible) */}
+      {showCustomers && (
+        <Card>
+          <CardHeader>
+            <div className="flex items-center justify-between">
+              <div>
+                <CardTitle>Registered Players</CardTitle>
+                <CardDescription>Total: {filteredCustomers.length} customers</CardDescription>
+              </div>
+              <Button
+                size="sm"
+                variant="ghost"
+                onClick={() => setShowCustomers(false)}
+              >
+                ✕
+              </Button>
             </div>
-          )}
-        </CardContent>
-      </Card>
-
-      {/* Modals */}
-      <RegisterPlayer
-        open={registerOpen}
-        onOpenChange={setRegisterOpen}
-        departmentCode={departmentCode}
-        onPlayerRegistered={handlePlayerRegistered}
-      />
-
+          </CardHeader>
+          <CardContent className="space-y-4">
+            <Input
+              placeholder="Search by name or phone..."
+              value={searchQuery}
+              onChange={(e) => setSearchQuery(e.target.value)}
+            />
+            {filteredCustomers.length === 0 ? (
+              <p className="text-sm text-gray-500">No customers found.</p>
+            ) : (
+              <div className="overflow-x-auto">
+                <Table>
+                  <TableHeader>
+                    <TableRow>
+                      <TableHead>Name</TableHead>
+                      <TableHead>Phone</TableHead>
+                      <TableHead>Email</TableHead>
+                      <TableHead>Actions</TableHead>
+                    </TableRow>
+                  </TableHeader>
+                  <TableBody>
+                    {filteredCustomers.map((customer) => (
+                      <TableRow key={customer.id}>
+                        <TableCell>{`${customer.firstName} ${customer.lastName}`}</TableCell>
+                        <TableCell>{customer.phone}</TableCell>
+                        <TableCell>{customer.email}</TableCell>
+                        <TableCell>
+                          <Button
+                            size="sm"
+                            variant="outline"
+                            onClick={() => {
+                              setSelectedCustomer(customer);
+                              setStartGameOpen(true);
+                            }}
+                          >
+                            Start Game
+                          </Button>
+                        </TableCell>
+                      </TableRow>
+                    ))}
+                  </TableBody>
+                </Table>
+              </div>
+            )}
+          </CardContent>
+        </Card>
+      )}
       {selectedCustomer && (
         <StartGame
           open={startGameOpen}
