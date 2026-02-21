@@ -189,6 +189,11 @@ async function seedRoles() {
     // Legacy/compatibility
     { code: 'receptionist', name: 'Receptionist', description: 'Receptionist (legacy name, same as Front Desk)' },
     { code: 'terminal_operator', name: 'Terminal Operator', description: 'POS terminal access and operations' },
+
+    // Cleaning and Maintenance roles
+    { code: 'housekeeping_supervisor', name: 'Housekeeping Supervisor', description: 'Supervises cleaning tasks and staff' },
+    { code: 'maintenance_tech', name: 'Maintenance Technician', description: 'Executes maintenance work orders' },
+    { code: 'maintenance_manager', name: 'Maintenance Manager', description: 'Creates and manages maintenance requests' },
   ];
 
   const roles: Record<string, any> = {};
@@ -271,14 +276,36 @@ async function seedPermissions(roles: Record<string, any>) {
       { action: 'department_sections.create', subject: null },
       { action: 'department_sections.update', subject: null },
       { action: 'department_sections.delete', subject: null },
-      // Bookings and rooms
+      // Bookings and reservations
       { action: 'bookings.read', subject: null },
       { action: 'bookings.create', subject: null },
       { action: 'bookings.update', subject: null },
       { action: 'bookings.delete', subject: null },
       { action: 'bookings.checkout', subject: null },
+      { action: 'reservations.view', subject: null },
+      { action: 'reservations.create', subject: null },
+      { action: 'reservations.modify', subject: null },
+      { action: 'reservations.cancel', subject: null },
+      { action: 'reservations.checkin', subject: null },
+      { action: 'reservations.checkout', subject: null },
+      // Rooms
       { action: 'rooms.read', subject: null },
+      { action: 'rooms.view', subject: null },
+      { action: 'rooms.manage', subject: null },
       { action: 'rooms.update', subject: null },
+      // Cleaning management
+      { action: 'cleaning.view', subject: null },
+      { action: 'cleaning.assign', subject: null },
+      { action: 'cleaning.work', subject: null },
+      { action: 'cleaning.inspect', subject: null },
+      // Maintenance management
+      { action: 'maintenance.view', subject: null },
+      { action: 'maintenance.request', subject: null },
+      { action: 'maintenance.assign', subject: null },
+      { action: 'maintenance.work', subject: null },
+      { action: 'maintenance.verify', subject: null },
+      // Pricing
+      { action: 'pricing.manage', subject: null },
       // Customers
       { action: 'customers.read', subject: null },
       { action: 'customers.create', subject: null },
@@ -344,8 +371,19 @@ async function seedPermissions(roles: Record<string, any>) {
       { action: 'bookings.create', subject: null },
       { action: 'bookings.update', subject: null },
       { action: 'bookings.checkout', subject: null },
+      { action: 'reservations.view', subject: null },
+      { action: 'reservations.create', subject: null },
+      { action: 'reservations.modify', subject: null },
+      { action: 'reservations.checkin', subject: null },
+      { action: 'reservations.checkout', subject: null },
       { action: 'rooms.read', subject: null },
+      { action: 'rooms.view', subject: null },
       { action: 'rooms.update', subject: null },
+      { action: 'cleaning.view', subject: null },
+      { action: 'cleaning.inspect', subject: null },
+      { action: 'maintenance.view', subject: null },
+      { action: 'maintenance.verify', subject: null },
+      { action: 'pricing.manage', subject: null },
       { action: 'customers.read', subject: null },
       { action: 'customers.create', subject: null },
       { action: 'customers.update', subject: null },
@@ -582,11 +620,14 @@ async function seedPermissions(roles: Record<string, any>) {
     ],
 
     // ==================== HOUSEKEEPING STAFF ====================
-    // Full permissions for: /rooms, /inventory for housekeeping
+    // Full permissions for: /rooms, /inventory for housekeeping, cleaning tasks
     housekeeping_staff: [
       { action: 'rooms.read', subject: null },
+      { action: 'rooms.view', subject: null },
       { action: 'rooms.update', subject: null },
       { action: 'bookings.read', subject: null },
+      { action: 'cleaning.view', subject: null },
+      { action: 'cleaning.work', subject: null },
       { action: 'inventory.read', subject: null },
       { action: 'departments.read', subject: null },
       { action: 'department_sections.read', subject: null },
@@ -601,11 +642,18 @@ async function seedPermissions(roles: Record<string, any>) {
       { action: 'bookings.update', subject: null },
       { action: 'bookings.checkout', subject: null },
       { action: 'bookings.cancel', subject: null },
+      { action: 'reservations.view', subject: null },
+      { action: 'reservations.create', subject: null },
+      { action: 'reservations.modify', subject: null },
+      { action: 'reservations.checkin', subject: null },
+      { action: 'reservations.checkout', subject: null },
       { action: 'customers.read', subject: null },
       { action: 'customers.create', subject: null },
       { action: 'customers.update', subject: null },
       { action: 'rooms.read', subject: null },
+      { action: 'rooms.view', subject: null },
       { action: 'rooms.update', subject: null },
+      { action: 'cleaning.view', subject: null },
       { action: 'orders.read', subject: null },
       { action: 'departments.read', subject: null },
       { action: 'department_sections.read', subject: null },
@@ -677,6 +725,52 @@ async function seedPermissions(roles: Record<string, any>) {
       { action: 'department_sections.update', subject: null },
       { action: 'discounts.read', subject: null },
       { action: 'discounts.apply', subject: null },
+      { action: 'services.read', subject: null },
+    ],
+
+    // ==================== HOUSEKEEPING SUPERVISOR ====================
+    // Full permissions for: cleaning task assignment, inspection, and staff management
+    housekeeping_supervisor: [
+      { action: 'rooms.read', subject: null },
+      { action: 'rooms.view', subject: null },
+      { action: 'rooms.update', subject: null },
+      { action: 'bookings.read', subject: null },
+      { action: 'cleaning.view', subject: null },
+      { action: 'cleaning.assign', subject: null },
+      { action: 'cleaning.work', subject: null },
+      { action: 'cleaning.inspect', subject: null },
+      { action: 'inventory.read', subject: null },
+      { action: 'departments.read', subject: null },
+      { action: 'department_sections.read', subject: null },
+      { action: 'services.read', subject: null },
+    ],
+
+    // ==================== MAINTENANCE TECHNICIAN ====================
+    // Full permissions for: maintenance work execution
+    maintenance_tech: [
+      { action: 'rooms.read', subject: null },
+      { action: 'rooms.view', subject: null },
+      { action: 'maintenance.view', subject: null },
+      { action: 'maintenance.work', subject: null },
+      { action: 'inventory.read', subject: null },
+      { action: 'departments.read', subject: null },
+      { action: 'department_sections.read', subject: null },
+      { action: 'services.read', subject: null },
+    ],
+
+    // ==================== MAINTENANCE MANAGER ====================
+    // Full permissions for: maintenance request creation, assignment, and verification
+    maintenance_manager: [
+      { action: 'rooms.read', subject: null },
+      { action: 'rooms.view', subject: null },
+      { action: 'maintenance.view', subject: null },
+      { action: 'maintenance.request', subject: null },
+      { action: 'maintenance.assign', subject: null },
+      { action: 'maintenance.work', subject: null },
+      { action: 'maintenance.verify', subject: null },
+      { action: 'inventory.read', subject: null },
+      { action: 'departments.read', subject: null },
+      { action: 'department_sections.read', subject: null },
       { action: 'services.read', subject: null },
     ],
   };
@@ -919,19 +1013,60 @@ async function seedPaymentTypes() {
 async function main() {
   const startTime = Date.now();
   try {
-    console.log('\n🌱 Starting core application seed...\n');
+    console.log('\n╔══════════════════════════════════════════════════════════╗');
+    console.log('║       🌱 HOTEL MANAGER CORE SEEDING PROCESS 🌱           ║');
+    console.log('╚══════════════════════════════════════════════════════════╝\n');
 
-    // Seed in order
+    console.log('📋 Seeding Steps:');
+    console.log('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n');
+
+    // Step 1: Organization
+    let stepTimer = Date.now();
+    console.log('[1/7] Organization Configuration');
     await ensureOrganization();
+    console.log(`      ⏱️  ${Date.now() - stepTimer}ms\n`);
+
+    // Step 2: Admin Roles
+    stepTimer = Date.now();
+    console.log('[2/7] Admin Role Setup (legacy)');
     const adminRoles = await seedAdminRoles();
+    console.log(`      ⏱️  ${Date.now() - stepTimer}ms\n`);
+
+    // Step 3: Unified Roles
+    stepTimer = Date.now();
+    console.log('[3/7] Unified Role System (16 roles)');
     const roles = await seedRoles();
+    console.log(`      ⏱️  ${Date.now() - stepTimer}ms\n`);
+
+    // Step 4: Permissions
+    stepTimer = Date.now();
+    console.log('[4/7] Permission Matrix & RBAC Links');
     await seedPermissions(roles);
+    console.log(`      ⏱️  ${Date.now() - stepTimer}ms\n`);
+
+    // Step 5: Admin User
+    stepTimer = Date.now();
+    console.log('[5/7] Admin User Account');
     await ensureAdminUserWithRole(adminRoles, roles);
+    console.log(`      ⏱️  ${Date.now() - stepTimer}ms\n`);
+
+    // Step 6: Departments
+    stepTimer = Date.now();
+    console.log('[6/7] Canonical Departments');
     await seedCanonicalDepartments();
+    console.log(`      ⏱️  ${Date.now() - stepTimer}ms\n`);
+
+    // Step 7: Payment Types
+    stepTimer = Date.now();
+    console.log('[7/7] Payment Type Configuration');
     await seedPaymentTypes();
+    console.log(`      ⏱️  ${Date.now() - stepTimer}ms\n`);
 
     const totalDuration = Date.now() - startTime;
-    console.log(`\n✅ Core application seed completed successfully in ${totalDuration}ms (${(totalDuration / 1000).toFixed(2)}s)\n`);
+    console.log('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━');
+    console.log(`\n✅ SEED COMPLETE`);
+    console.log(`   Total Time: ${totalDuration}ms (${(totalDuration / 1000).toFixed(2)}s)`);
+    console.log(`   Timestamp: ${new Date().toISOString()}\n`);
   } catch (err) {
     console.error('\n❌ Seed failed:', err);
     process.exitCode = 1;

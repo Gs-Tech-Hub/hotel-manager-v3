@@ -823,6 +823,9 @@ model Department {
   // Services managed by this department
   serviceInventory ServiceInventory[]
 
+  // Units (rooms/suites/apartments) managed by this department
+  units Unit[]
+
   // RBAC: Role assignments scoped to this department
   userRoles       UserRole[]
   userPermissions UserPermission[]
@@ -2082,5 +2085,298 @@ model GameSession {
   @@index([status])
   @@index([startedAt])
   @@map("game_sessions")
+}
+
+// ==================== ROOMS, RESERVATIONS & LODGING ====================
+
+// Enum for unit kind
+enum UnitKind {
+  ROOM
+  SUITE
+  APARTMENT
+}
+
+// Unit status: derived from reservations, cleaning, maintenance state
+enum UnitStatus {
+  AVAILABLE        // No reservation, not cleaning, not in maintenance
+  OCCUPIED         // Active reservation checked-in
+  CLEANING         // Cleaning task in progress
+  MAINTENANCE      // Maintenance work order in progress
+  BLOCKED          // Out-of-service
+}
+
+// Reservation status
+enum ReservationStatus {
+  PENDING          // Created, awaiting payment
+  CONFIRMED        // Paid/secured
+  CHECKED_IN       // Guest in unit
+  CHECKED_OUT      // Guest departed, cleaning pending
+  COMPLETED        // Cleaning done, reservation closed
+  CANCELLED        // Guest cancelled
+}
+
+/// Room Type (e.g., Deluxe Room, Standard Suite)
+model RoomType {
+  id              String   @id @default(cuid())
+  code            String   @unique
+  name            String
+  description     String?
+  capacity        Int      // Max guests
+  amenities       Json?    // { "wifi": true, "ac": true, ... }
+  basePriceCents  Int      // Base price in cents
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+
+  units           Unit[]
+  pricingOverrides PricingOverride[]
+
+  @@index([code])
+  @@map("room_types")
+}
+
+/// Unit (individual room, suite, apartment instance)
+model Unit {
+  id              String   @id @default(cuid())
+  roomNumber      String   @unique
+  unitKind        UnitKind @default(ROOM)
+  roomTypeId      String
+  roomType        RoomType @relation(fields: [roomTypeId], references: [id], onDelete: Restrict)
+  departmentId    String?  // Optional: link to housekeeping/front-desk dept
+  department      Department? @relation(fields: [departmentId], references: [id], onDelete: SetNull)
+  status          UnitStatus @default(AVAILABLE)
+  statusUpdatedAt DateTime @default(now())
+  notes           String?
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+
+  reservations    Reservation[]
+  cleaningTasks   CleaningTask[]
+  maintenanceReqs MaintenanceRequest[]
+  statusHistory   UnitStatusHistory[]
+
+  @@index([roomTypeId])
+  @@index([departmentId])
+  @@index([status])
+  @@index([roomNumber])
+  @@map("units")
+}
+
+/// Guest information
+model Guest {
+  id              String   @id @default(cuid())
+  firstName       String
+  lastName        String
+  email           String   @unique
+  phone           String?
+  idNumber        String?  // Passport, license, etc.
+  country         String?
+  notes           String?
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+
+  reservations    Reservation[]
+
+  @@index([email])
+  @@map("guests")
+}
+
+/// Reservation booking
+model Reservation {
+  id              String   @id @default(cuid())
+  confirmationNo  String   @unique @default(cuid()) // Short code for guest reference
+  unitId          String
+  unit            Unit     @relation(fields: [unitId], references: [id], onDelete: Restrict)
+  guestId         String
+  guest           Guest    @relation(fields: [guestId], references: [id], onDelete: Restrict)
+  checkInDate     DateTime // Normalized to start-of-day UTC
+  checkOutDate    DateTime // Normalized to start-of-day UTC
+  status          ReservationStatus @default(PENDING)
+  totalPriceCents Int      // Total cost in cents (base price * nights + extras)
+  paidCents       Int      @default(0)
+  currency        String   @default("USD")
+  source          String?  // web, app, phone, walk-in
+  notes           String?
+  idempotencyKey  String?  @unique // For preventing double-booking
+  createdBy       String?  // User ID who created reservation
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+
+  checkInTime     DateTime? // Actual check-in
+  checkOutTime    DateTime? // Actual check-out
+
+  @@index([unitId])
+  @@index([guestId])
+  @@index([checkInDate, checkOutDate])
+  @@index([status])
+  @@unique([unitId, checkInDate, checkOutDate]) // Prevent overlaps
+  @@map("reservations")
+}
+
+/// Pricing overrides (seasonal rates, special events)
+model PricingOverride {
+  id              String   @id @default(cuid())
+  roomTypeId      String
+  roomType        RoomType @relation(fields: [roomTypeId], references: [id], onDelete: Cascade)
+  startDate       DateTime // Normalized to start-of-day UTC
+  endDate         DateTime // Normalized to start-of-day UTC
+  pricePerNightCents Int
+  reason          String?  // "Peak Season", "Event", etc.
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+
+  @@index([roomTypeId, startDate, endDate])
+  @@map("pricing_overrides")
+}
+
+// ==================== CLEANING MANAGEMENT ====================
+
+// Cleaning task status
+enum CleaningTaskStatus {
+  PENDING         // Assigned, waiting to start
+  IN_PROGRESS     // Cleaner started work
+  COMPLETED       // Work done, awaiting inspection
+  INSPECTED       // QA pass
+  REJECTED        // Failed QA, needs re-work
+  CANCELLED       // Task cancelled
+}
+
+// Cleaning priority
+enum CleaningPriority {
+  LOW
+  NORMAL
+  HIGH
+  URGENT
+}
+
+/// Cleaning task (triggered by check-out or manual request)
+model CleaningTask {
+  id              String   @id @default(cuid())
+  taskNumber      String   @unique @default(cuid())
+  unitId          String
+  unit            Unit     @relation(fields: [unitId], references: [id], onDelete: Restrict)
+  priority        CleaningPriority @default(NORMAL)
+  status          CleaningTaskStatus @default(PENDING)
+  taskType        String   // "turnover", "deep_clean", "maintenance_clean", "touch_up"
+  assignedToId    String?  // Cleaner/Housekeeper user ID
+  startedAt       DateTime?
+  completedAt     DateTime?
+  inspectedAt     DateTime?
+  inspectedById   String?  // QA inspector user ID
+  notes           String?
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+
+  logs            CleaningLog[]
+
+  @@index([unitId])
+  @@index([status])
+  @@index([assignedToId])
+  @@index([createdAt])
+  @@map("cleaning_tasks")
+}
+
+/// Cleaning log: checklist items, notes, photos
+model CleaningLog {
+  id              String   @id @default(cuid())
+  taskId          String
+  task            CleaningTask @relation(fields: [taskId], references: [id], onDelete: Cascade)
+  loggedById      String   // Cleaner or QA user ID
+  itemType        String   // "bed_linens", "bathroom", "floor", "windows", etc.
+  status          String   // "complete", "incomplete", "issue_found"
+  notes           String?
+  photoUrl        String?  // Optional: cleanliness/damage photo
+  createdAt       DateTime @default(now())
+
+  @@index([taskId])
+  @@map("cleaning_logs")
+}
+
+// ==================== MAINTENANCE MANAGEMENT ====================
+
+// Maintenance request status
+enum MaintenanceStatus {
+  OPEN            // Created, not yet assigned
+  ASSIGNED        // Assigned to technician
+  IN_PROGRESS     // Technician working
+  ON_HOLD         // Waiting for parts or approval
+  COMPLETED       // Work done, awaiting sign-off
+  VERIFIED        // Manager verified fix
+  CLOSED          // Archived
+  CANCELLED       // Not proceeding
+}
+
+// Maintenance priority
+enum MaintenancePriority {
+  LOW             // Minor, non-urgent (leaky faucet)
+  NORMAL          // Standard repair (AC not working)
+  HIGH            // Affects safety/comfort (no heat)
+  CRITICAL        // Emergency (electrical, flooding)
+}
+
+/// Maintenance request (work order)
+model MaintenanceRequest {
+  id              String   @id @default(cuid())
+  workOrderNo     String   @unique @default(cuid())
+  unitId          String
+  unit            Unit     @relation(fields: [unitId], references: [id], onDelete: Restrict)
+  requestedBy     String   // User ID (guest, staff, inspection)
+  requestedAt     DateTime @default(now())
+  category        String   // "electrical", "plumbing", "hvac", "appliance", "structural", "other"
+  description     String
+  priority        MaintenancePriority @default(NORMAL)
+  status          MaintenanceStatus @default(OPEN)
+  assignedToId    String?  // Technician user ID
+  estimatedCostCents Int?
+  actualCostCents Int?
+  estimatedDays   Int?
+  startedAt       DateTime?
+  completedAt     DateTime?
+  verifiedAt      DateTime?
+  verifiedById    String?  // Manager who verified
+  notes           String?
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+
+  logs            MaintenanceLog[]
+
+  @@index([unitId])
+  @@index([status])
+  @@index([assignedToId])
+  @@index([priority])
+  @@index([createdAt])
+  @@map("maintenance_requests")
+}
+
+/// Maintenance log: work log, parts used, notes
+model MaintenanceLog {
+  id              String   @id @default(cuid())
+  requestId       String
+  request         MaintenanceRequest @relation(fields: [requestId], references: [id], onDelete: Cascade)
+  loggedById      String   // Technician user ID
+  status          MaintenanceStatus // Current status at time of log
+  workDescription String   // What was done
+  partsUsed       String?  // JSON or text: { "part": "qty" }
+  laborHoursCents Int?     // Labor cost in cents
+  costCents       Int?     // Parts + labor cost
+  notes           String?
+  loggedAt        DateTime @default(now())
+
+  @@index([requestId])
+  @@map("maintenance_logs")
+}
+
+/// Unit status history (audit trail)
+model UnitStatusHistory {
+  id              String   @id @default(cuid())
+  unitId          String
+  unit            Unit     @relation(fields: [unitId], references: [id], onDelete: Cascade)
+  previousStatus  UnitStatus
+  newStatus       UnitStatus
+  reason          String?  // e.g., "Checkout", "Cleaning assigned", "Maintenance started"
+  changedBy       String?  // User ID
+  changedAt       DateTime @default(now())
+
+  @@index([unitId, changedAt])
+  @@map("unit_status_history")
 }
 

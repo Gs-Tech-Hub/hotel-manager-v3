@@ -1,34 +1,33 @@
 /**
- * GET /api/rooms - List all units
- * POST /api/rooms - Create new unit
+ * GET /api/cleaning/tasks - List cleaning tasks
+ * POST /api/cleaning/tasks - Create cleaning task
  */
 
 import { NextRequest, NextResponse } from 'next/server';
 import { extractUserContext } from '@/lib/user-context';
-import { roomService } from '@/src/services/RoomService';
+import { cleaningService } from '@/src/services/CleaningService';
 import { successResponse, errorResponse, ErrorCodes } from '@/lib/api-response';
-import { UnitStatus } from '@prisma/client';
 
 export async function GET(request: NextRequest) {
   try {
     const searchParams = request.nextUrl.searchParams;
-    const status = searchParams.get('status') as UnitStatus | null;
-    const roomTypeId = searchParams.get('roomTypeId');
     const departmentId = searchParams.get('departmentId');
+    const status = searchParams.get('status');
 
-    // Get all units (public-ish endpoint, but can filter by dept if needed)
-    const units = await roomService.getAllUnits({
-      status: status || undefined,
-      roomTypeId: roomTypeId || undefined,
-      departmentId: departmentId || undefined,
-    });
+    // Get pending tasks
+    const tasks = await cleaningService.getPendingTasks(departmentId || undefined);
+
+    // Filter by status if provided
+    const filtered = status
+      ? tasks.filter((t) => t.status === status)
+      : tasks;
 
     return NextResponse.json(
-      successResponse({ data: units }),
+      successResponse({ data: filtered }),
       { status: 200 }
     );
   } catch (error) {
-    console.error('Error fetching units:', error);
+    console.error('Error fetching cleaning tasks:', error);
     return NextResponse.json(
       errorResponse(ErrorCodes.INTERNAL_ERROR, error instanceof Error ? error.message : 'Unknown error'),
       { status: 500 }
@@ -49,18 +48,30 @@ export async function POST(request: NextRequest) {
 
     // Parse request body
     const body = await request.json();
+    const { unitId, taskType, priority, notes } = body;
 
-    // Create unit
-    const unit = await roomService.createUnit(body, { userId: ctx.userId, userType: (ctx.userRole as any) || 'employee' });
+    // Validate required fields
+    if (!unitId || !taskType) {
+      return NextResponse.json(
+        errorResponse(ErrorCodes.BAD_REQUEST, 'unitId and taskType are required'),
+        { status: 400 }
+      );
+    }
+
+    // Create task
+    const task = await cleaningService.createTask(
+      { unitId, taskType, priority, notes },
+      { userId: ctx.userId, userType: (ctx.userRole as any) || 'employee' }
+    );
 
     return NextResponse.json(
-      successResponse({ data: unit, message: 'Unit created successfully' }),
+      successResponse({ data: task, message: 'Cleaning task created successfully' }),
       { status: 201 }
     );
   } catch (error) {
-    console.error('Error creating unit:', error);
+    console.error('Error creating cleaning task:', error);
     const errorMsg = error instanceof Error ? error.message : 'Unknown error';
-    
+
     if (errorMsg.includes('Insufficient permissions')) {
       return NextResponse.json(
         errorResponse(ErrorCodes.FORBIDDEN, errorMsg),
@@ -74,4 +85,3 @@ export async function POST(request: NextRequest) {
     );
   }
 }
-

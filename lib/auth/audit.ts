@@ -14,14 +14,21 @@
  */
 
 export interface AuditLog {
-  action: "role_granted" | "role_revoked" | "permission_granted" | "permission_revoked" | "role_created" | "role_updated";
-  targetUserId: string;
+  // RBAC actions
+  action: "role_granted" | "role_revoked" | "permission_granted" | "permission_revoked" | "role_created" | "role_updated" | 
+    // Generic service actions
+    string;
+  userId?: string;
+  targetUserId?: string;
   roleId?: string;
   permissionId?: string;
   departmentId?: string;
+  resourceType?: string;
+  resourceId?: string;
   grantedBy?: string;
   revokedBy?: string;
   metadata?: Record<string, any>;
+  changes?: Record<string, any>;
   timestamp?: Date;
 }
 
