@@ -8,17 +8,25 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Loader2, ArrowLeft, Edit, Trash2 } from "lucide-react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
+import { formatTablePrice } from "@/lib/formatters";
 
 interface Room {
 	id: string;
-	name: string;
 	roomNumber: string;
-	status: "available" | "occupied" | "maintenance";
-	price: number;
-	capacity: number;
-	description?: string;
-	amenities?: Array<{ id: string; name: string }>;
-	beds?: Array<{ id: string; type: string; size: number }>;
+	unitKind: string;
+	status: string;
+	notes?: string;
+	roomType: {
+		id: string;
+		name: string;
+		code: string;
+		capacity: number;
+		bedSize?: string | null;
+		roomSizeM2?: number | null;
+		basePriceCents: number;
+		description?: string;
+		amenities?: Record<string, boolean>;
+	};
 }
 
 export default function RoomDetailPage(props: {
@@ -67,7 +75,7 @@ export default function RoomDetailPage(props: {
 				method: "DELETE",
 			});
 			if (response.ok) {
-				router.push("/dashboard/rooms");
+				router.push("/rooms");
 			}
 		} catch (error) {
 			console.error("Failed to delete room:", error);
@@ -88,7 +96,7 @@ export default function RoomDetailPage(props: {
 		return (
 			<div className="text-center py-12">
 				<p className="text-muted-foreground">Room not found</p>
-				<Link href="/dashboard/rooms">
+				<Link href="/rooms">
 					<Button className="mt-4">Back to Rooms</Button>
 				</Link>
 			</div>
@@ -96,28 +104,30 @@ export default function RoomDetailPage(props: {
 	}
 
 	const statusColors = {
-		available: "bg-green-100 text-green-800 dark:bg-green-950 dark:text-green-300",
-		occupied: "bg-blue-100 text-blue-800 dark:bg-blue-950 dark:text-blue-300",
-		maintenance: "bg-amber-100 text-amber-800 dark:bg-amber-950 dark:text-amber-300",
+		AVAILABLE: "bg-green-100 text-green-800 dark:bg-green-950 dark:text-green-300",
+		OCCUPIED: "bg-blue-100 text-blue-800 dark:bg-blue-950 dark:text-blue-300",
+		MAINTENANCE: "bg-amber-100 text-amber-800 dark:bg-amber-950 dark:text-amber-300",
+		CLEANING: "bg-purple-100 text-purple-800 dark:bg-purple-950 dark:text-purple-300",
+		BLOCKED: "bg-red-100 text-red-800 dark:bg-red-950 dark:text-red-300",
 	};
 
 	return (
 		<div className="space-y-8">
 			{/* Header */}
 			<div className="flex items-center gap-4">
-				<Link href="/dashboard/rooms">
+			<Link href="/rooms">
 					<Button variant="outline" size="icon">
 						<ArrowLeft className="h-4 w-4" />
 					</Button>
 				</Link>
 				<div className="flex-1">
-					<h1 className="text-4xl font-bold tracking-tight">{room.name}</h1>
+				<h1 className="text-4xl font-bold tracking-tight">{room.roomType.name}</h1>
 					<p className="text-muted-foreground text-lg">
 						Room #{room.roomNumber}
 					</p>
 				</div>
 				<div className="flex gap-2">
-					<Link href={`/dashboard/rooms/${room.id}/edit`}>
+				<Link href={`/rooms/${room.id}/edit`}>
 						<Button variant="outline">
 							<Edit className="h-4 w-4 mr-2" />
 							Edit
@@ -148,7 +158,7 @@ export default function RoomDetailPage(props: {
 									<p className="text-xs text-muted-foreground uppercase">
 										Status
 									</p>
-									<Badge className={statusColors[room.status]}>
+									<Badge className={statusColors[room.status as keyof typeof statusColors]}>
 										{room.status.charAt(0).toUpperCase() +
 											room.status.slice(1)}
 									</Badge>
@@ -158,7 +168,7 @@ export default function RoomDetailPage(props: {
 										Price per Night
 									</p>
 									<p className="text-2xl font-bold">
-										${(room.price / 100).toFixed(2)}
+									{formatTablePrice(room.roomType.basePriceCents)}
 									</p>
 								</div>
 								<div className="space-y-1">
@@ -166,25 +176,55 @@ export default function RoomDetailPage(props: {
 										Capacity
 									</p>
 									<p className="text-xl font-semibold">
-										{room.capacity} guests
+										{room.roomType.capacity}
 									</p>
 								</div>
 								<div className="space-y-1">
 									<p className="text-xs text-muted-foreground uppercase">
-										Room Number
+										Unit Kind
 									</p>
 									<p className="text-xl font-semibold">
-										{room.roomNumber}
+										{room.unitKind}
 									</p>
 								</div>
+								{room.roomType.bedSize && (
+									<div className="space-y-1">
+										<p className="text-xs text-muted-foreground uppercase">
+											Bed Size
+										</p>
+										<p className="text-lg font-semibold">
+											{room.roomType.bedSize}
+										</p>
+									</div>
+								)}
+								{room.roomType.roomSizeM2 && (
+									<div className="space-y-1">
+										<p className="text-xs text-muted-foreground uppercase">
+											Room Size
+										</p>
+										<p className="text-lg font-semibold">
+											{room.roomType.roomSizeM2} m²
+										</p>
+									</div>
+								)}
 							</div>
-							{room.description && (
+							{room.roomType.description && (
 								<div className="space-y-1 pt-4 border-t">
 									<p className="text-xs text-muted-foreground uppercase">
 										Description
 									</p>
 									<p className="text-muted-foreground">
-										{room.description}
+										{room.roomType.description}
+									</p>
+								</div>
+							)}
+							{room.notes && (
+								<div className="space-y-1 pt-4 border-t">
+									<p className="text-xs text-muted-foreground uppercase">
+										Notes
+									</p>
+									<p className="text-muted-foreground">
+										{room.notes}
 									</p>
 								</div>
 							)}
@@ -196,22 +236,24 @@ export default function RoomDetailPage(props: {
 						<Tabs defaultValue="amenities">
 							<TabsList className="w-full justify-start border-b rounded-none">
 								<TabsTrigger value="amenities">Amenities</TabsTrigger>
-								<TabsTrigger value="beds">Beds</TabsTrigger>
-								<TabsTrigger value="bookings">Bookings</TabsTrigger>
+								<TabsTrigger value="maintenance">Maintenance</TabsTrigger>
+								<TabsTrigger value="cleaning">Cleaning</TabsTrigger>
 							</TabsList>
 
 							<TabsContent value="amenities" className="p-6">
-								{room.amenities && room.amenities.length > 0 ? (
+								{room.roomType.amenities && Object.keys(room.roomType.amenities).length > 0 ? (
 									<div className="grid grid-cols-2 gap-3">
-										{room.amenities.map((amenity) => (
-											<div
-												key={amenity.id}
-												className="p-3 border rounded-lg flex items-center gap-2"
-											>
-												<div className="h-2 w-2 rounded-full bg-primary" />
-												<span className="text-sm">{amenity.name}</span>
-											</div>
-										))}
+										{Object.entries(room.roomType.amenities)
+											.filter(([, enabled]) => enabled)
+											.map(([key]) => (
+												<div
+													key={key}
+													className="p-3 border rounded-lg flex items-center gap-2"
+												>
+													<div className="h-2 w-2 rounded-full bg-primary" />
+													<span className="text-sm capitalize">{key.replace(/_/g, " ")}</span>
+												</div>
+											))}
 									</div>
 								) : (
 									<p className="text-muted-foreground text-sm">
@@ -220,35 +262,18 @@ export default function RoomDetailPage(props: {
 								)}
 							</TabsContent>
 
-							<TabsContent value="beds" className="p-6">
-								{room.beds && room.beds.length > 0 ? (
-									<div className="space-y-3">
-										{room.beds.map((bed) => (
-											<div
-												key={bed.id}
-												className="p-3 border rounded-lg"
-											>
-												<p className="font-semibold text-sm">
-													{bed.type}
-												</p>
-												<p className="text-xs text-muted-foreground">
-													Size: {bed.size}
-												</p>
-											</div>
-										))}
-									</div>
-								) : (
-									<p className="text-muted-foreground text-sm">
-										No beds listed
-									</p>
-								)}
-							</TabsContent>
-
-							<TabsContent value="bookings" className="p-6">
+							<TabsContent value="maintenance" className="p-6">
 								<p className="text-muted-foreground text-sm">
-									Booking information coming soon
+									Maintenance requests and history coming soon
 								</p>
 							</TabsContent>
+
+							<TabsContent value="cleaning" className="p-6">
+								<p className="text-muted-foreground text-sm">
+									Cleaning schedule and tasks coming soon
+								</p>
+							</TabsContent>
+
 						</Tabs>
 					</Card>
 				</div>
@@ -266,7 +291,7 @@ export default function RoomDetailPage(props: {
 									Monthly Revenue
 								</p>
 								<p className="text-2xl font-bold">
-									${((room.price / 100) * 30).toFixed(2)}
+								{formatTablePrice(room.roomType.basePriceCents * 30)}
 								</p>
 								<p className="text-xs text-muted-foreground">
 									(30 nights @ full occupancy)

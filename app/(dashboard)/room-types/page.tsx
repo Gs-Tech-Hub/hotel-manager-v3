@@ -5,6 +5,7 @@ import Link from "next/link";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Loader2, Plus, Edit, Trash2, AlertCircle } from "lucide-react";
+import { formatTablePrice } from "@/lib/formatters";
 import {
 	Table,
 	TableBody,
@@ -168,7 +169,7 @@ export default function RoomTypesPage() {
 										<TableCell className="text-center">{rt.capacity} guests</TableCell>
 										<TableCell>{rt.bedSize || "-"}</TableCell>
 										<TableCell>{rt.roomSizeM2 ? `${rt.roomSizeM2} m²` : "-"}</TableCell>
-										<TableCell className="text-right">${(rt.basePriceCents / 100).toFixed(2)}</TableCell>
+									<TableCell className="text-right">{formatTablePrice(rt.basePriceCents)}</TableCell>
 										<TableCell className="text-center">{countAmenities(rt.amenities)}</TableCell>
 										<TableCell className="text-right">
 											<div className="flex justify-end gap-2">

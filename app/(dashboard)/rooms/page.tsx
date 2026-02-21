@@ -8,15 +8,21 @@ import { Plus, Grid, List, Loader2 } from "lucide-react";
 import { DataTable, Column, TableSearchBar, TableFilterBar } from "@/components/admin/tables/data-table";
 import Link from "next/link";
 import { cn } from "@/lib/utils";
+import { formatTablePrice } from "@/lib/formatters";
 
 interface Room {
 	id: string;
-	name: string;
 	roomNumber: string;
-	status: "available" | "occupied" | "maintenance";
-	price: number;
-	capacity: number;
-	description?: string;
+	status: "AVAILABLE" | "OCCUPIED" | "MAINTENANCE" | "CLEANING" | "BLOCKED";
+	unitKind: string;
+	roomType: {
+		id: string;
+		name: string;
+		capacity: number;
+		basePriceCents: number;
+		description?: string;
+	};
+	notes?: string;
 }
 
 type ViewMode = "grid" | "list";
@@ -61,31 +67,29 @@ export default function RoomsPage() {
 
 	// Filter rooms by search query
 	const filteredRooms = rooms.filter((room) =>
-		(room.name?.toLowerCase().includes(searchQuery.toLowerCase()) ?? false) ||
+		(room.roomType.name?.toLowerCase().includes(searchQuery.toLowerCase()) ?? false) ||
 		(room.roomNumber?.toLowerCase().includes(searchQuery.toLowerCase()) ?? false)
 	);
 
 	const statusOptions = [
-		{ value: "available", label: "Available" },
-		{ value: "occupied", label: "Occupied" },
-		{ value: "maintenance", label: "Maintenance" },
+		{ value: "AVAILABLE", label: "Available" },
+		{ value: "OCCUPIED", label: "Occupied" },
+		{ value: "MAINTENANCE", label: "Maintenance" },
+		{ value: "CLEANING", label: "Cleaning" },
 	];
 
 	const statusColors = {
-		available: "bg-green-100 text-green-800 dark:bg-green-950 dark:text-green-300",
-		occupied: "bg-blue-100 text-blue-800 dark:bg-blue-950 dark:text-blue-300",
-		maintenance: "bg-amber-100 text-amber-800 dark:bg-amber-950 dark:text-amber-300",
+		AVAILABLE: "bg-green-100 text-green-800 dark:bg-green-950 dark:text-green-300",
+		OCCUPIED: "bg-blue-100 text-blue-800 dark:bg-blue-950 dark:text-blue-300",
+		MAINTENANCE: "bg-amber-100 text-amber-800 dark:bg-amber-950 dark:text-amber-300",
+		CLEANING: "bg-purple-100 text-purple-800 dark:bg-purple-950 dark:text-purple-300",
+		BLOCKED: "bg-red-100 text-red-800 dark:bg-red-950 dark:text-red-300",
 	};
 
 	const columns: Column<Room>[] = [
 		{
 			key: "roomNumber",
 			label: "Room Number",
-			sortable: true,
-		},
-		{
-			key: "name",
-			label: "Room Name",
 			sortable: true,
 		},
 		{
@@ -98,20 +102,10 @@ export default function RoomsPage() {
 			),
 		},
 		{
-			key: "capacity",
-			label: "Capacity",
-			render: (value) => `${value} guests`,
-		},
-		{
-			key: "price",
-			label: "Price",
-			render: (value) => `$${(value / 100).toFixed(2)}`,
-		},
-		{
 			key: "id",
 			label: "Actions",
 			render: (value) => (
-				<Link href={`/dashboard/rooms/${value}`}>
+				<Link href={`/rooms/${value}`}>
 					<Button variant="outline" size="sm">
 						View
 					</Button>
@@ -204,13 +198,13 @@ export default function RoomsPage() {
 						</div>
 					) : (
 						filteredRooms.map((room) => (
-							<Link key={room.id} href={`/dashboard/rooms/${room.id}`}>
+							<Link key={room.id} href={`/rooms/${room.id}`}>
 								<Card className="h-full hover:shadow-lg transition-all cursor-pointer">
 									<CardHeader className="pb-3">
 										<div className="flex items-start justify-between">
 											<div className="space-y-1 flex-1">
 												<CardTitle className="text-lg">
-													{room.name}
+												{room.roomType.name}
 												</CardTitle>
 												<p className="text-sm text-muted-foreground">
 													Room #{room.roomNumber}
@@ -225,9 +219,9 @@ export default function RoomsPage() {
 										</div>
 									</CardHeader>
 									<CardContent className="space-y-4">
-										{room.description && (
+										{room.roomType.description && (
 											<p className="text-sm text-muted-foreground">
-												{room.description}
+												{room.roomType.description}
 											</p>
 										)}
 										<div className="grid grid-cols-2 gap-2 text-sm">
@@ -236,7 +230,7 @@ export default function RoomsPage() {
 													Capacity
 												</p>
 												<p className="font-semibold">
-													{room.capacity} guests
+													{room.roomType.capacity}
 												</p>
 											</div>
 											<div className="space-y-1">
@@ -244,7 +238,7 @@ export default function RoomsPage() {
 													Price
 												</p>
 												<p className="font-semibold">
-													${(room.price / 100).toFixed(2)}
+												{formatTablePrice(room.roomType.basePriceCents)}
 												</p>
 											</div>
 										</div>

@@ -133,7 +133,7 @@ export default function RoomEditPage(props: {
 		<div className="space-y-8">
 			{/* Header */}
 			<div className="flex items-center gap-4">
-				<Link href={`/dashboard/rooms/${room.id}`}>
+			<Link href={`/rooms/${roomId}`}>
 					<Button variant="outline" size="icon">
 						<ArrowLeft className="h-4 w-4" />
 					</Button>
