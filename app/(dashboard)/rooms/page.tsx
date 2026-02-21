@@ -61,8 +61,8 @@ export default function RoomsPage() {
 
 	// Filter rooms by search query
 	const filteredRooms = rooms.filter((room) =>
-		room.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
-		room.roomNumber.toLowerCase().includes(searchQuery.toLowerCase())
+		(room.name?.toLowerCase().includes(searchQuery.toLowerCase()) ?? false) ||
+		(room.roomNumber?.toLowerCase().includes(searchQuery.toLowerCase()) ?? false)
 	);
 
 	const statusOptions = [
@@ -160,12 +160,19 @@ export default function RoomsPage() {
 					/>
 				</div>
 
-				<Button asChild>
-					<Link href="/dashboard/rooms/new">
-						<Plus className="h-4 w-4 mr-2" />
-						Add Room
-					</Link>
-				</Button>
+				<div className="flex gap-2">
+					<Button variant="outline" asChild>
+						<Link href="/room-types">
+							Room Types
+						</Link>
+					</Button>
+					<Button asChild>
+						<Link href="/rooms/new">
+							<Plus className="h-4 w-4 mr-2" />
+							Add Room
+						</Link>
+					</Button>
+				</div>
 			</div>
 
 			{/* Filters */}

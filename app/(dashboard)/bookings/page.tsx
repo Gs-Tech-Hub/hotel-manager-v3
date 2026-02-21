@@ -92,7 +92,7 @@ export default function BookingsPage() {
 						Manage guest reservations and check-ins
 					</p>
 				</div>
-				<Link href="/dashboard/bookings/create">
+				<Link href="/bookings/new">
 					<Button>
 						<Plus className="h-4 w-4 mr-2" />
 						New Booking

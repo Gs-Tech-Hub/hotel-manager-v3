@@ -52,10 +52,27 @@ const sidebarGroups = [
 		title: "Hotel Management",
 		items: [
 			{
-				title: "Rooms",
+				title: "Room Management",
 				href: "/rooms",
 				icon: DoorOpen,
 				badge: null,
+				children: [
+					{
+						title: "Amenities",
+						href: "/amenities",
+						icon: DoorOpen,
+					},
+					{
+						title: "Room Types",
+						href: "/room-types",
+						icon: DoorOpen,
+					},
+					{
+						title: "Rooms",
+						href: "/rooms",
+						icon: DoorOpen,
+					},
+				],
 			},
 			{
 				title: "Bookings",
@@ -173,6 +190,7 @@ export function Sidebar({ onMobileClose }: SidebarProps) {
 	);
 	const [expandedItems, setExpandedItems] = useState<Record<string, boolean>>({
 		'/employees': false,
+		'/rooms': false,
 	});
 	const { user } = useAuth();
 

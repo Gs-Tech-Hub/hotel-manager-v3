@@ -11,7 +11,7 @@ export interface CreateUnitInput {
   roomNumber: string;
   unitKind: UnitKind;
   roomTypeId: string;
-  departmentId?: string;
+  departmentId?: string | null;
   notes?: string;
 }
 
@@ -138,7 +138,7 @@ export class RoomService {
         roomNumber: data.roomNumber,
         unitKind: data.unitKind,
         roomTypeId: data.roomTypeId,
-        departmentId: data.departmentId,
+        departmentId: data.departmentId || undefined,
         notes: data.notes,
         status: UnitStatus.AVAILABLE,
       },

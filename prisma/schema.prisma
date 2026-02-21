@@ -2122,6 +2122,8 @@ model RoomType {
   name            String
   description     String?
   capacity        Int      // Max guests
+  bedSize         String?  // e.g., "Queen", "Twin", "King", "Double"
+  roomSizeM2      Int?     // Room size in square meters
   amenities       Json?    // { "wifi": true, "ac": true, ... }
   basePriceCents  Int      // Base price in cents
   createdAt       DateTime @default(now())
