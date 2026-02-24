@@ -826,6 +826,9 @@ model Department {
   // Units (rooms/suites/apartments) managed by this department
   units Unit[]
 
+  // Cleaning routines available for this department
+  cleaningRoutines CleaningRoutine[] @relation("CleaningRoutineDepartments")
+
   // RBAC: Role assignments scoped to this department
   userRoles       UserRole[]
   userPermissions UserPermission[]
@@ -2131,6 +2134,7 @@ model RoomType {
 
   units           Unit[]
   pricingOverrides PricingOverride[]
+  cleaningRoutines CleaningRoutine[] @relation("CleaningRoutineRoomTypes")
 
   @@index([code])
   @@map("room_types")
@@ -2250,12 +2254,60 @@ enum CleaningPriority {
   URGENT
 }
 
+// Cleaning routine type
+enum CleaningRoutineType {
+  TURNOVER          // Post-checkout cleaning
+  DEEP              // Thorough cleaning
+  MAINTENANCE       // After maintenance work
+  TOUCH_UP          // Quick refresh
+  LINEN_CHANGE      // Scheduled linen change
+  NIGHT_AUDIT       // End-of-day inspection
+}
+
+// Cleaning routine frequency
+enum CleaningFrequency {
+  EVERY_CHECKOUT    // Triggered on checkout
+  DAILY             // Once per day
+  WEEKLY            // Once per week
+  BIWEEKLY          // Every two weeks
+  MONTHLY           // Once per month
+  AS_NEEDED         // Manual trigger only
+}
+
+/// Cleaning routine template: reusable cleaning specifications and schedules
+model CleaningRoutine {
+  id              String   @id @default(cuid())
+  code            String   @unique
+  name            String
+  description     String?
+  type            CleaningRoutineType  // Type of cleaning
+  frequency       CleaningFrequency    // How often to schedule
+  estimatedMinutes Int      // Estimated time needed
+  priority        CleaningPriority @default(NORMAL)
+  checklist       Json?    // Array of { item: string, required: boolean }
+  isActive        Boolean  @default(true)
+  notes           String?
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+
+  // Relationships
+  roomTypes       RoomType[]  @relation("CleaningRoutineRoomTypes")
+  departments     Department[] @relation("CleaningRoutineDepartments")
+  tasks           CleaningTask[] @relation("RoutineToTasks")
+
+  @@index([type])
+  @@index([isActive])
+  @@map("cleaning_routines")
+}
+
 /// Cleaning task (triggered by check-out or manual request)
 model CleaningTask {
   id              String   @id @default(cuid())
   taskNumber      String   @unique @default(cuid())
   unitId          String
   unit            Unit     @relation(fields: [unitId], references: [id], onDelete: Restrict)
+  routineId       String?
+  routine         CleaningRoutine? @relation(fields: [routineId], references: [id], onDelete: SetNull, name: "RoutineToTasks")
   priority        CleaningPriority @default(NORMAL)
   status          CleaningTaskStatus @default(PENDING)
   taskType        String   // "turnover", "deep_clean", "maintenance_clean", "touch_up"

@@ -8,6 +8,7 @@ import {
   CleaningTaskStatus,
   CleaningPriority,
   CleaningLog,
+  CleaningRoutine,
 } from '@prisma/client';
 import { PermissionContext } from './types';
 import { checkPermission } from '@/lib/auth/rbac';
@@ -17,6 +18,7 @@ import { roomService } from './RoomService';
 export interface CreateCleaningTaskInput {
   unitId: string;
   taskType: string; // 'turnover', 'deep_clean', 'maintenance_clean', 'touch_up'
+  routineId?: string;
   priority?: CleaningPriority;
   notes?: string;
 }
@@ -24,6 +26,18 @@ export interface CreateCleaningTaskInput {
 export interface CleaningLogInput {
   itemType: string;
   status: string;
+  notes?: string;
+}
+
+export interface CreateCleaningRoutineInput {
+  code: string;
+  name: string;
+  description?: string;
+  type: string; // TURNOVER, DEEP, MAINTENANCE, TOUCH_UP, LINEN_CHANGE, NIGHT_AUDIT
+  frequency: string; // EVERY_CHECKOUT, DAILY, WEEKLY, BIWEEKLY, MONTHLY, AS_NEEDED
+  estimatedMinutes: number;
+  priority?: CleaningPriority;
+  checklist?: any[];
   notes?: string;
 }
 
@@ -40,18 +54,52 @@ export class CleaningService {
       throw new Error('Insufficient permissions to create cleaning tasks');
     }
 
+    // Determine priority from routine if not specified
+    let priority = data.priority || CleaningPriority.NORMAL;
+    if (data.routineId) {
+      const routine = await prisma.cleaningRoutine.findUnique({
+        where: { id: data.routineId },
+      });
+      if (routine && !data.priority) {
+        priority = routine.priority as any;
+      }
+    }
+
     const task = await prisma.cleaningTask.create({
       data: {
         unitId: data.unitId,
+        routineId: data.routineId,
         taskType: data.taskType,
-        priority: data.priority || CleaningPriority.NORMAL,
+        priority,
         status: CleaningTaskStatus.PENDING,
         notes: data.notes,
       },
     });
 
-    // Update unit status
-    await roomService.updateUnitStatus(data.unitId);
+    // Update unit status to CLEANING
+    const unit = await prisma.unit.findUnique({
+      where: { id: data.unitId },
+    });
+
+    if (unit && unit.status !== 'CLEANING') {
+      await prisma.unit.update({
+        where: { id: data.unitId },
+        data: {
+          status: 'CLEANING',
+          statusUpdatedAt: new Date(),
+        },
+      });
+
+      await prisma.unitStatusHistory.create({
+        data: {
+          unitId: data.unitId,
+          previousStatus: unit.status,
+          newStatus: 'CLEANING',
+          reason: `Cleaning task created: ${data.taskType}`,
+          changedBy: ctx.userId,
+        },
+      });
+    }
 
     // Log audit
     await logAudit({
@@ -59,7 +107,7 @@ export class CleaningService {
       action: 'CLEANING_TASK_CREATED',
       resourceType: 'cleaning_task',
       resourceId: task.id,
-      changes: { unitId: data.unitId, taskType: data.taskType },
+      changes: { unitId: data.unitId, taskType: data.taskType, routineId: data.routineId },
     });
 
     return task;
@@ -161,6 +209,15 @@ export class CleaningService {
     notes?: string,
     ctx?: PermissionContext
   ): Promise<CleaningTask> {
+    const existingTask = await prisma.cleaningTask.findUnique({
+      where: { id: taskId },
+      include: { unit: true },
+    });
+
+    if (!existingTask) {
+      throw new Error('Cleaning task not found');
+    }
+
     const task = await prisma.cleaningTask.update({
       where: { id: taskId },
       data: {
@@ -198,6 +255,7 @@ export class CleaningService {
 
     const task = await prisma.cleaningTask.findUnique({
       where: { id: taskId },
+      include: { unit: true },
     });
 
     if (!task) {
@@ -214,9 +272,37 @@ export class CleaningService {
       },
     });
 
-    // If approved, try to update unit status to available
+    // If approved, check if room can go back to available
     if (approved) {
-      await roomService.updateUnitStatus(task.unitId);
+      const otherActiveTasks = await prisma.cleaningTask.findMany({
+        where: {
+          unitId: task.unitId,
+          id: { not: taskId },
+          status: { in: [CleaningTaskStatus.PENDING, CleaningTaskStatus.IN_PROGRESS, CleaningTaskStatus.COMPLETED] },
+        },
+      });
+
+      // Only mark available if no other active tasks
+      if (otherActiveTasks.length === 0) {
+        await prisma.unit.update({
+          where: { id: task.unitId },
+          data: {
+            status: 'AVAILABLE',
+            statusUpdatedAt: new Date(),
+          },
+        });
+
+        // Log status change
+        await prisma.unitStatusHistory.create({
+          data: {
+            unitId: task.unitId,
+            previousStatus: 'CLEANING',
+            newStatus: 'AVAILABLE',
+            reason: 'Cleaning task inspected and approved',
+            changedBy: ctx?.userId,
+          },
+        });
+      }
     }
 
     if (ctx) {
@@ -300,6 +386,139 @@ export class CleaningService {
 
     return Math.round(totalHours / completedTasks.length);
   }
+
+  /**
+   * Create cleaning routine (template)
+   */
+  async createRoutine(
+    data: CreateCleaningRoutineInput,
+    ctx: PermissionContext
+  ): Promise<CleaningRoutine> {
+    const hasAccess = await checkPermission(ctx, 'cleaning.manage', 'cleaning');
+    if (!hasAccess) {
+      throw new Error('Insufficient permissions to create cleaning routines');
+    }
+
+    const routine = await prisma.cleaningRoutine.create({
+      data: {
+        code: data.code,
+        name: data.name,
+        description: data.description,
+        type: data.type as any,
+        frequency: data.frequency as any,
+        estimatedMinutes: data.estimatedMinutes,
+        priority: data.priority || CleaningPriority.NORMAL,
+        checklist: data.checklist || [],
+        notes: data.notes,
+        isActive: true,
+      },
+    });
+
+    await logAudit({
+      userId: ctx.userId!,
+      action: 'CLEANING_ROUTINE_CREATED',
+      resourceType: 'cleaning_routine',
+      resourceId: routine.id,
+      changes: data,
+    });
+
+    return routine;
+  }
+
+  /**
+   * Get all active cleaning routines
+   */
+  async getRoutines(
+    type?: string,
+    frequency?: string
+  ): Promise<CleaningRoutine[]> {
+    return prisma.cleaningRoutine.findMany({
+      where: {
+        isActive: true,
+        ...(type && { type: type as any }),
+        ...(frequency && { frequency: frequency as any }),
+      },
+      orderBy: { name: 'asc' },
+    });
+  }
+
+  /**
+   * Get cleaning routine by ID
+   */
+  async getRoutineDetail(routineId: string) {
+    return prisma.cleaningRoutine.findUnique({
+      where: { id: routineId },
+      include: {
+        roomTypes: true,
+        departments: true,
+        tasks: {
+          where: { status: { not: 'CANCELLED' } },
+          take: 20,
+          orderBy: { createdAt: 'desc' },
+        },
+      },
+    });
+  }
+
+  /**
+   * Get cleaning routine for room type and cleaning type
+   */
+  async getRoutineForRoomType(
+    roomTypeId: string,
+    cleaningType: string
+  ): Promise<CleaningRoutine | null> {
+    return prisma.cleaningRoutine.findFirst({
+      where: {
+        type: cleaningType as any,
+        isActive: true,
+        roomTypes: {
+          some: { id: roomTypeId },
+        },
+      },
+    });
+  }
+
+  /**
+   * Create task from routine template
+   */
+  async createTaskFromRoutine(
+    unitId: string,
+    routineId: string,
+    assignedToId?: string,
+    ctx?: PermissionContext
+  ): Promise<CleaningTask> {
+    const routine = await prisma.cleaningRoutine.findUnique({
+      where: { id: routineId },
+    });
+
+    if (!routine) {
+      throw new Error('Cleaning routine not found');
+    }
+
+    const task = await prisma.cleaningTask.create({
+      data: {
+        unitId,
+        routineId,
+        taskType: routine.type.toLowerCase(),
+        priority: routine.priority,
+        assignedToId,
+        status: CleaningTaskStatus.PENDING,
+      },
+    });
+
+    if (ctx) {
+      await logAudit({
+        userId: ctx.userId!,
+        action: 'CLEANING_TASK_CREATED_FROM_ROUTINE',
+        resourceType: 'cleaning_task',
+        resourceId: task.id,
+        changes: { routineId, unitId },
+      });
+    }
+
+    return task;
+  }
+
 }
 
 export const cleaningService = new CleaningService();

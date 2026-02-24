@@ -25,6 +25,9 @@ interface Room {
 	id: string;
 	roomNumber: string;
 	name: string;
+	price: number; // in cents
+	capacity: number;
+	status: string;
 }
 
 export default function BookingCreatePage() {
@@ -33,6 +36,8 @@ export default function BookingCreatePage() {
 	const [rooms, setRooms] = useState<Room[]>([]);
 	const [isLoading, setIsLoading] = useState(true);
 	const [isSaving, setIsSaving] = useState(false);
+	const [isCreatingCustomer, setIsCreatingCustomer] = useState(false);
+	const [showCreateCustomer, setShowCreateCustomer] = useState(false);
 	const [error, setError] = useState<string | null>(null);
 	const [booking, setBooking] = useState({
 		customerId: "",
@@ -42,6 +47,12 @@ export default function BookingCreatePage() {
 		nights: 1,
 		guests: 1,
 		totalPrice: 0,
+	});
+	const [newCustomer, setNewCustomer] = useState({
+		firstName: "",
+		lastName: "",
+		email: "",
+		phone: "",
 	});
 
 	// Fetch customers and rooms
@@ -56,11 +67,13 @@ export default function BookingCreatePage() {
 
 				if (customersRes.ok) {
 					const customersData = await customersRes.json();
-					setCustomers(customersData.data || customersData.data?.items || []);
+					setCustomers(customersData.data?.items || []);
 				}
 
 				if (roomsRes.ok) {
 					const roomsData = await roomsRes.json();
+					console.log("Rooms API Response:", roomsData);
+					console.log("Rooms Data:", roomsData.data);
 					setRooms(roomsData.data || []);
 				}
 			} catch (err) {
@@ -84,7 +97,64 @@ export default function BookingCreatePage() {
 	};
 
 	const handleSelectChange = (field: string, value: string) => {
-		setBooking((prev) => ({ ...prev, [field]: value }));
+		setBooking((prev) => {
+			const updated = { ...prev, [field]: value };
+
+			// If room is selected, calculate total price
+			if (field === "roomId") {
+				const selectedRoom = rooms.find((r) => r.id === value);
+				if (selectedRoom) {
+					const roomPrice = selectedRoom.price || 0;
+					updated.totalPrice = roomPrice * prev.nights;
+				}
+			}
+
+			return updated;
+		});
+	};
+
+	const handleNewCustomerChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+		const { name, value } = e.target;
+		setNewCustomer((prev) => ({
+			...prev,
+			[name]: value,
+		}));
+	};
+
+	const handleCreateCustomer = async (e: React.FormEvent) => {
+		e.preventDefault();
+		setError(null);
+
+		if (!newCustomer.firstName || !newCustomer.lastName || !newCustomer.email || !newCustomer.phone) {
+			setError("Please fill in all customer fields");
+			return;
+		}
+
+		setIsCreatingCustomer(true);
+
+		try {
+			const res = await fetch("/api/customers", {
+				method: "POST",
+				headers: { "Content-Type": "application/json" },
+				body: JSON.stringify(newCustomer),
+			});
+
+			const data = await res.json();
+
+			if (res.ok && data.success) {
+				const createdCustomer = data.data;
+				setCustomers((prev) => [...prev, createdCustomer]);
+				setBooking((prev) => ({ ...prev, customerId: createdCustomer.id }));
+				setNewCustomer({ firstName: "", lastName: "", email: "", phone: "" });
+				setShowCreateCustomer(false);
+			} else {
+				setError(data?.message || "Failed to create customer");
+			}
+		} catch (err) {
+			setError(err instanceof Error ? err.message : "Network error");
+		} finally {
+			setIsCreatingCustomer(false);
+		}
 	};
 
 	const handleDateChange = (field: string, value: string) => {
@@ -99,6 +169,15 @@ export default function BookingCreatePage() {
 					(checkOutDate.getTime() - checkInDate.getTime()) / (1000 * 60 * 60 * 24)
 				);
 				updated.nights = Math.max(1, nightsCount);
+
+				// Recalculate total price if room is selected
+				if (updated.roomId) {
+					const selectedRoom = rooms.find((r) => r.id === updated.roomId);
+					if (selectedRoom) {
+						const roomPrice = selectedRoom.price || 0;
+						updated.totalPrice = roomPrice * updated.nights;
+					}
+				}
 			}
 
 			return updated;
@@ -130,10 +209,35 @@ export default function BookingCreatePage() {
 		setIsSaving(true);
 
 		try {
+			// Format datetime to ISO-8601 with seconds and timezone
+			const formatDateTime = (dateStr: string) => {
+				if (!dateStr) return dateStr;
+				
+				// Add :00 for seconds if missing
+				let formatted = dateStr;
+				const parts = dateStr.split('T');
+				if (parts[1]?.split(':').length === 2) {
+					formatted = `${parts[0]}T${parts[1]}:00`;
+				}
+				
+				// Add Z for UTC timezone if not present
+				if (!formatted.endsWith('Z')) {
+					formatted = `${formatted}Z`;
+				}
+				
+				return formatted;
+			};
+
+			const bookingData = {
+				...booking,
+				checkin: formatDateTime(booking.checkin),
+				checkout: formatDateTime(booking.checkout),
+			};
+
 			const res = await fetch("/api/bookings", {
 				method: "POST",
 				headers: { "Content-Type": "application/json" },
-				body: JSON.stringify(booking),
+				body: JSON.stringify(bookingData),
 			});
 
 			const data = await res.json();
@@ -172,21 +276,108 @@ export default function BookingCreatePage() {
 						<CardTitle>Guest Information</CardTitle>
 					</CardHeader>
 					<CardContent className="space-y-4">
-						<div>
-							<Label htmlFor="customerId">Customer</Label>
-							<Select value={booking.customerId} onValueChange={(val) => handleSelectChange("customerId", val)}>
-								<SelectTrigger>
-									<SelectValue placeholder="Select a customer" />
-								</SelectTrigger>
-								<SelectContent>
-									{customers.map((customer) => (
-										<SelectItem key={customer.id} value={customer.id}>
-											{customer.name} ({customer.email})
-										</SelectItem>
-									))}
-								</SelectContent>
-							</Select>
-						</div>
+						{!showCreateCustomer ? (
+							<>
+								<div>
+									<Label htmlFor="customerId">Customer</Label>
+									<Select value={booking.customerId} onValueChange={(val) => handleSelectChange("customerId", val)}>
+										<SelectTrigger>
+											<SelectValue placeholder="Select a customer" />
+										</SelectTrigger>
+										<SelectContent>
+											{customers.map((customer) => (
+												<SelectItem key={customer.id} value={customer.id}>
+													{customer.name} ({customer.email})
+												</SelectItem>
+											))}
+										</SelectContent>
+									</Select>
+								</div>
+								<Button
+									type="button"
+									variant="outline"
+									className="w-full"
+									onClick={() => setShowCreateCustomer(true)}
+								>
+									Create New Customer
+								</Button>
+							</>
+						) : (
+							<>
+								<div>
+									<Label htmlFor="firstName">First Name</Label>
+									<Input
+										id="firstName"
+										name="firstName"
+										value={newCustomer.firstName}
+										onChange={handleNewCustomerChange}
+										placeholder="First name"
+									/>
+								</div>
+								<div>
+									<Label htmlFor="lastName">Last Name</Label>
+									<Input
+										id="lastName"
+										name="lastName"
+										value={newCustomer.lastName}
+										onChange={handleNewCustomerChange}
+										placeholder="Last name"
+									/>
+								</div>
+								<div>
+									<Label htmlFor="email">Email</Label>
+									<Input
+										id="email"
+										name="email"
+										type="email"
+										value={newCustomer.email}
+										onChange={handleNewCustomerChange}
+										placeholder="email@example.com"
+									/>
+								</div>
+								<div>
+									<Label htmlFor="phone">Phone</Label>
+									<Input
+										id="phone"
+										name="phone"
+										type="tel"
+										value={newCustomer.phone}
+										onChange={handleNewCustomerChange}
+										placeholder="+1 (555) 123-4567"
+									/>
+								</div>
+								<div className="flex gap-2">
+									<Button
+										type="button"
+										variant="outline"
+										className="flex-1"
+										onClick={() => {
+											setShowCreateCustomer(false);
+											setNewCustomer({ firstName: "", lastName: "", email: "", phone: "" });
+											setError(null);
+										}}
+										disabled={isCreatingCustomer}
+									>
+										Cancel
+									</Button>
+									<Button
+										type="button"
+										className="flex-1"
+										onClick={handleCreateCustomer}
+										disabled={isCreatingCustomer}
+									>
+										{isCreatingCustomer ? (
+											<>
+												<Loader2 className="h-4 w-4 mr-2 animate-spin" />
+												Creating...
+											</>
+										) : (
+											"Create Customer"
+										)}
+									</Button>
+								</div>
+							</>
+						)}
 
 						<div>
 							<Label htmlFor="guests">Number of Guests</Label>
@@ -270,9 +461,13 @@ export default function BookingCreatePage() {
 									min="0"
 									step="0.01"
 									value={booking.totalPrice}
-									onChange={handleChange}
+									readOnly
 									placeholder="0.00"
+									className="bg-muted"
 								/>
+								<p className="text-xs text-muted-foreground mt-1">
+									Auto-calculated: Room Rate × Nights
+								</p>
 							</div>
 						</div>
 

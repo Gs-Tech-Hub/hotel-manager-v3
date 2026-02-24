@@ -1,34 +1,36 @@
 /**
- * GET /api/rooms - List all units
- * POST /api/rooms - Create new unit
+ * GET /api/rooms - List all rooms
+ * POST /api/rooms - Create new room
  */
 
 import { NextRequest, NextResponse } from 'next/server';
-import { extractUserContext } from '@/lib/user-context';
-import { roomService } from '@/src/services/RoomService';
+import { prisma } from '@/lib/auth/prisma';
 import { successResponse, errorResponse, ErrorCodes } from '@/lib/api-response';
-import { UnitStatus } from '@prisma/client';
 
 export async function GET(request: NextRequest) {
   try {
-    const searchParams = request.nextUrl.searchParams;
-    const status = searchParams.get('status') as UnitStatus | null;
-    const roomTypeId = searchParams.get('roomTypeId');
-    const departmentId = searchParams.get('departmentId');
-
-    // Get all units (public-ish endpoint, but can filter by dept if needed)
-    const units = await roomService.getAllUnits({
-      status: status || undefined,
-      roomTypeId: roomTypeId || undefined,
-      departmentId: departmentId || undefined,
+    // Get all rooms for booking selection
+    const rooms = await prisma.room.findMany({
+      select: {
+        id: true,
+        roomNumber: true,
+        name: true,
+        description: true,
+        status: true,
+        price: true,
+        capacity: true,
+      },
+      orderBy: { roomNumber: 'asc' },
     });
 
+    console.log('Fetched rooms:', rooms);
+
     return NextResponse.json(
-      successResponse({ data: units }),
+      successResponse({ data: rooms }),
       { status: 200 }
     );
   } catch (error) {
-    console.error('Error fetching units:', error);
+    console.error('Error fetching rooms:', error);
     return NextResponse.json(
       errorResponse(ErrorCodes.INTERNAL_ERROR, error instanceof Error ? error.message : 'Unknown error'),
       { status: 500 }
@@ -38,36 +40,36 @@ export async function GET(request: NextRequest) {
 
 export async function POST(request: NextRequest) {
   try {
-    // Extract user context
-    const ctx = await extractUserContext(request);
-    if (!ctx.userId) {
-      return NextResponse.json(
-        errorResponse(ErrorCodes.UNAUTHORIZED, 'User not authenticated'),
-        { status: 401 }
-      );
-    }
-
     // Parse request body
     const body = await request.json();
 
-    // Create unit
-    const unit = await roomService.createUnit(body, { userId: ctx.userId, userType: (ctx.userRole as any) || 'employee' });
-
-    return NextResponse.json(
-      successResponse({ data: unit, message: 'Unit created successfully' }),
-      { status: 201 }
-    );
-  } catch (error) {
-    console.error('Error creating unit:', error);
-    const errorMsg = error instanceof Error ? error.message : 'Unknown error';
-    
-    if (errorMsg.includes('Insufficient permissions')) {
+    // Validate required fields
+    if (!body.roomNumber || !body.name) {
       return NextResponse.json(
-        errorResponse(ErrorCodes.FORBIDDEN, errorMsg),
-        { status: 403 }
+        errorResponse(ErrorCodes.VALIDATION_ERROR, 'Missing required fields: roomNumber, name'),
+        { status: 400 }
       );
     }
 
+    // Create room - price and capacity come from RoomType
+    const room = await prisma.room.create({
+      data: {
+        roomNumber: body.roomNumber,
+        name: body.name,
+        description: body.description || null,
+        status: body.status || 'available',
+        price: body.price || 0,
+        capacity: body.capacity || 1,
+      },
+    });
+
+    return NextResponse.json(
+      successResponse({ data: room, message: 'Room created successfully' }),
+      { status: 201 }
+    );
+  } catch (error) {
+    console.error('Error creating room:', error);
+    const errorMsg = error instanceof Error ? error.message : 'Unknown error';
     return NextResponse.json(
       errorResponse(ErrorCodes.INTERNAL_ERROR, errorMsg),
       { status: 500 }

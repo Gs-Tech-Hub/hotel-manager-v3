@@ -336,10 +336,28 @@ export class ReservationService {
 
     const reservation = await prisma.reservation.findUnique({
       where: { id: reservationId },
+      include: { unit: true },
     });
 
     if (!reservation) {
       throw new Error('Reservation not found');
+    }
+
+    if (reservation.status !== 'CONFIRMED') {
+      throw new Error(`Cannot check-in a reservation with status ${reservation.status}. Must be CONFIRMED.`);
+    }
+
+    // Verify no active conflicts
+    const conflict = await prisma.reservation.findFirst({
+      where: {
+        unitId: reservation.unitId,
+        id: { not: reservationId },
+        status: { in: ['CHECKED_IN'] },
+      },
+    });
+
+    if (conflict) {
+      throw new Error('Unit is already occupied by another guest');
     }
 
     const checkedIn = await prisma.reservation.update({
@@ -350,8 +368,25 @@ export class ReservationService {
       },
     });
 
-    // Update unit status
-    await roomService.updateUnitStatus(reservation.unitId);
+    // Update unit status to OCCUPIED
+    await prisma.unit.update({
+      where: { id: reservation.unitId },
+      data: {
+        status: 'OCCUPIED',
+        statusUpdatedAt: new Date(),
+      },
+    });
+
+    // Log status change
+    await prisma.unitStatusHistory.create({
+      data: {
+        unitId: reservation.unitId,
+        previousStatus: reservation.unit.status,
+        newStatus: 'OCCUPIED',
+        reason: 'Guest checked in',
+        changedBy: ctx.userId,
+      },
+    });
 
     // Log audit
     await logAudit({
@@ -359,7 +394,7 @@ export class ReservationService {
       action: 'RESERVATION_CHECKED_IN',
       resourceType: 'reservation',
       resourceId: reservationId,
-      changes: { checkInTime: actualCheckInTime },
+      changes: { checkInTime: actualCheckInTime, roomStatus: 'AVAILABLE → OCCUPIED' },
     });
 
     return checkedIn;
@@ -371,7 +406,13 @@ export class ReservationService {
   async checkOutGuest(
     reservationId: string,
     actualCheckOutTime: Date,
-    ctx: PermissionContext
+    ctx: PermissionContext,
+    cleaningOptions?: {
+      cleaningRoutineId?: string;
+      cleaningPriority?: 'LOW' | 'NORMAL' | 'HIGH' | 'URGENT';
+      assignCleanerTo?: string;
+      cleaningNotes?: string;
+    }
   ): Promise<{ reservation: Reservation; cleaningTask: CleaningTask }> {
     const hasAccess = await checkPermission(ctx, 'reservations.checkout', 'reservations');
     if (!hasAccess) {
@@ -380,10 +421,20 @@ export class ReservationService {
 
     const reservation = await prisma.reservation.findUnique({
       where: { id: reservationId },
+      include: {
+        unit: {
+          include: { roomType: true, department: true },
+        },
+        guest: true,
+      },
     });
 
     if (!reservation) {
       throw new Error('Reservation not found');
+    }
+
+    if (reservation.status !== 'CHECKED_IN') {
+      throw new Error(`Cannot checkout a reservation with status ${reservation.status}. Must be CHECKED_IN.`);
     }
 
     let checkedOut: Reservation;
@@ -391,6 +442,7 @@ export class ReservationService {
 
     try {
       const result = await prisma.$transaction(async (tx) => {
+        // Update reservation
         checkedOut = await tx.reservation.update({
           where: { id: reservationId },
           data: {
@@ -399,18 +451,75 @@ export class ReservationService {
           },
         });
 
-        // Create cleaning task for turnover
+        // Get cleaning routine
+        let routineId: string | undefined;
+        let priority = cleaningOptions?.cleaningPriority || 'NORMAL';
+        
+        if (cleaningOptions?.cleaningRoutineId) {
+          routineId = cleaningOptions.cleaningRoutineId;
+          // Get routine to check its priority
+          const routine = await tx.cleaningRoutine.findUnique({
+            where: { id: routineId },
+          });
+          if (routine && !cleaningOptions.cleaningPriority) {
+            priority = routine.priority as any;
+          }
+        } else {
+          // Find default turnover routine for this room type
+          const routine = await tx.cleaningRoutine.findFirst({
+            where: {
+              type: 'TURNOVER',
+              isActive: true,
+              frequency: 'EVERY_CHECKOUT',
+              roomTypes: {
+                some: { id: reservation.unit.roomTypeId },
+              },
+            },
+          });
+          if (routine) {
+            routineId = routine.id;
+            if (!cleaningOptions?.cleaningPriority) {
+              priority = routine.priority as any;
+            }
+          }
+        }
+
+        // Create cleaning task
         const task = await tx.cleaningTask.create({
           data: {
             unitId: reservation.unitId,
+            routineId,
             taskType: 'turnover',
             status: 'PENDING',
-            priority: 'NORMAL',
+            priority,
+            assignedToId: cleaningOptions?.assignCleanerTo,
+            notes: cleaningOptions?.cleaningNotes || 
+              `Turnover cleaning after ${reservation.guest.firstName} ${reservation.guest.lastName} checkout`,
+          },
+          include: {
+            routine: true,
           },
         });
 
-        // Update unit status
-        await roomService.updateUnitStatus(reservation.unitId);
+        // Update unit status to CLEANING
+        await tx.unit.update({
+          where: { id: reservation.unitId },
+          data: {
+            status: 'CLEANING',
+            statusUpdatedAt: new Date(),
+          },
+        });
+
+        // Log status change
+        await tx.unitStatusHistory.create({
+          data: {
+            unitId: reservation.unitId,
+            previousStatus: 'OCCUPIED',
+            newStatus: 'CLEANING',
+            reason: 'Guest checkout - turnover cleaning initiated',
+            changedBy: ctx.userId,
+          },
+        });
 
         return { checkedOut, cleaningTask: task };
       });
@@ -427,7 +536,11 @@ export class ReservationService {
       action: 'RESERVATION_CHECKED_OUT',
       resourceType: 'reservation',
       resourceId: reservationId,
-      changes: { checkOutTime: actualCheckOutTime, cleaningTaskId: cleaningTask.id },
+      changes: { 
+        checkOutTime: actualCheckOutTime, 
+        cleaningTaskId: cleaningTask.id,
+        roomStatus: 'OCCUPIED → CLEANING',
+      },
     });
 
     return { reservation: checkedOut, cleaningTask };

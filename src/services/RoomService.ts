@@ -363,14 +363,37 @@ export class RoomService {
     status?: UnitStatus;
     roomTypeId?: string;
     departmentId?: string;
-  }): Promise<(Unit & { roomType: RoomType })[]> {
+  }): Promise<any[]> {
     return prisma.unit.findMany({
       where: {
         status: filters?.status,
         roomTypeId: filters?.roomTypeId,
         departmentId: filters?.departmentId,
       },
-      include: { roomType: true },
+      include: {
+        roomType: true,
+        reservations: {
+          where: {
+            status: {
+              in: ['CONFIRMED', 'CHECKED_IN'],
+            },
+          },
+          select: {
+            id: true,
+            status: true,
+            checkInDate: true,
+            checkOutDate: true,
+            guest: {
+              select: {
+                firstName: true,
+                lastName: true,
+              },
+            },
+          },
+          orderBy: { checkInDate: 'desc' },
+          take: 1,
+        },
+      },
       orderBy: { roomNumber: 'asc' },
     });
   }

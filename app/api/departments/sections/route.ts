@@ -106,11 +106,21 @@ export const POST = withAuth(
       
       // Check if user is admin or has permission
       const userWithRoles = await loadUserWithRoles(ctx.userId);
-      const isAdmin = userWithRoles?.isAdmin;
+      if (!userWithRoles) {
+        return NextResponse.json(
+          { success: false, error: 'User not found' },
+          { status: 401 }
+        );
+      }
+      const isAdmin = userWithRoles.isAdmin;
       
       if (!isAdmin) {
         // For non-admin employees, check if they have the specific permission
-        const hasPermission = await checkPermission(ctx, 'department_sections', 'create');
+        const permCtx: PermissionContext = {
+          userId: ctx.userId,
+          userType: (userWithRoles.userType as 'admin' | 'employee' | 'other') || 'employee',
+        };
+        const hasPermission = await checkPermission(permCtx, 'department_sections.create', 'department_sections');
         if (!hasPermission) {
           return NextResponse.json(
             { success: false, error: 'Insufficient permissions to create sections' },
@@ -189,11 +199,21 @@ export const DELETE = withAuth(
       
       // Check if user is admin or has permission
       const userWithRoles = await loadUserWithRoles(ctx.userId);
-      const isAdmin = userWithRoles?.isAdmin;
+      if (!userWithRoles) {
+        return NextResponse.json(
+          { success: false, error: 'User not found' },
+          { status: 401 }
+        );
+      }
+      const isAdmin = userWithRoles.isAdmin;
       
       if (!isAdmin) {
         // For non-admin employees, check if they have the specific permission
-        const hasPermission = await checkPermission(ctx, 'department_sections', 'delete');
+        const permCtx: PermissionContext = {
+          userId: ctx.userId,
+          userType: (userWithRoles.userType as 'admin' | 'employee' | 'other') || 'employee',
+        };
+        const hasPermission = await checkPermission(permCtx, 'department_sections.delete', 'department_sections');
         if (!hasPermission) {
           return NextResponse.json(
             { success: false, error: 'Insufficient permissions to delete sections' },
