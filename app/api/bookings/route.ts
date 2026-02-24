@@ -49,10 +49,10 @@ export async function POST(req: NextRequest) {
     const body = await req.json();
 
     // Validate required fields
-    if (!body.customerId || !body.roomId || !body.checkin || !body.checkout) {
+    if (!body.customerId || !body.unitId || !body.checkin || !body.checkout) {
       return sendError(
         ErrorCodes.VALIDATION_ERROR,
-        'Missing required fields: customerId, roomId, checkin, checkout'
+        'Missing required fields: customerId, unitId, checkin, checkout'
       );
     }
 

@@ -21,19 +21,22 @@ interface Customer {
 	email: string;
 }
 
-interface Room {
+interface Unit {
 	id: string;
 	roomNumber: string;
-	name: string;
-	price: number; // in cents
-	capacity: number;
 	status: string;
+	roomType: {
+		id: string;
+		name: string;
+		basePriceCents: number;
+		capacity: number;
+	};
 }
 
 export default function BookingCreatePage() {
 	const router = useRouter();
 	const [customers, setCustomers] = useState<Customer[]>([]);
-	const [rooms, setRooms] = useState<Room[]>([]);
+	const [units, setUnits] = useState<Unit[]>([]);
 	const [isLoading, setIsLoading] = useState(true);
 	const [isSaving, setIsSaving] = useState(false);
 	const [isCreatingCustomer, setIsCreatingCustomer] = useState(false);
@@ -41,7 +44,7 @@ export default function BookingCreatePage() {
 	const [error, setError] = useState<string | null>(null);
 	const [booking, setBooking] = useState({
 		customerId: "",
-		roomId: "",
+		unitId: "",
 		checkin: "",
 		checkout: "",
 		nights: 1,
@@ -72,9 +75,9 @@ export default function BookingCreatePage() {
 
 				if (roomsRes.ok) {
 					const roomsData = await roomsRes.json();
-					console.log("Rooms API Response:", roomsData);
-					console.log("Rooms Data:", roomsData.data);
-					setRooms(roomsData.data || []);
+					console.log("Units API Response:", roomsData);
+					console.log("Units Data:", roomsData.data);
+					setUnits(roomsData.data || []);
 				}
 			} catch (err) {
 				console.error("Failed to fetch data:", err);
@@ -100,12 +103,12 @@ export default function BookingCreatePage() {
 		setBooking((prev) => {
 			const updated = { ...prev, [field]: value };
 
-			// If room is selected, calculate total price
-			if (field === "roomId") {
-				const selectedRoom = rooms.find((r) => r.id === value);
-				if (selectedRoom) {
-					const roomPrice = selectedRoom.price || 0;
-					updated.totalPrice = roomPrice * prev.nights;
+		// If unit is selected, calculate total price
+		if (field === "unitId") {
+			const selectedUnit = units.find((u) => u.id === value);
+			if (selectedUnit) {
+				const unitPrice = selectedUnit.roomType.basePriceCents || 0;
+				updated.totalPrice = unitPrice * prev.nights;
 				}
 			}
 
@@ -170,12 +173,12 @@ export default function BookingCreatePage() {
 				);
 				updated.nights = Math.max(1, nightsCount);
 
-				// Recalculate total price if room is selected
-				if (updated.roomId) {
-					const selectedRoom = rooms.find((r) => r.id === updated.roomId);
-					if (selectedRoom) {
-						const roomPrice = selectedRoom.price || 0;
-						updated.totalPrice = roomPrice * updated.nights;
+		// Recalculate total price if unit is selected
+			if (updated.unitId) {
+				const selectedUnit = units.find((u) => u.id === updated.unitId);
+				if (selectedUnit) {
+					const unitPrice = selectedUnit.roomType.basePriceCents || 0;
+					updated.totalPrice = unitPrice * updated.nights;
 					}
 				}
 			}
@@ -193,8 +196,8 @@ export default function BookingCreatePage() {
 			setError("Please select a customer");
 			return;
 		}
-		if (!booking.roomId) {
-			setError("Please select a room");
+		if (!booking.unitId) {
+			setError("Please select a unit");
 			return;
 		}
 		if (!booking.checkin || !booking.checkout) {
@@ -400,15 +403,15 @@ export default function BookingCreatePage() {
 					</CardHeader>
 					<CardContent className="space-y-4">
 						<div>
-							<Label htmlFor="roomId">Room</Label>
-							<Select value={booking.roomId} onValueChange={(val) => handleSelectChange("roomId", val)}>
+							<Label htmlFor="unitId">Unit</Label>
+							<Select value={booking.unitId} onValueChange={(val) => handleSelectChange("unitId", val)}>
 								<SelectTrigger>
-									<SelectValue placeholder="Select a room" />
+									<SelectValue placeholder="Select a unit" />
 								</SelectTrigger>
 								<SelectContent>
-									{rooms.map((room) => (
-										<SelectItem key={room.id} value={room.id}>
-											{room.roomNumber} - {room.name}
+									{units.map((unit) => (
+										<SelectItem key={unit.id} value={unit.id}>
+											{unit.roomNumber} - {unit.roomType.name} ({unit.roomType.capacity} guests)
 										</SelectItem>
 									))}
 								</SelectContent>

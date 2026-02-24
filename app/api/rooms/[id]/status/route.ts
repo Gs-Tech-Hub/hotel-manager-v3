@@ -15,6 +15,20 @@ export async function POST(
   request: NextRequest,
   { params }: { params: Promise<{ id: string }> }
 ) {
+  return handleStatusUpdate(request, params);
+}
+
+export async function PATCH(
+  request: NextRequest,
+  { params }: { params: Promise<{ id: string }> }
+) {
+  return handleStatusUpdate(request, params);
+}
+
+async function handleStatusUpdate(
+  request: NextRequest,
+  params: Promise<{ id: string }>
+) {
   try {
     const { id } = await params;
     const ctx = await extractUserContext(request);

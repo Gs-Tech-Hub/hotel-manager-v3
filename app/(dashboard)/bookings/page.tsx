@@ -17,14 +17,14 @@ import Link from "next/link";
 
 interface Booking {
 	id: string;
-	bookingNumber: string;
-	customer: { name: string; email: string };
-	room: { roomNumber: string; name: string };
-	checkIn: string;
-	checkOut: string;
-	status: "pending" | "confirmed" | "checked-in" | "checked-out" | "cancelled";
+	bookingId: string;
+	customer: { name?: string; email: string };
+	unit: { roomNumber: string; roomType: { name: string } };
+	checkin: string;
+	checkout: string;
+	bookingStatus: "pending" | "confirmed" | "in_progress" | "completed" | "cancelled";
 	totalPrice: number;
-	numberOfGuests: number;
+	guests: number;
 }
 
 export default function BookingsPage() {
@@ -68,13 +68,13 @@ export default function BookingsPage() {
 		fetchBookings();
 	}, [page, search, statusFilter]);
 
-	const statusColors = {
+	const statusColors: Record<string, string> = {
 		pending: "bg-yellow-100 text-yellow-800 dark:bg-yellow-950 dark:text-yellow-300",
 		confirmed:
 			"bg-blue-100 text-blue-800 dark:bg-blue-950 dark:text-blue-300",
-		"checked-in":
+		in_progress:
 			"bg-green-100 text-green-800 dark:bg-green-950 dark:text-green-300",
-		"checked-out":
+		completed:
 			"bg-gray-100 text-gray-800 dark:bg-gray-950 dark:text-gray-300",
 		cancelled:
 			"bg-red-100 text-red-800 dark:bg-red-950 dark:text-red-300",
@@ -158,7 +158,7 @@ export default function BookingsPage() {
 						{bookings.map((booking) => (
 							<Link
 								key={booking.id}
-								href={`/dashboard/bookings/${booking.id}`}
+								href={`/bookings/${booking.id}`}
 							>
 								<Card className="cursor-pointer hover:bg-accent transition-colors">
 									<CardContent className="pt-6">
@@ -169,7 +169,7 @@ export default function BookingsPage() {
 													Booking #
 												</p>
 												<p className="font-semibold">
-													{booking.bookingNumber}
+													{booking.bookingId}
 												</p>
 											</div>
 
@@ -195,15 +195,18 @@ export default function BookingsPage() {
 												</p>
 												<div>
 													<p className="font-semibold">
-														{booking.room.roomNumber}
-													</p>
-													<p className="text-xs text-muted-foreground">
-														{new Date(
-															booking.checkIn
-														).toLocaleDateString()}{" "}
-														-{" "}
-														{new Date(
-															booking.checkOut
+													{booking.unit?.roomNumber || "N/A"}
+												</p>
+												<p className="text-xs text-muted-foreground">
+													{booking.unit?.roomType?.name || "N/A"}
+												</p>
+												<p className="text-xs text-muted-foreground">
+													{new Date(
+														booking.checkin
+													).toLocaleDateString()}{" "}
+													-{" "}
+													{new Date(
+														booking.checkout
 														).toLocaleDateString()}
 													</p>
 												</div>
@@ -216,11 +219,11 @@ export default function BookingsPage() {
 												</p>
 												<Badge
 													className={
-														statusColors[booking.status]
+														statusColors[booking.bookingStatus]
 													}
 												>
-													{booking.status
-														.split("-")
+													{booking.bookingStatus
+														.split("_")
 														.map(
 															(word) =>
 																word

@@ -14,7 +14,7 @@ function mapBooking(b: any): IBooking {
     id: b.id,
     bookingId: b.bookingId,
     customerId: b.customerId,
-    roomId: b.roomId,
+    unitId: b.unitId,
     checkin: b.checkin,
     checkout: b.checkout,
     timeIn: b.timeIn ?? undefined,
@@ -43,6 +43,90 @@ export class BookingService extends BaseService<IBooking> {
   }
 
   /**
+   * Find all bookings with relations
+   */
+  async findAll(params: any = {}) {
+    try {
+      const { page = 1, limit = 10, filters = [], sort = [] } = params;
+      const pageNum = Math.max(1, page);
+      const pageSize = Math.min(100, Math.max(1, limit));
+      const skipNum = (pageNum - 1) * pageSize;
+
+      // Build where clause from filters
+      const where: Record<string, any> = {};
+      for (const filter of filters) {
+        const { field, operator, value } = filter;
+        switch (operator) {
+          case 'eq':
+            where[field] = value;
+            break;
+          case 'ne':
+            where[field] = { not: value };
+            break;
+          case 'gt':
+            where[field] = { gt: value };
+            break;
+          case 'gte':
+            where[field] = { gte: value };
+            break;
+          case 'lt':
+            where[field] = { lt: value };
+            break;
+          case 'lte':
+            where[field] = { lte: value };
+            break;
+          case 'in':
+            where[field] = { in: Array.isArray(value) ? value : [value] };
+            break;
+          case 'contains':
+            where[field] = { contains: value, mode: 'insensitive' };
+            break;
+        }
+      }
+
+      // Build order by from sort
+      const orderBy: Record<string, any>[] = [];
+      for (const sortOption of sort) {
+        orderBy.push({ [sortOption.field]: sortOption.direction });
+      }
+
+      // Execute queries with proper includes
+      const [items, total] = await Promise.all([
+        prisma.booking.findMany({
+          where,
+          include: {
+            unit: { include: { roomType: true } },
+            customer: true,
+            payment: true,
+          },
+          orderBy: orderBy.length > 0 ? orderBy : { createdAt: 'desc' },
+          skip: skipNum,
+          take: pageSize,
+        }),
+        prisma.booking.count({ where }),
+      ]);
+
+      return {
+        items,
+        meta: {
+          page: pageNum,
+          limit: pageSize,
+          total,
+          pages: Math.ceil(total / pageSize),
+        },
+      };
+    } catch (error) {
+      console.error('Error fetching bookings:', error);
+      return {
+        error: {
+          code: 'INTERNAL_ERROR',
+          message: 'Failed to fetch bookings',
+        },
+      };
+    }
+  }
+
+  /**
    * Get booking with all details
    */
   async getBookingDetails(bookingId: string): Promise<any | null> {
@@ -51,7 +135,7 @@ export class BookingService extends BaseService<IBooking> {
         where: { id: bookingId },
         include: {
           customer: true,
-          room: { include: { amenities: true, beds: true } },
+          unit: { include: { roomType: true } },
           payment: true,
           restaurant: true,
           barAndClub: true,
@@ -72,7 +156,7 @@ export class BookingService extends BaseService<IBooking> {
     try {
       const rows = await prisma.booking.findMany({
         where: { customerId },
-        include: { room: true, payment: true },
+        include: { unit: true, payment: true },
         orderBy: { createdAt: 'desc' },
       });
       return mapBookings(rows);
@@ -91,7 +175,7 @@ export class BookingService extends BaseService<IBooking> {
         where: {
           bookingStatus: { in: ['confirmed', 'in_progress'] },
         },
-        include: { customer: true, room: true },
+        include: { customer: true, unit: true },
         orderBy: { checkin: 'asc' },
       });
       return mapBookings(rows);
@@ -116,7 +200,7 @@ export class BookingService extends BaseService<IBooking> {
             create: items as any,
           },
         } as any,
-        include: { bookingItems: true, customer: true, room: true },
+        include: { bookingItems: true, customer: true, unit: true },
       });
     } catch (error) {
       console.error('Error creating booking with items:', error);

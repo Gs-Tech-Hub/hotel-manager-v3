@@ -1,92 +1,93 @@
 /**
- * Room Service
- * Handles all room-related operations
+ * Room/Unit Service
+ * Handles all room/unit-related operations
  */
 
 import { BaseService } from './base.service';
 import { IRoom } from '@/types/entities';
 import { prisma } from '@/lib/auth/prisma';
+import { UnitStatus } from '@prisma/client';
 
 export class RoomService extends BaseService<IRoom> {
   constructor() {
     super('room');
   }
 
-  private mapRoom(r: any): IRoom {
+  private mapUnit(u: any): IRoom {
     return {
-      id: r.id,
-      name: r.name,
-      description: r.description ?? undefined,
-      roomNumber: r.roomNumber,
-      status: r.status,
-      price: r.price,
-      capacity: r.capacity,
-      createdAt: r.createdAt,
-      updatedAt: r.updatedAt,
+      id: u.id,
+      name: u.roomType?.name || 'N/A',
+      description: u.roomType?.description ?? undefined,
+      roomNumber: u.roomNumber,
+      status: u.status,
+      price: u.roomType?.basePriceCents ?? 0,
+      capacity: u.roomType?.capacity ?? 1,
+      createdAt: u.createdAt,
+      updatedAt: u.updatedAt,
     };
   }
 
   /**
-   * Get rooms by status
+   * Get units by status
    */
-  async getRoomsByStatus(status: string): Promise<IRoom[]> {
+  async getRoomsByStatus(status: UnitStatus): Promise<IRoom[]> {
     try {
-      const rows = await prisma.room.findMany({
+      const rows = await prisma.unit.findMany({
         where: { status },
-        include: { amenities: true, beds: true },
+        include: { roomType: true },
       });
 
-      return rows.map((r: any) => this.mapRoom(r));
+      return rows.map((r: any) => this.mapUnit(r));
     } catch (error) {
-      console.error('Error fetching rooms by status:', error);
+      console.error('Error fetching units by status:', error);
       return [];
     }
   }
 
   /**
-   * Get available rooms
+   * Get available units
    */
   async getAvailableRooms(): Promise<IRoom[]> {
-    return this.getRoomsByStatus('available');
+    return this.getRoomsByStatus('AVAILABLE');
   }
 
   /**
-   * Check room availability for a date range
+   * Check unit availability for a date range
    */
-  async checkAvailability(roomId: string, startDate: Date, endDate: Date): Promise<boolean> {
+  async checkAvailability(unitId: string, startDate: Date, endDate: Date): Promise<boolean> {
     try {
-      const bookings = await prisma.booking.findMany({
+      const reservations = await prisma.reservation.findMany({
         where: {
-          roomId,
+          unitId,
           AND: [
-            { checkin: { lt: endDate } },
-            { checkout: { gt: startDate } },
+            { checkInDate: { lt: endDate } },
+            { checkOutDate: { gt: startDate } },
           ],
-          bookingStatus: { not: 'cancelled' },
+          status: { not: 'CANCELLED' },
         },
       });
-      return bookings.length === 0;
+      return reservations.length === 0;
     } catch (error) {
-      console.error('Error checking room availability:', error);
+      console.error('Error checking unit availability:', error);
       return false;
     }
   }
 
   /**
-   * Get room with amenities and beds
+   * Get unit with roomType and recent reservations
    */
-  async getRoomDetails(roomId: string): Promise<any | null> {
+  async getRoomDetails(unitId: string): Promise<any | null> {
     try {
-      return await prisma.room.findUnique({
-        where: { id: roomId },
+      return await prisma.unit.findUnique({
+        where: { id: unitId },
         include: {
-          amenities: true,
-          beds: true,
-          bookings: { take: 5, orderBy: { createdAt: 'desc' } },
+          roomType: true,
+          reservations: { take: 5, orderBy: { createdAt: 'desc' } },
+          cleaningTasks: { take: 3, orderBy: { createdAt: 'desc' } },
         },
       });
     } catch (error) {
-      console.error('Error fetching room details:', error);
+      console.error('Error fetching unit details:', error);
       return null;
     }
   }
@@ -101,7 +102,7 @@ export class RoomService extends BaseService<IRoom> {
     total: number;
   } | null> {
     try {
-      const stats = await prisma.room.groupBy({
+      const stats = await prisma.unit.groupBy({
         by: ['status'],
         _count: true,
       });

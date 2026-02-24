@@ -161,7 +161,8 @@ export class RoomService {
   }
 
   /**
-   * Calculate price for unit over date range (applies PricingOverrides)
+   * Calculate price for unit over date range (applies PricingOverrides per night)
+   * Iterates through each night to apply overrides correctly
    */
   async calculatePrice(unitId: string, checkInDate: Date, checkOutDate: Date): Promise<number> {
     const unit = await prisma.unit.findUnique({
@@ -173,7 +174,7 @@ export class RoomService {
       throw new Error('Unit not found');
     }
 
-    // Normalize dates
+    // Normalize dates to start-of-day UTC
     const checkin = new Date(checkInDate);
     checkin.setUTCHours(0, 0, 0, 0);
 
@@ -183,7 +184,11 @@ export class RoomService {
     // Calculate number of nights
     const nights = Math.ceil((checkout.getTime() - checkin.getTime()) / (1000 * 60 * 60 * 24));
 
-    // Get pricing overrides for the date range
+    if (nights <= 0) {
+      return 0;
+    }
+
+    // Get all pricing overrides for the room type that overlap the stay
     const overrides = await prisma.pricingOverride.findMany({
       where: {
         roomTypeId: unit.roomTypeId,
@@ -192,17 +197,33 @@ export class RoomService {
       },
     });
 
-    // Simple calculation: use override if available, otherwise base price
+    // Calculate price night by night
     let totalCents = 0;
 
-    if (overrides.length > 0) {
-      // Use average of overrides (simplified; real impl would be more sophisticated)
-      const avgPrice = Math.round(
-        overrides.reduce((sum, o) => sum + o.pricePerNightCents, 0) / overrides.length
-      );
-      totalCents = avgPrice * nights;
-    } else {
-      totalCents = unit.roomType.basePriceCents * nights;
+    for (let i = 0; i < nights; i++) {
+      const nightStart = new Date(checkin);
+      nightStart.setUTCDate(nightStart.getUTCDate() + i);
+
+      const nightEnd = new Date(nightStart);
+      nightEnd.setUTCDate(nightEnd.getUTCDate() + 1);
+
+      // Find override for this night
+      const nightOverride = overrides.find((override) => {
+        const overrideStart = new Date(override.startDate);
+        overrideStart.setUTCHours(0, 0, 0, 0);
+
+        const overrideEnd = new Date(override.endDate);
+        overrideEnd.setUTCHours(0, 0, 0, 0);
+
+        return nightStart >= overrideStart && nightStart < overrideEnd;
+      });
+
+      // Use override price if available, otherwise use base price
+      const priceForNightCents = nightOverride
+        ? nightOverride.pricePerNightCents
+        : unit.roomType.basePriceCents;
+
+      totalCents += priceForNightCents;
     }
 
     return totalCents;

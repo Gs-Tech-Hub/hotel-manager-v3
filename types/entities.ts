@@ -73,7 +73,7 @@ export interface IRoom {
   name: string;
   description?: string;
   roomNumber: string;
-  status: 'available' | 'occupied' | 'maintenance';
+  status: 'AVAILABLE' | 'OCCUPIED' | 'CLEANING' | 'MAINTENANCE' | 'BLOCKED';
   price: number;
   capacity: number;
   createdAt: Date;
@@ -129,7 +129,7 @@ export interface IBooking {
   id: string;
   bookingId: string;
   customerId: string;
-  roomId: string;
+  unitId: string;
   checkin: Date;
   checkout: Date;
   timeIn?: string;
