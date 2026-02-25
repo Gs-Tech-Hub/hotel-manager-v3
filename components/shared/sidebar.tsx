@@ -72,6 +72,16 @@ const sidebarGroups = [
 						href: "/rooms",
 						icon: DoorOpen,
 					},
+					{
+						title: "Cleaning Schedule",
+						href: "/cleaning",
+						icon: Flashlight,
+					},
+					{
+						title: "Maintenance",
+						href: "/maintenance",
+						icon: AlertCircleIcon,
+					},
 				],
 			},
 			{

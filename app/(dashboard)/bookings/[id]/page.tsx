@@ -5,7 +5,7 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import { Loader2, ArrowLeft, Edit, Check, LogIn, LogOut } from "lucide-react";
+import { Loader2, ArrowLeft, Edit, Check, LogIn, LogOut, CreditCard } from "lucide-react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { formatTablePrice } from "@/lib/formatters";
@@ -50,6 +50,13 @@ interface BookingDetail {
 			capacity: number;
 		};
 	};
+	payment?: {
+		id: string;
+		transactionID: string;
+		paymentMethod: string;
+		paymentStatus: string;
+		totalPrice: number;
+	};
 	createdAt: string;
 	updatedAt: string;
 }
@@ -68,6 +75,11 @@ export default function BookingDetailPage({
 	const [editCheckIn, setEditCheckIn] = useState<string>("");
 	const [editCheckOut, setEditCheckOut] = useState<string>("");
 	const [showDateEdit, setShowDateEdit] = useState(false);
+	const [showPaymentDialog, setShowPaymentDialog] = useState(false);
+	const [paymentData, setPaymentData] = useState({
+		amount: "",
+		method: "cash",
+	});
 
 	useEffect(() => {
 		const unwrapParams = async () => {
@@ -117,7 +129,7 @@ export default function BookingDetailPage({
 				}),
 			});
 			const data = await response.json();
-			if (data.success) {
+		if (data.success && data.data) {
 				setBooking(data.data);
 				setShowDateEdit(false);
 				toast({
@@ -137,12 +149,12 @@ export default function BookingDetailPage({
 	};
 
 	const handleCheckIn = async () => {
-		if (!booking) return;
+		if (!booking || !booking.unit?.id) return;
 		setIsSaving(true);
 		try {
 			// Update booking status to in_progress
 			const bookingRes = await fetch(`/api/bookings/${bookingId}`, {
-				method: "PATCH",
+				method: "PUT",
 				headers: { "Content-Type": "application/json" },
 				body: JSON.stringify({
 					bookingStatus: "in_progress",
@@ -160,7 +172,9 @@ export default function BookingDetailPage({
 			});
 
 			const data = await bookingRes.json();
-			setBooking(data.data);
+			if (data.data) {
+				setBooking(data.data);
+			}
 			toast({
 				title: "Success",
 				description: "Guest checked in successfully",
@@ -171,18 +185,19 @@ export default function BookingDetailPage({
 				description: "Failed to check in guest",
 				variant: "destructive",
 			});
+			console.error("Check-in error:", error);
 		} finally {
 			setIsSaving(false);
 		}
 	};
 
 	const handleCheckOut = async () => {
-		if (!booking) return;
+		if (!booking || !booking.unit?.id) return;
 		setIsSaving(true);
 		try {
 			// Update booking status to completed
 			const bookingRes = await fetch(`/api/bookings/${bookingId}`, {
-				method: "PATCH",
+				method: "PUT",
 				headers: { "Content-Type": "application/json" },
 				body: JSON.stringify({
 					bookingStatus: "completed",
@@ -203,7 +218,9 @@ export default function BookingDetailPage({
 			});
 
 			const data = await bookingRes.json();
-			setBooking(data.data);
+			if (data.data) {
+				setBooking(data.data);
+			}
 			toast({
 				title: "Success",
 				description: "Guest checked out - room marked for cleaning",
@@ -214,6 +231,55 @@ export default function BookingDetailPage({
 				description: "Failed to check out guest",
 				variant: "destructive",
 			});
+			console.error("Check-out error:", error);
+		} finally {
+			setIsSaving(false);
+		}
+	};
+
+	const handleProcessPayment = async () => {
+		if (!booking) {
+			toast({
+				title: "Error",
+				description: "Booking not found",
+				variant: "destructive",
+			});
+			return;
+		}
+
+		setIsSaving(true);
+		try {
+			const response = await fetch(`/api/bookings/${bookingId}/payment`, {
+				method: "POST",
+				headers: { "Content-Type": "application/json" },
+				body: JSON.stringify({
+					amount: booking.totalPrice, // Full booking amount in cents
+					method: paymentData.method,
+				}),
+			});
+
+			if (!response.ok) throw new Error("Payment failed");
+
+			const data = await response.json();
+			if (data.data && data.data.booking) {
+				setBooking(data.data.booking);
+			}
+			setShowPaymentDialog(false);
+			setPaymentData({
+				amount: "",
+				method: "cash",
+			});
+			toast({
+				title: "Success",
+				description: `Payment of ${formatTablePrice(booking.totalPrice)} received successfully`,
+			});
+		} catch (error) {
+			toast({
+				title: "Error",
+				description: "Failed to process payment",
+				variant: "destructive",
+			});
+			console.error("Payment error:", error);
 		} finally {
 			setIsSaving(false);
 		}
@@ -508,6 +574,104 @@ export default function BookingDetailPage({
 			</Card>
 
 			{/* Check-in/Out Actions */}
+			{/* Payment Section */}
+			<Card>
+				<CardHeader>
+					<CardTitle>Payment</CardTitle>
+				</CardHeader>
+				<CardContent className="space-y-4">
+					<div className="grid grid-cols-2 gap-4">
+						<div>
+							<Label className="text-muted-foreground">Total Due</Label>
+							<p className="text-2xl font-bold text-blue-600">
+								{formatTablePrice(booking.totalPrice)}
+							</p>
+						</div>
+						{booking.payment && (
+							<div>
+								<Label className="text-muted-foreground">Payment Status</Label>
+								<div className="mt-1">
+									<div className="inline-block px-2 py-1 bg-green-100 text-green-800 rounded text-sm font-medium">
+										✓ {booking.payment.paymentStatus || 'Completed'}
+									</div>
+								</div>
+							</div>
+						)}
+					</div>
+					{booking.payment ? (
+						<div className="bg-green-50 p-4 rounded border border-green-200 space-y-2">
+							<p className="text-sm font-semibold text-green-900">Payment Details</p>
+							<div className="text-sm text-green-800">
+								<p>Method: <span className="font-semibold">{booking.payment.paymentMethod.toUpperCase()}</span></p>
+								{booking.payment.transactionID && (
+									<p>Reference: <span className="font-semibold">{booking.payment.transactionID}</span></p>
+								)}
+							</div>
+						</div>
+					) : (
+						<Button
+							onClick={() => setShowPaymentDialog(true)}
+							className="w-full"
+						>
+							<CreditCard className="h-4 w-4 mr-2" />
+							Process Payment
+						</Button>
+					)}
+				</CardContent>
+			</Card>
+
+			{/* Payment Dialog */}
+			{showPaymentDialog && (
+				<Card className="shadow-lg">
+					<CardHeader>
+						<CardTitle>Confirm Payment</CardTitle>
+					</CardHeader>
+					<CardContent className="space-y-4">
+						<div>
+							<Label>Total Amount Due</Label>
+							<p className="text-2xl font-bold text-blue-600 mt-1">
+								{formatTablePrice(booking.totalPrice)}
+							</p>
+						</div>
+						<div>
+							<Label htmlFor="method">Payment Method</Label>
+							<Select value={paymentData.method} onValueChange={(v) => setPaymentData({ ...paymentData, method: v })}>
+								<SelectTrigger>
+									<SelectValue />
+								</SelectTrigger>
+								<SelectContent>
+									<SelectItem value="cash">Cash</SelectItem>
+									<SelectItem value="card">Credit/Debit Card</SelectItem>
+									<SelectItem value="bank_transfer">Bank Transfer</SelectItem>
+									<SelectItem value="mobile_payment">Mobile Payment</SelectItem>
+								</SelectContent>
+							</Select>
+						</div>
+						<div className="flex gap-2">
+							<Button
+								onClick={handleProcessPayment}
+								disabled={isSaving}
+								className="flex-1"
+							>
+								{isSaving ? (
+									<Loader2 className="h-4 w-4 animate-spin mr-2" />
+								) : (
+									<CreditCard className="h-4 w-4 mr-2" />
+								)}
+								Confirm Payment
+							</Button>
+							<Button
+								variant="outline"
+								onClick={() => setShowPaymentDialog(false)}
+								className="flex-1"
+							>
+								Cancel
+							</Button>
+						</div>
+					</CardContent>
+				</Card>
+			)}
+
 			{!isCheckedOut && (
 				<Card>
 					<CardHeader>

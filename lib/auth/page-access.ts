@@ -322,6 +322,32 @@ export const pageAccessRules: Record<string, PageAccessRule> = {
     adminBypass: true,
   },
 
+  // ==================== CLEANING ====================
+  "/cleaning": {
+    requiredRoles: ["housekeeping_staff", "housekeeping_supervisor", "manager", "admin"],
+    requiredAnyPermissions: ["cleaning.view", "cleaning.work", "cleaning.assign"],
+    adminBypass: true,
+  },
+
+  "/cleaning/*": {
+    requiredRoles: ["housekeeping_staff", "housekeeping_supervisor", "manager", "admin"],
+    requiredAnyPermissions: ["cleaning.view", "cleaning.work", "cleaning.assign"],
+    adminBypass: true,
+  },
+
+  // ==================== MAINTENANCE ====================
+  "/maintenance": {
+    requiredRoles: ["maintenance_tech", "maintenance_manager", "manager", "admin"],
+    requiredAnyPermissions: ["maintenance.view", "maintenance.work", "maintenance.request", "maintenance.assign"],
+    adminBypass: true,
+  },
+
+  "/maintenance/*": {
+    requiredRoles: ["maintenance_tech", "maintenance_manager", "manager", "admin"],
+    requiredAnyPermissions: ["maintenance.view", "maintenance.work", "maintenance.request", "maintenance.assign"],
+    adminBypass: true,
+  },
+
   // ==================== DOCS & REFERENCE ====================
   "/docs": {
     authenticatedOnly: true,
