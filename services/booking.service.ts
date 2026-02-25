@@ -6,6 +6,8 @@
 import { BaseService } from './base.service';
 import { IBooking } from '@/types/entities';
 import { prisma } from '@/lib/auth/prisma';
+import type { PaginatedResponse, QueryParams } from '@/types/api';
+import { errorResponse, ErrorCodes } from '@/lib/api-response';
 
 // Helper mapper: convert Prisma results to IBooking domain type
 function mapBooking(b: any): IBooking {
@@ -43,14 +45,16 @@ export class BookingService extends BaseService<IBooking> {
   }
 
   /**
-   * Find all bookings with relations
+   * Override findAll to include relationships needed for list views
    */
-  async findAll(params: any = {}) {
+  async findAll(
+    params: QueryParams = {}
+  ): Promise<PaginatedResponse<any> | ReturnType<typeof errorResponse>> {
     try {
-      const { page = 1, limit = 10, filters = [], sort = [] } = params;
+      const { page = 1, limit = 10, skip = 0, filters = [] } = params;
       const pageNum = Math.max(1, page);
       const pageSize = Math.min(100, Math.max(1, limit));
-      const skipNum = (pageNum - 1) * pageSize;
+      const skipNum = skip || (pageNum - 1) * pageSize;
 
       // Build where clause from filters
       const where: Record<string, any> = {};
@@ -84,22 +88,19 @@ export class BookingService extends BaseService<IBooking> {
         }
       }
 
-      // Build order by from sort
-      const orderBy: Record<string, any>[] = [];
-      for (const sortOption of sort) {
-        orderBy.push({ [sortOption.field]: sortOption.direction });
-      }
-
-      // Execute queries with proper includes
+      // Execute queries with relationships included
       const [items, total] = await Promise.all([
         prisma.booking.findMany({
           where,
           include: {
-            unit: { include: { roomType: true } },
             customer: true,
-            payment: true,
+            unit: {
+              include: {
+                roomType: true,
+              },
+            },
           },
-          orderBy: orderBy.length > 0 ? orderBy : { createdAt: 'desc' },
+          orderBy: { createdAt: 'desc' },
           skip: skipNum,
           take: pageSize,
         }),
@@ -107,7 +108,7 @@ export class BookingService extends BaseService<IBooking> {
       ]);
 
       return {
-        items,
+        items: items as any[],
         meta: {
           page: pageNum,
           limit: pageSize,
@@ -117,25 +118,19 @@ export class BookingService extends BaseService<IBooking> {
       };
     } catch (error) {
       console.error('Error fetching bookings:', error);
-      return {
-        error: {
-          code: 'INTERNAL_ERROR',
-          message: 'Failed to fetch bookings',
-        },
-      };
+      return errorResponse(
+        ErrorCodes.INTERNAL_ERROR,
+        'Failed to fetch bookings'
+      );
     }
   }
-
-  /**
-   * Get booking with all details
-   */
   async getBookingDetails(bookingId: string): Promise<any | null> {
     try {
       return await prisma.booking.findUnique({
         where: { id: bookingId },
         include: {
           customer: true,
-          unit: { include: { roomType: true } },
+          unit: true,
           payment: true,
           restaurant: true,
           barAndClub: true,
@@ -156,7 +151,7 @@ export class BookingService extends BaseService<IBooking> {
     try {
       const rows = await prisma.booking.findMany({
         where: { customerId },
-        include: { unit: true, payment: true },
+        include: { payment: true },
         orderBy: { createdAt: 'desc' },
       });
       return mapBookings(rows);
@@ -175,7 +170,7 @@ export class BookingService extends BaseService<IBooking> {
         where: {
           bookingStatus: { in: ['confirmed', 'in_progress'] },
         },
-        include: { customer: true, unit: true },
+        include: { customer: true },
         orderBy: { checkin: 'asc' },
       });
       return mapBookings(rows);
@@ -200,7 +195,7 @@ export class BookingService extends BaseService<IBooking> {
             create: items as any,
           },
         } as any,
-        include: { bookingItems: true, customer: true, unit: true },
+        include: { bookingItems: true, customer: true },
       });
     } catch (error) {
       console.error('Error creating booking with items:', error);

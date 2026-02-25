@@ -17,7 +17,8 @@ import { Loader2 } from "lucide-react";
 
 interface Customer {
 	id: string;
-	name: string;
+	firstName?: string;
+	lastName?: string;
 	email: string;
 }
 
@@ -290,7 +291,7 @@ export default function BookingCreatePage() {
 										<SelectContent>
 											{customers.map((customer) => (
 												<SelectItem key={customer.id} value={customer.id}>
-													{customer.name} ({customer.email})
+													{`${customer.firstName || ''} ${customer.lastName || ''}`.trim() || 'Unknown'} ({customer.email})
 												</SelectItem>
 											))}
 										</SelectContent>

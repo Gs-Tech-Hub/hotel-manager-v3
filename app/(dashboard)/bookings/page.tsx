@@ -18,8 +18,8 @@ import Link from "next/link";
 interface Booking {
 	id: string;
 	bookingId: string;
-	customer: { name?: string; email: string };
-	unit: { roomNumber: string; roomType: { name: string } };
+	customer?: { firstName?: string; lastName?: string; email: string };
+	unit?: { roomNumber: string; roomType: { name: string } };
 	checkin: string;
 	checkout: string;
 	bookingStatus: "pending" | "confirmed" | "in_progress" | "completed" | "cancelled";
@@ -180,10 +180,10 @@ export default function BookingsPage() {
 												</p>
 												<div>
 													<p className="font-semibold">
-														{booking.customer.name}
+														{booking.customer?.firstName || "Unknown Guest"}
 													</p>
 													<p className="text-xs text-muted-foreground">
-														{booking.customer.email}
+														{booking.customer?.email || "N/A"}
 													</p>
 												</div>
 											</div>

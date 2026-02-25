@@ -4,63 +4,35 @@ import { sendSuccess, sendError } from '@/lib/api-handler';
 import { ErrorCodes } from '@/lib/api-response';
 
 /**
- * GET /api/cleaning/schedules
- * Get cleaning schedules for a unit
+ * GET /api/rooms/maintenance
+ * Get all maintenance tasks for rooms
  * 
  * Query params:
  * - unitId: Filter by unit ID
- * - status: Filter by status (pending, in_progress, completed)
+ * - status: Filter by status (CLEANING, MAINTENANCE, etc)
  */
 export async function GET(req: NextRequest) {
 	try {
 		const { searchParams } = new URL(req.url);
-		const unitId = searchParams.get('unitId');
 		const status = searchParams.get('status');
 
 		const where: any = {};
-		if (unitId) where.unitId = unitId;
 		if (status) where.status = status;
 
-		const schedules = await prisma.cleaningSchedule.findMany({
+		// Get units with specific status (CLEANING, MAINTENANCE, etc.)
+		const units = await prisma.unit.findMany({
 			where,
-			orderBy: { scheduledDate: 'desc' },
-		});
-
-		return sendSuccess(schedules, 'Cleaning schedules fetched');
-	} catch (error) {
-		const message = error instanceof Error ? error.message : 'Failed to fetch schedules';
-		return sendError(ErrorCodes.INTERNAL_ERROR, message);
-	}
-}
-
-/**
- * POST /api/cleaning/schedules
- * Create a new cleaning schedule
- */
-export async function POST(req: NextRequest) {
-	try {
-		const body = await req.json();
-
-		if (!body.unitId || !body.scheduledDate) {
-			return sendError(
-				ErrorCodes.BAD_REQUEST,
-				'Missing required fields: unitId, scheduledDate'
-			);
-		}
-
-		const schedule = await prisma.cleaningSchedule.create({
-			data: {
-				unitId: body.unitId,
-				scheduledDate: new Date(body.scheduledDate),
-				status: body.status || 'pending',
-				notes: body.notes || null,
-				assignedTo: body.assignedTo || null,
+			include: {
+				roomType: true,
+				department: true,
 			},
+			orderBy: { roomNumber: 'asc' },
 		});
 
-		return sendSuccess(schedule, 'Cleaning schedule created', 201);
+		return sendSuccess(units, 'Maintenance tasks fetched');
 	} catch (error) {
-		const message = error instanceof Error ? error.message : 'Failed to create schedule';
+		const message = error instanceof Error ? error.message : 'Failed to fetch maintenance tasks';
 		return sendError(ErrorCodes.INTERNAL_ERROR, message);
 	}
 }
+
