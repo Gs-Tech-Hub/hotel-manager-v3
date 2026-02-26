@@ -54,9 +54,29 @@ export class MaintenanceService {
       },
     });
 
-    // Update unit status if critical
-    if (data.priority === MaintenancePriority.CRITICAL) {
-      await roomService.updateUnitStatus(data.unitId);
+    // Update unit status to MAINTENANCE
+    const unit = await prisma.unit.findUnique({
+      where: { id: data.unitId },
+    });
+
+    if (unit && unit.status !== 'MAINTENANCE') {
+      await prisma.unit.update({
+        where: { id: data.unitId },
+        data: {
+          status: 'MAINTENANCE',
+          statusUpdatedAt: new Date(),
+        },
+      });
+
+      await prisma.unitStatusHistory.create({
+        data: {
+          unitId: data.unitId,
+          previousStatus: unit.status,
+          newStatus: 'MAINTENANCE',
+          reason: `Maintenance request created: ${data.category}`,
+          changedBy: ctx.userId,
+        },
+      });
     }
 
     // Log audit

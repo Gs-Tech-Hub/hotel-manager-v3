@@ -5,14 +5,7 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import {
-	Select,
-	SelectContent,
-	SelectItem,
-	SelectTrigger,
-	SelectValue,
-} from "@/components/ui/select";
-import { Loader2, ArrowLeft, Edit, Trash2, AlertCircle } from "lucide-react";
+import { ArrowLeft, Edit, Trash2 } from "lucide-react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { formatTablePrice } from "@/lib/formatters";
@@ -43,8 +36,9 @@ export default function RoomDetailPage(props: {
 	const [room, setRoom] = useState<Room | null>(null);
 	const [isLoading, setIsLoading] = useState(true);
 	const [isDeleting, setIsDeleting] = useState(false);
-	const [isUpdatingStatus, setIsUpdatingStatus] = useState(false);
-	const [statusError, setStatusError] = useState<string | null>(null);
+	const [isCreatingTask, setIsCreatingTask] = useState(false);
+	const [isCreatingRequest, setIsCreatingRequest] = useState(false);
+	const [error, setError] = useState<string | null>(null);
 	const [roomId, setRoomId] = useState<string | null>(null);
 
 	useEffect(() => {
@@ -93,40 +87,80 @@ export default function RoomDetailPage(props: {
 		}
 	};
 
-	const handleStatusChange = async (newStatus: string) => {
-		if (!roomId || !room) return;
-
-		setIsUpdatingStatus(true);
-		setStatusError(null);
+	const handleCreateCleaningTask = async () => {
+		if (!roomId) return;
+		setIsCreatingTask(true);
+		setError(null);
 		try {
-			const response = await fetch(`/api/rooms/${roomId}/status`, {
+			const response = await fetch("/api/cleaning/tasks", {
 				method: "POST",
 				headers: { "Content-Type": "application/json" },
 				body: JSON.stringify({
-					status: newStatus,
-					reason: `Status changed to ${newStatus}`,
+					unitId: roomId,
+					taskType: "turnover",
+					priority: "NORMAL",
+					notes: "Scheduled from room details page",
 				}),
 			});
 
 			const data = await response.json();
 
 			if (response.ok && data.success) {
-				// Update room status in local state
-				setRoom({ ...room, status: newStatus });
+				// Refresh room data to show updated status
+				const refreshResponse = await fetch(`/api/rooms/${roomId}`);
+				const refreshData = await refreshResponse.json();
+				if (refreshData.success) {
+					setRoom(refreshData.data);
+				}
 			} else {
-				setStatusError(data?.message || "Failed to update room status");
+				setError(data?.message || "Failed to create cleaning task");
 			}
 		} catch (error) {
-			setStatusError(error instanceof Error ? error.message : "Failed to update room status");
+			setError(error instanceof Error ? error.message : "Failed to create cleaning task");
 		} finally {
-			setIsUpdatingStatus(false);
+			setIsCreatingTask(false);
+		}
+	};
+
+	const handleCreateMaintenanceRequest = async () => {
+		if (!roomId) return;
+		setIsCreatingRequest(true);
+		setError(null);
+		try {
+			const response = await fetch("/api/maintenance/requests", {
+				method: "POST",
+				headers: { "Content-Type": "application/json" },
+				body: JSON.stringify({
+					unitId: roomId,
+					category: "general",
+					description: "General maintenance requested from room details page",
+					priority: "NORMAL",
+				}),
+			});
+
+			const data = await response.json();
+
+			if (response.ok && data.success) {
+				// Refresh room data to show updated status
+				const refreshResponse = await fetch(`/api/rooms/${roomId}`);
+				const refreshData = await refreshResponse.json();
+				if (refreshData.success) {
+					setRoom(refreshData.data);
+				}
+			} else {
+				setError(data?.message || "Failed to create maintenance request");
+			}
+		} catch (error) {
+			setError(error instanceof Error ? error.message : "Failed to create maintenance request");
+		} finally {
+			setIsCreatingRequest(false);
 		}
 	};
 
 	if (isLoading) {
 		return (
 			<div className="flex items-center justify-center py-12">
-				<Loader2 className="h-8 w-8 animate-spin text-muted-foreground" />
+				<p className="text-muted-foreground">Loading...</p>
 			</div>
 		);
 	}
@@ -192,10 +226,9 @@ export default function RoomDetailPage(props: {
 							<CardTitle>Room Information</CardTitle>
 						</CardHeader>
 						<CardContent className="space-y-4">
-							{statusError && (
+							{error && (
 								<div className="bg-destructive/10 text-destructive border border-destructive/20 rounded-lg p-3 flex gap-2">
-									<AlertCircle className="h-5 w-5 flex-shrink-0 mt-0.5" />
-									<p className="text-sm">{statusError}</p>
+									<p className="text-sm">{error}</p>
 								</div>
 							)}
 							<div className="grid grid-cols-2 gap-4">
@@ -203,24 +236,17 @@ export default function RoomDetailPage(props: {
 									<p className="text-xs text-muted-foreground uppercase">
 										Status
 									</p>
-									<div className="flex items-center gap-2">
-										<Badge className={statusColors[room.status as keyof typeof statusColors]}>
-											{room.status.charAt(0).toUpperCase() +
-												room.status.slice(1)}
-										</Badge>
-										<Select value={room.status} onValueChange={handleStatusChange} disabled={isUpdatingStatus}>
-											<SelectTrigger className="w-auto h-8 text-xs">
-												<SelectValue />
-											</SelectTrigger>
-											<SelectContent>
-												<SelectItem value="AVAILABLE">Available</SelectItem>
-												<SelectItem value="OCCUPIED">Occupied</SelectItem>
-												<SelectItem value="CLEANING">Cleaning</SelectItem>
-												<SelectItem value="MAINTENANCE">Maintenance</SelectItem>
-												<SelectItem value="BLOCKED">Blocked</SelectItem>
-											</SelectContent>
-										</Select>
-									</div>
+									<Badge className={statusColors[room.status as keyof typeof statusColors]}>
+										{room.status.charAt(0).toUpperCase() +
+											room.status.slice(1)}
+									</Badge>
+									<p className="text-xs text-muted-foreground mt-2">
+										{room.status === 'CLEANING' && 'Use Cleaning page to complete'}
+										{room.status === 'MAINTENANCE' && 'Use Maintenance page to complete'}
+										{room.status === 'OCCUPIED' && 'Use checkout from Bookings'}
+										{room.status === 'AVAILABLE' && 'Room is ready for booking'}
+										{room.status === 'BLOCKED' && 'Contact management to unblock'}
+									</p>
 								</div>
 								<div className="space-y-1">
 									<p className="text-xs text-muted-foreground uppercase">
@@ -329,7 +355,7 @@ export default function RoomDetailPage(props: {
 												🔧 Room is currently under maintenance
 											</p>
 											<p className="text-xs text-amber-700">
-												Click &quot;Mark as Available&quot; in the management sidebar when maintenance is complete.
+												Go to the Maintenance page to complete the request. Once verified, the room will automatically become available.
 											</p>
 										</div>
 									) : (
@@ -351,7 +377,7 @@ export default function RoomDetailPage(props: {
 												🧹 Room is currently being cleaned
 											</p>
 											<p className="text-xs text-purple-700">
-												Click &quot;Mark as Available&quot; in the management sidebar when cleaning is complete.
+												Go to the Cleaning page to complete the task. Once inspected and approved, the room will automatically become available.
 											</p>
 										</div>
 									) : (
@@ -391,56 +417,18 @@ export default function RoomDetailPage(props: {
 						</CardContent>
 					</Card>
 
-					{/* Management */}
+					{/* Actions */}
 					<Card>
 						<CardHeader>
-							<CardTitle className="text-base">Management</CardTitle>
+							<CardTitle className="text-base">Actions</CardTitle>
 						</CardHeader>
 						<CardContent className="space-y-2">
-							<Button
-								className="w-full"
-								variant={room.status === "CLEANING" ? "default" : "outline"}
-								onClick={() => handleStatusChange("CLEANING")}
-								disabled={isUpdatingStatus}
-							>
-								{isUpdatingStatus ? (
-									<Loader2 className="h-4 w-4 mr-2 animate-spin" />
-								) : (
-									"Mark as Cleaning"
-								)}
-							</Button>
-							<Button
-								className="w-full"
-								variant={room.status === "MAINTENANCE" ? "default" : "outline"}
-								onClick={() => handleStatusChange("MAINTENANCE")}
-								disabled={isUpdatingStatus}
-							>
-								{isUpdatingStatus ? (
-									<Loader2 className="h-4 w-4 mr-2 animate-spin" />
-								) : (
-									"Mark as Maintenance"
-								)}
-							</Button>
-							<Button
-								className="w-full"
-								variant={room.status === "AVAILABLE" ? "default" : "outline"}
-								onClick={() => handleStatusChange("AVAILABLE")}
-								disabled={isUpdatingStatus}
-							>
-								{isUpdatingStatus ? (
-									<Loader2 className="h-4 w-4 mr-2 animate-spin" />
-								) : (
-									"Mark as Available"
-								)}
-							</Button>
-							<div className="pt-2 border-t">
-								<Link href={`/rooms/${room.id}/edit`} className="block">
-									<Button className="w-full" variant="outline">
-										<Edit className="h-4 w-4 mr-2" />
-										Edit Details
-									</Button>
-								</Link>
-							</div>
+							<Link href={`/rooms/${room.id}/edit`} className="block">
+								<Button className="w-full" variant="outline">
+									<Edit className="h-4 w-4 mr-2" />
+									Edit Details
+								</Button>
+							</Link>
 						</CardContent>
 					</Card>
 				</div>

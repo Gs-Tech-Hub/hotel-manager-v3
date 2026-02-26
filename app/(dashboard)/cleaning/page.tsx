@@ -76,7 +76,7 @@ export default function CleaningPage() {
     }
   };
 
-  if (!hasAnyRole(['housekeeping', 'housekeeping_supervisor', 'manager'])) {
+  if (!hasAnyRole(['admin', 'housekeeping', 'housekeeping_supervisor', 'manager'])) {
     return (
       <div className="p-6">
         <Card className="border-red-200 bg-red-50">
@@ -147,12 +147,12 @@ export default function CleaningPage() {
           <div className="flex items-center justify-between">
             <CardTitle>Cleaning Tasks</CardTitle>
             <div className="flex gap-2">
-              <Select value={statusFilter} onValueChange={setStatusFilter}>
+              <Select value={statusFilter || 'all'} onValueChange={(val) => setStatusFilter(val === 'all' ? '' : val)}>
                 <SelectTrigger className="w-40">
                   <SelectValue placeholder="Filter by status" />
                 </SelectTrigger>
                 <SelectContent>
-                  <SelectItem value="">All Status</SelectItem>
+                  <SelectItem value="all">All Status</SelectItem>
                   <SelectItem value="PENDING">Pending</SelectItem>
                   <SelectItem value="IN_PROGRESS">In Progress</SelectItem>
                   <SelectItem value="COMPLETED">Completed</SelectItem>
@@ -160,12 +160,12 @@ export default function CleaningPage() {
                 </SelectContent>
               </Select>
 
-              <Select value={priorityFilter} onValueChange={setPriorityFilter}>
+              <Select value={priorityFilter || 'all'} onValueChange={(val) => setPriorityFilter(val === 'all' ? '' : val)}>
                 <SelectTrigger className="w-40">
                   <SelectValue placeholder="Filter by priority" />
                 </SelectTrigger>
                 <SelectContent>
-                  <SelectItem value="">All Priority</SelectItem>
+                  <SelectItem value="all">All Priority</SelectItem>
                   <SelectItem value="LOW">Low</SelectItem>
                   <SelectItem value="NORMAL">Normal</SelectItem>
                   <SelectItem value="HIGH">High</SelectItem>

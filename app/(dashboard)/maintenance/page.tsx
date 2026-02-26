@@ -79,7 +79,7 @@ export default function MaintenancePage() {
     }
   };
 
-  if (!hasAnyRole(['maintenance_tech', 'maintenance_manager', 'manager'])) {
+  if (!hasAnyRole(['admin', 'maintenance_tech', 'maintenance_manager', 'manager'])) {
     return (
       <div className="p-6">
         <Card className="border-red-200 bg-red-50">
@@ -151,12 +151,12 @@ export default function MaintenancePage() {
           <div className="flex items-center justify-between">
             <CardTitle>Maintenance Work Orders</CardTitle>
             <div className="flex gap-2">
-              <Select value={statusFilter} onValueChange={setStatusFilter}>
+              <Select value={statusFilter || 'all'} onValueChange={(val) => setStatusFilter(val === 'all' ? '' : val)}>
                 <SelectTrigger className="w-40">
                   <SelectValue placeholder="Filter by status" />
                 </SelectTrigger>
                 <SelectContent>
-                  <SelectItem value="">All Status</SelectItem>
+                  <SelectItem value="all">All Status</SelectItem>
                   <SelectItem value="OPEN">Open</SelectItem>
                   <SelectItem value="ASSIGNED">Assigned</SelectItem>
                   <SelectItem value="IN_PROGRESS">In Progress</SelectItem>
@@ -164,12 +164,12 @@ export default function MaintenancePage() {
                 </SelectContent>
               </Select>
 
-              <Select value={priorityFilter} onValueChange={setPriorityFilter}>
+              <Select value={priorityFilter || 'all'} onValueChange={(val) => setPriorityFilter(val === 'all' ? '' : val)}>
                 <SelectTrigger className="w-40">
                   <SelectValue placeholder="Filter by priority" />
                 </SelectTrigger>
                 <SelectContent>
-                  <SelectItem value="">All Priority</SelectItem>
+                  <SelectItem value="all">All Priority</SelectItem>
                   <SelectItem value="LOW">Low</SelectItem>
                   <SelectItem value="NORMAL">Normal</SelectItem>
                   <SelectItem value="HIGH">High</SelectItem>

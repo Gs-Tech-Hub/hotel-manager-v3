@@ -55,7 +55,7 @@ export async function GET(request: NextRequest) {
       : tasks;
 
     return NextResponse.json(
-      successResponse({ data: filtered }),
+      successResponse({ data: { tasks: filtered } }),
       { status: 200 }
     );
   } catch (error) {
