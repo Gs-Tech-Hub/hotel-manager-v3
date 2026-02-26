@@ -17,6 +17,7 @@ import {
   CardTitle,
 } from '@/components/ui/card';
 import { useToast } from '@/hooks/use-toast';
+import { formatTablePrice } from '@/lib/formatters';
 
 export interface ReservationFormProps {
   unitId: string;
@@ -171,7 +172,7 @@ export function ReservationForm({
           <div className="border-t pt-4">
             <div className="flex justify-between mb-4 text-lg font-bold">
               <span>Total Amount</span>
-              <span>${total}</span>
+              <span>{formatTablePrice(totalCents)}</span>
             </div>
 
             <Button

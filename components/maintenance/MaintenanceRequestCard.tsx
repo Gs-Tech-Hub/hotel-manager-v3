@@ -9,6 +9,7 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/com
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { MaintenanceStatus, MaintenancePriority } from '@prisma/client';
+import { formatTablePrice } from '@/lib/formatters';
 
 export interface MaintenanceRequestCardProps {
   request: {
@@ -98,13 +99,13 @@ export function MaintenanceRequestCard({
           {request.estimatedCostCents && (
             <div>
               <span className="text-muted-foreground">Est. Cost:</span>
-              <span className="ml-2 font-medium">${(request.estimatedCostCents / 100).toFixed(2)}</span>
+              <span className="ml-2 font-medium">{formatTablePrice(request.estimatedCostCents)}</span>
             </div>
           )}
           {request.actualCostCents && (
             <div>
               <span className="text-muted-foreground">Actual Cost:</span>
-              <span className="ml-2 font-medium">${(request.actualCostCents / 100).toFixed(2)}</span>
+              <span className="ml-2 font-medium">{formatTablePrice(request.actualCostCents)}</span>
             </div>
           )}
           {request.estimatedDays && (

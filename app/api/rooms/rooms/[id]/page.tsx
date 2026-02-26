@@ -8,6 +8,7 @@ import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Loader2, ArrowLeft, Edit, Trash2 } from "lucide-react";
+import { formatTablePrice } from "@/lib/formatters";
 
 interface Room {
 	id: string;
@@ -156,7 +157,7 @@ export default function RoomDetailPage(props: {
 					</CardHeader>
 					<CardContent>
 						<p className="text-2xl font-bold">
-							${(room.roomType.basePriceCents / 100).toFixed(2)}
+							{formatTablePrice(room.roomType.basePriceCents)}
 						</p>
 					</CardContent>
 				</Card>

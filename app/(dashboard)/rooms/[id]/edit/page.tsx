@@ -16,15 +16,23 @@ import {
 import { Loader2, ArrowLeft } from "lucide-react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
+import { formatTablePrice } from "@/lib/formatters";
 
 interface Room {
 	id: string;
-	name: string;
 	roomNumber: string;
-	status: "available" | "occupied" | "maintenance";
-	price: number;
-	capacity: number;
+	unitKind: string;
+	status: string;
+	notes?: string;
+	name?: string;
+	price?: number;
+	capacity?: number;
 	description?: string;
+	roomType?: {
+		id: string;
+		name: string;
+		basePriceCents: number;
+	};
 }
 
 export default function RoomEditPage(props: {
@@ -189,16 +197,29 @@ export default function RoomEditPage(props: {
 								</div>
 								<div className="space-y-2">
 									<Label htmlFor="price">
-										Price per Night (cents)
+										Price per Night
 									</Label>
-									<Input
-										id="price"
-										name="price"
-										type="number"
-										value={formData.price}
-										onChange={handleChange}
-										min="0"
-									/>
+									<div className="flex items-center gap-2">
+										<span className="text-sm text-muted-foreground">$</span>
+										<Input
+											id="price"
+											name="price"
+											type="number"
+											step="0.01"
+											value={(formData?.price ?? 0) / 100}
+											onChange={(e) => handleChange({
+												...e,
+												target: {
+													...e.target,
+													value: (Number(e.target.value) * 100).toString()
+												}
+											} as any)}
+											min="0"
+										/>
+									</div>
+									<p className="text-xs text-muted-foreground">
+										Current: {formatTablePrice(Math.round(formData?.price ?? 0))}
+									</p>
 								</div>
 							</div>
 
@@ -212,14 +233,20 @@ export default function RoomEditPage(props: {
 										<SelectValue />
 									</SelectTrigger>
 									<SelectContent>
-										<SelectItem value="available">
+										<SelectItem value="AVAILABLE">
 											Available
 										</SelectItem>
-										<SelectItem value="occupied">
+										<SelectItem value="OCCUPIED">
 											Occupied
 										</SelectItem>
-										<SelectItem value="maintenance">
+										<SelectItem value="CLEANING">
+											Cleaning
+										</SelectItem>
+										<SelectItem value="MAINTENANCE">
 											Maintenance
+										</SelectItem>
+										<SelectItem value="BLOCKED">
+											Blocked
 										</SelectItem>
 									</SelectContent>
 								</Select>

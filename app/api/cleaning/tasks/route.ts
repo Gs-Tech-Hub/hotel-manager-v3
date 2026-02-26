@@ -4,12 +4,44 @@
  */
 
 import { NextRequest, NextResponse } from 'next/server';
-import { extractUserContext } from '@/lib/user-context';
+import { extractUserContext, loadUserWithRoles, hasAnyRole } from '@/lib/user-context';
 import { cleaningService } from '@/src/services/CleaningService';
 import { successResponse, errorResponse, ErrorCodes } from '@/lib/api-response';
+import { checkPermission, type PermissionContext } from '@/lib/auth/rbac';
 
 export async function GET(request: NextRequest) {
   try {
+    // Extract and verify user context
+    const ctx = await extractUserContext(request);
+    if (!ctx.userId) {
+      return NextResponse.json(
+        errorResponse(ErrorCodes.UNAUTHORIZED, 'User not authenticated'),
+        { status: 401 }
+      );
+    }
+
+    // Load user with roles and check permissions
+    const user = await loadUserWithRoles(ctx.userId);
+    if (!user) {
+      return NextResponse.json(
+        errorResponse(ErrorCodes.UNAUTHORIZED, 'User not found'),
+        { status: 401 }
+      );
+    }
+
+    // Check permission to view cleaning tasks
+    const permCtx: PermissionContext = {
+      userId: ctx.userId,
+      userType: user.isAdmin ? 'admin' : hasAnyRole(user, ['admin', 'manager', 'staff']) ? 'employee' : 'other',
+    };
+    const hasAccess = await checkPermission(permCtx, 'cleaning.view', 'cleaning');
+    if (!hasAccess) {
+      return NextResponse.json(
+        errorResponse(ErrorCodes.FORBIDDEN, 'Insufficient permissions to view cleaning tasks'),
+        { status: 403 }
+      );
+    }
+
     const searchParams = request.nextUrl.searchParams;
     const departmentId = searchParams.get('departmentId');
     const status = searchParams.get('status');

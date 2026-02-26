@@ -9,6 +9,7 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/com
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { UnitKind } from '@prisma/client';
+import { formatTablePrice } from '@/lib/formatters';
 
 export interface AvailableUnit {
   unit: {
@@ -35,8 +36,6 @@ export interface UnitCardProps {
 
 export function UnitCard({ availableUnit, onBook, isLoading = false }: UnitCardProps) {
   const { unit, pricePerNightCents, totalCents, nights } = availableUnit;
-  const pricePerNight = (pricePerNightCents / 100).toFixed(2);
-  const total = (totalCents / 100).toFixed(2);
 
   const amenityList = unit.roomType.amenities
     ? Object.entries(unit.roomType.amenities)
@@ -81,7 +80,7 @@ export function UnitCard({ availableUnit, onBook, isLoading = false }: UnitCardP
         <div className="border-t pt-4 space-y-2">
           <div className="flex justify-between">
             <span className="text-sm text-muted-foreground">Price per night</span>
-            <span className="font-medium">${pricePerNight}</span>
+            <span className="font-medium">{formatTablePrice(pricePerNightCents)}</span>
           </div>
           <div className="flex justify-between">
             <span className="text-sm text-muted-foreground">Number of nights</span>
@@ -89,7 +88,7 @@ export function UnitCard({ availableUnit, onBook, isLoading = false }: UnitCardP
           </div>
           <div className="flex justify-between border-t pt-2 text-lg font-bold">
             <span>Total</span>
-            <span>${total}</span>
+            <span>{formatTablePrice(totalCents)}</span>
           </div>
         </div>
 

@@ -14,6 +14,7 @@ import {
 } from "@/components/ui/select";
 import { Loader2, Plus, Search } from "lucide-react";
 import Link from "next/link";
+import { formatTablePrice } from "@/lib/formatters";
 
 interface Booking {
 	id: string;
@@ -240,7 +241,7 @@ export default function BookingsPage() {
 													Total
 												</p>
 												<p className="text-lg font-bold">
-													${(booking.totalPrice / 100).toFixed(2)}
+												{formatTablePrice(booking.totalPrice)}
 												</p>
 											</div>
 										</div>
