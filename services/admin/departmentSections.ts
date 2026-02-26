@@ -108,7 +108,7 @@ export async function createSection(
             description: `Sales terminal for ${department.name} - ${name}`,
             departmentId,
             type: 'sales',
-            status: 'offline',
+            status: 'inactive',  // Start as inactive, admin must activate
             sectionIds: JSON.stringify([section.id]),
           },
         });

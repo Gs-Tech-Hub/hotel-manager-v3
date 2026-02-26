@@ -36,7 +36,13 @@ export async function GET(
       const parentDept = await prisma.department.findFirst({ where: { code: departmentCode } });
       if (parentDept) {
         const section = await prisma.departmentSection.findFirst({
-          where: { departmentId: parentDept.id, OR: [ { slug: sectionSlugOrId }, { id: sectionSlugOrId } ] }
+          where: { 
+            departmentId: parentDept.id,
+            OR: [ 
+              { slug: sectionSlugOrId }, 
+              { id: sectionSlugOrId } 
+            ] 
+          }
         });
         if (section) resolvedSectionId = section.id;
       }
@@ -135,7 +141,13 @@ export async function POST(
       const parentDept = await prisma.department.findFirst({ where: { code: departmentCode } });
       if (parentDept) {
         const section = await prisma.departmentSection.findFirst({
-          where: { departmentId: parentDept.id, OR: [ { slug: sectionSlugOrId }, { id: sectionSlugOrId } ] }
+          where: { 
+            departmentId: parentDept.id,
+            OR: [ 
+              { slug: sectionSlugOrId }, 
+              { id: sectionSlugOrId } 
+            ] 
+          }
         });
         if (section) resolvedSectionId = section.id;
       }

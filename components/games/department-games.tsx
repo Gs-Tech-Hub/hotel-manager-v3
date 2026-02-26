@@ -384,6 +384,13 @@ export function DepartmentGames({ departmentCode, departmentId }: DepartmentGame
           onCheckoutComplete={handleCheckoutComplete}
         />
       )}
+
+      <RegisterPlayer
+        open={registerOpen}
+        onOpenChange={setRegisterOpen}
+        departmentCode={activeSection ? `${departmentCode}:${activeSection.id}` : departmentCode}
+        onPlayerRegistered={handlePlayerRegistered}
+      />
     </div>
   );
 }

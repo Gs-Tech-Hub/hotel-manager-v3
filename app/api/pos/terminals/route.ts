@@ -14,7 +14,8 @@ export async function GET(req: Request) {
     const departmentId = searchParams.get('departmentId')
 
     const where: any = {
-      isActive: true
+      isActive: true,
+      hasTerminal: true  // Only return POS-enabled sections
     }
     if (departmentId) {
       where.departmentId = departmentId
