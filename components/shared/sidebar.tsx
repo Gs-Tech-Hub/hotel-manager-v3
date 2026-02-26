@@ -149,6 +149,12 @@ const sidebarGroups = [
 				badge: null,
 			},
 			{
+				title: "Sales Terminal",
+				href: "/terminal",
+				icon: ShoppingCart,
+				badge: null,
+			},
+			{
 				title: "POS Terminals",
 				href: "/pos-terminals",
 				icon: ShoppingCart,

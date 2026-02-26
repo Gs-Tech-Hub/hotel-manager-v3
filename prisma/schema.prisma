@@ -846,6 +846,13 @@ model DepartmentSection {
   departmentId String
   department   Department @relation(fields: [departmentId], references: [id], onDelete: Cascade)
 
+  // Whether this section should have a sales terminal
+  hasTerminal  Boolean   @default(false)
+  
+  // Terminal associated with this section (if hasTerminal is true)
+  terminalId   String?
+  terminal     Terminal? @relation(fields: [terminalId], references: [id], onDelete: SetNull)
+
   // per-section inventory records
   inventories DepartmentInventory[]
   
@@ -871,6 +878,7 @@ model DepartmentSection {
   updatedAt DateTime @updatedAt
 
   @@index([departmentId])
+  @@index([hasTerminal])
   @@map("department_sections")
 }
 
@@ -954,19 +962,32 @@ model Terminal {
   id           String    @id @default(cuid())
   name         String
   slug         String    @unique
+  description  String?
 
   // optional relation to Department (if a terminal is bound to a department)
   departmentId String?
   department   Department? @relation(fields: [departmentId], references: [id], onDelete: SetNull)
 
-  status   String  @default("offline") // online, offline, maintenance
-  metadata Json?   @default("{}")
+  // Sections that use this terminal
+  sections     DepartmentSection[]
 
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
+  // Which sections can use this terminal (JSON array of section IDs)
+  // If null/empty, terminal can sell from all active sections with hasTerminal=true
+  sectionIds   String @default("[]") // JSON array
+
+  // Terminal type: 'sales' (main POS), 'extra' (extras only), 'multi-section' (sells from multiple sections)
+  type         String  @default("sales") // sales, extra, multi-section
+  
+  status       String  @default("offline") // online, offline, maintenance
+  metadata     Json?   @default("{}")
+
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
 
   @@map("terminals")
   @@index([slug])
+  @@index([status])
+  @@index([departmentId])
 }
 
 model DiscountRule {

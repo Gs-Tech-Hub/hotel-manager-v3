@@ -39,6 +39,7 @@ export default function DepartmentDetail() {
   const [pendingTransfers, setPendingTransfers] = useState<any[] | null>(null)
   const [loadingTransfers, setLoadingTransfers] = useState(false)
   const [activeTab, setActiveTab] = useState<string>('overview')
+  const [sectionJustCreated, setSectionJustCreated] = useState(false)
 
   const {
     menu,
@@ -55,7 +56,7 @@ export default function DepartmentDetail() {
   const { hasPermission } = useAuth()
 
   // Handle create section - extract to modal
-  const handleCreateSection = async (name: string, slug: string) => {
+  const handleCreateSection = async (name: string, slug: string, hasTerminal: boolean) => {
     if (!department?.id) {
       throw new Error('Department not loaded')
     }
@@ -63,13 +64,16 @@ export default function DepartmentDetail() {
     const res = await fetch('/api/departments/sections', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ name, slug: slug || undefined, departmentId: department.id }),
+      body: JSON.stringify({ name, slug: slug || undefined, departmentId: department.id, hasTerminal }),
     })
     const j = await res.json()
     if (!res.ok || !j?.success) {
       throw new Error(j?.error || 'Failed to create section')
     }
 
+    // Mark that a section was just created
+    setSectionJustCreated(true)
+    
     // refresh department data (children/sections)
     try {
       await (refreshDepartment as any)?.(decodedCode)
@@ -219,7 +223,7 @@ export default function DepartmentDetail() {
           <TabsContent value="overview" className="space-y-6">
             <ParentDepartmentView
               loading={loading}
-              canCreateSection={hasPermission('department_sections.create')}
+              canCreateSection={hasPermission('department_sections.create') && !sectionJustCreated}
               onCreateSection={() => setShowCreateSection(true)}
             >
               {children}

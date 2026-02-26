@@ -50,16 +50,16 @@ export async function listSections({
 
 /**
  * Create a new department section
- * @param data - Section data (name, departmentId, optional slug, metadata)
+ * @param data - Section data (name, departmentId, optional slug, metadata, hasTerminal)
  * @param actor - User performing the action (for audit logging)
  * @returns Created section
  * @throws Error if required fields missing or department not found
  */
 export async function createSection(
-  data: { name: string; departmentId: string; slug?: string; metadata?: any }, 
+  data: { name: string; departmentId: string; slug?: string; metadata?: any; hasTerminal?: boolean }, 
   actor?: Actor
 ) {
-  const { name, departmentId, slug, metadata } = data;
+  const { name, departmentId, slug, metadata, hasTerminal = false } = data;
   
   if (!name || !name.trim()) {
     throw new Error('Missing required field: name');
@@ -93,8 +93,32 @@ export async function createSection(
           slug: slug?.trim() || null,
           metadata: baseMetadata,
           isActive: true,
+          hasTerminal,
         },
       });
+
+      // If hasTerminal is true, create a terminal for this section
+      let terminal = null;
+      if (hasTerminal) {
+        const terminalSlug = `${department.code}-${name.toLowerCase().replace(/\s+/g, '-')}-${Date.now()}`;
+        terminal = await tx.terminal.create({
+          data: {
+            name: `${name} Terminal`,
+            slug: terminalSlug,
+            description: `Sales terminal for ${department.name} - ${name}`,
+            departmentId,
+            type: 'sales',
+            status: 'offline',
+            sectionIds: JSON.stringify([section.id]),
+          },
+        });
+
+        // Link terminal to section
+        await tx.departmentSection.update({
+          where: { id: section.id },
+          data: { terminalId: terminal.id },
+        });
+      }
 
       await tx.adminAuditLog.create({
         data: {
@@ -103,11 +127,11 @@ export async function createSection(
           action: 'create',
           subject: 'department_sections',
           subjectId: section.id,
-          details: { name, departmentId, slug: section.slug, metadata: baseMetadata },
+          details: { name, departmentId, slug: section.slug, metadata: baseMetadata, hasTerminal, terminalId: terminal?.id || null },
         },
       });
 
-      return section;
+      return { ...section, terminal };
     },
     { timeout: 10000 }
   );

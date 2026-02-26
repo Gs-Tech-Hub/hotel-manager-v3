@@ -97,6 +97,7 @@ export const GET = withAuth(
  *   departmentId: string (required)
  *   slug?: string
  *   metadata?: object
+ *   hasTerminal?: boolean (default: false)
  * }
  */
 export const POST = withAuth(
