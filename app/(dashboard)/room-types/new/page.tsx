@@ -29,6 +29,7 @@ export default function NewRoomTypePage() {
 		name: "",
 		code: "",
 		description: "",
+		imageUrl: "",
 		capacity: 1,
 		bedSize: "",
 		roomSizeM2: "",
@@ -82,7 +83,10 @@ export default function NewRoomTypePage() {
 					name: formData.name,
 					code: formData.code.toLowerCase(),
 					description: formData.description,
+					imageUrl: formData.imageUrl,
 					capacity: Number(formData.capacity),
+					bedSize: formData.bedSize,
+					roomSizeM2: formData.roomSizeM2 ? Number(formData.roomSizeM2) : null,
 					basePriceCents: Math.round(Number(formData.basePriceCents) * 100),
 					amenities: selectedAmenities,
 				}),
@@ -238,6 +242,31 @@ export default function NewRoomTypePage() {
 								}
 								rows={3}
 							/>
+						</div>
+
+						<div>
+							<Label htmlFor="imageUrl">Image URL</Label>
+							<Input
+								id="imageUrl"
+								type="url"
+								placeholder="e.g., https://example.com/images/deluxe-room.jpg"
+								value={formData.imageUrl}
+								onChange={(e) =>
+									setFormData((prev) => ({ ...prev, imageUrl: e.target.value }))
+								}
+							/>
+							{formData.imageUrl && (
+								<div className="mt-2 w-32 h-24 rounded border overflow-hidden bg-muted">
+									<img
+										src={formData.imageUrl}
+										alt="Room type preview"
+										className="w-full h-full object-cover"
+										onError={(e) => {
+											(e.target as HTMLImageElement).style.display = 'none';
+										}}
+									/>
+								</div>
+							)}
 						</div>
 					</CardContent>
 				</Card>

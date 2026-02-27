@@ -109,7 +109,7 @@ export default function RoomEditPage(props: {
 			});
 
 			if (response.ok) {
-				router.push(`/dashboard/rooms/${roomId}`);
+				router.push(`/rooms/${roomId}`);
 			}
 		} catch (error) {
 			console.error("Failed to update room:", error);

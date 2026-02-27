@@ -21,6 +21,7 @@ interface Room {
 		capacity: number;
 		basePriceCents: number;
 		description?: string;
+		imageUrl?: string;
 	};
 	notes?: string;
 }
@@ -87,6 +88,24 @@ export default function RoomsPage() {
 	};
 
 	const columns: Column<Room>[] = [
+		{
+			key: "id",
+			label: "Photo",
+			render: (roomId: string) => {
+				const room = filteredRooms.find(r => r.id === roomId);
+				if (!room?.roomType.imageUrl) return null;
+				return (
+					<img
+						src={room.roomType.imageUrl}
+						alt={room.roomType.name}
+						className="h-12 w-16 object-cover rounded"
+						onError={(e) => {
+							(e.target as HTMLImageElement).style.display = 'none';
+						}}
+					/>
+				);
+			},
+		},
 		{
 			key: "roomNumber",
 			label: "Room Number",
@@ -199,7 +218,19 @@ export default function RoomsPage() {
 					) : (
 						filteredRooms.map((room) => (
 							<Link key={room.id} href={`/rooms/${room.id}`}>
-								<Card className="h-full hover:shadow-lg transition-all cursor-pointer">
+								<Card className="h-full hover:shadow-lg transition-all cursor-pointer overflow-hidden">
+									{room.roomType.imageUrl && (
+										<div className="w-full h-48 bg-muted overflow-hidden">
+											<img
+												src={room.roomType.imageUrl}
+												alt={room.roomType.name}
+												className="w-full h-full object-cover"
+												onError={(e) => {
+													(e.target as HTMLImageElement).style.display = 'none';
+												}}
+											/>
+										</div>
+									)}
 									<CardHeader className="pb-3">
 										<div className="flex items-start justify-between">
 											<div className="space-y-1 flex-1">
@@ -260,7 +291,7 @@ export default function RoomsPage() {
 					data={filteredRooms}
 					isLoading={isLoading}
 					onRowClick={(room) => {
-						window.location.href = `/dashboard/rooms/${room.id}`;
+						window.location.href = `/rooms/${room.id}`;
 					}}
 					pagination={{
 						total,

@@ -38,6 +38,7 @@ export interface SearchAvailabilityResult {
     id: string;
     name: string;
     capacity: number;
+    imageUrl?: string;
   };
   pricePerNightCents: number;
   totalCents: number;
@@ -87,6 +88,7 @@ export class ReservationService {
           id: unit.roomType.id,
           name: unit.roomType.name,
           capacity: unit.roomType.capacity,
+          imageUrl: unit.roomType.imageUrl ?? undefined,
         },
         pricePerNightCents,
         totalCents,

@@ -16,6 +16,7 @@ interface RoomType {
   name: string;
   code: string;
   description?: string;
+  imageUrl?: string;
   capacity: number;
   bedSize?: string | null;
   roomSizeM2?: number | null;
@@ -46,6 +47,7 @@ export default function EditRoomTypePage(props: {
     name: "",
     code: "",
     description: "",
+    imageUrl: "",
     capacity: 1,
     bedSize: "",
     roomSizeM2: "",
@@ -70,6 +72,7 @@ export default function EditRoomTypePage(props: {
           name: roomType.name,
           code: roomType.code,
           description: roomType.description || "",
+          imageUrl: roomType.imageUrl || "",
           capacity: roomType.capacity,
           bedSize: roomType.bedSize || "",
           roomSizeM2: roomType.roomSizeM2?.toString() || "",
@@ -228,6 +231,30 @@ export default function EditRoomTypePage(props: {
                 placeholder="Room type description..."
                 rows={4}
               />
+            </div>
+
+            <div>
+              <Label htmlFor="imageUrl">Image URL</Label>
+              <Input
+                id="imageUrl"
+                name="imageUrl"
+                type="url"
+                value={formData.imageUrl}
+                onChange={handleInputChange}
+                placeholder="e.g., https://example.com/images/deluxe-room.jpg"
+              />
+              {formData.imageUrl && (
+                <div className="mt-2 w-32 h-24 rounded border overflow-hidden bg-muted">
+                  <img
+                    src={formData.imageUrl}
+                    alt="Room type preview"
+                    className="w-full h-full object-cover"
+                    onError={(e) => {
+                      (e.target as HTMLImageElement).style.display = 'none';
+                    }}
+                  />
+                </div>
+              )}
             </div>
           </CardContent>
         </Card>
