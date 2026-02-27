@@ -21,6 +21,7 @@ interface Room {
 		name: string;
 		code: string;
 		capacity: number;
+		imageUrl?: string;
 		bedSize?: string | null;
 		roomSizeM2?: number | null;
 		basePriceCents: number;
@@ -204,6 +205,16 @@ export default function RoomDetailPage(props: {
 
 	return (
 		<div className="space-y-8">
+			{/* Room Image */}
+			{room.roomType.imageUrl && (
+				<div className="w-full h-96 rounded-lg overflow-hidden bg-muted border">
+					<img
+						src={room.roomType.imageUrl}
+						alt={room.roomType.name}
+						className="w-full h-full object-cover"
+					/>
+				</div>
+			)}
 			{/* Header */}
 			<div className="flex items-center gap-4">
 			<Link href="/rooms">

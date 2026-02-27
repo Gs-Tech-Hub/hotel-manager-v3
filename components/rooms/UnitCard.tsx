@@ -19,6 +19,7 @@ export interface AvailableUnit {
     roomType: {
       name: string;
       capacity: number;
+      imageUrl?: string;
       amenities?: Record<string, boolean>;
       description?: string;
     };
@@ -44,7 +45,16 @@ export function UnitCard({ availableUnit, onBook, isLoading = false }: UnitCardP
     : [];
 
   return (
-    <Card className="hover:shadow-lg transition-shadow">
+    <Card className="hover:shadow-lg transition-shadow overflow-hidden">
+      {unit.roomType.imageUrl && (
+        <div className="w-full h-48 overflow-hidden bg-muted">
+          <img
+            src={unit.roomType.imageUrl}
+            alt={unit.roomType.name}
+            className="w-full h-full object-cover"
+          />
+        </div>
+      )}
       <CardHeader>
         <div className="flex items-start justify-between">
           <div>

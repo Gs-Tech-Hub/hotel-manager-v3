@@ -29,7 +29,7 @@ export async function GET(request: NextRequest) {
 export async function POST(request: NextRequest) {
   try {
     const body = await request.json();
-    const { name, code, description, capacity, bedSize, roomSizeM2, basePriceCents, amenities } = body;
+    const { name, code, description, imageUrl, capacity, bedSize, roomSizeM2, basePriceCents, amenities } = body;
 
     if (!name || !code) {
       return NextResponse.json(
@@ -55,6 +55,7 @@ export async function POST(request: NextRequest) {
         name,
         code: code.toLowerCase(),
         description: description || null,
+        imageUrl: imageUrl || null,
         capacity: capacity || 1,
         bedSize: bedSize || null,
         roomSizeM2: roomSizeM2 ? parseInt(roomSizeM2, 10) : null,

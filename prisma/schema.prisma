@@ -2144,6 +2144,7 @@ model RoomType {
   code            String   @unique
   name            String
   description     String?
+  imageUrl        String?  // Image URL for the room type
   capacity        Int      // Max guests
   bedSize         String?  // e.g., "Queen", "Twin", "King", "Double"
   roomSizeM2      Int?     // Room size in square meters
