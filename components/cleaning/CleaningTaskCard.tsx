@@ -58,21 +58,28 @@ export function CleaningTaskCard({
   isLoading = false,
 }: CleaningTaskCardProps) {
   const canAssign = !task.assignedToId && task.status === 'PENDING';
-  const canStart = task.assignedToId && task.status === 'PENDING';
+  const canStart = task.status === 'PENDING'; // Can start without assignment
   const canComplete = task.status === 'IN_PROGRESS';
   const canInspect = task.status === 'COMPLETED';
+
+  // Create a human-readable task name
+  const taskTypeName = task.taskType.replace(/_/g, ' ').toLowerCase()
+    .split(' ')
+    .map(word => word.charAt(0).toUpperCase() + word.slice(1))
+    .join(' ');
+  const taskName = `${taskTypeName} - Room ${task.unit.roomNumber}`;
 
   return (
     <Card className="hover:shadow-md transition-shadow">
       <CardHeader>
-        <div className="flex items-start justify-between">
+        <div className="flex flex-col gap-3">
           <div>
-            <CardTitle className="text-lg">Task {task.taskNumber}</CardTitle>
+            <CardTitle className="text-lg">{taskName}</CardTitle>
             <CardDescription>
-              Room {task.unit.roomNumber} • {task.taskType.replace(/_/g, ' ')}
+              Task #{task.taskNumber}
             </CardDescription>
           </div>
-          <div className="flex gap-2">
+          <div className="flex flex-wrap gap-2">
             <Badge className={STATUS_COLORS[task.status]}>
               {task.status.replace(/_/g, ' ')}
             </Badge>

@@ -319,20 +319,22 @@ export class CleaningService {
   }
 
   /**
-   * Get pending tasks (unassigned or in-progress)
+   * Get active and recently completed tasks
+   * Shows the full workflow: PENDING → IN_PROGRESS → COMPLETED → INSPECTED
+   * Excludes only REJECTED and CANCELLED tasks
    */
   async getPendingTasks(departmentId?: string): Promise<
     (CleaningTask & { unit: { roomNumber: string } })[]
   > {
     return prisma.cleaningTask.findMany({
       where: {
-        status: { in: [CleaningTaskStatus.PENDING, CleaningTaskStatus.IN_PROGRESS] },
+        status: { in: [CleaningTaskStatus.PENDING, CleaningTaskStatus.IN_PROGRESS, CleaningTaskStatus.COMPLETED, CleaningTaskStatus.INSPECTED] },
         unit: departmentId ? { departmentId } : undefined,
       },
       include: {
         unit: { select: { roomNumber: true } },
       },
-      orderBy: [{ priority: 'asc' }, { createdAt: 'asc' }],
+      orderBy: [{ priority: 'asc' }, { status: 'asc' }, { createdAt: 'asc' }],
     });
   }
 

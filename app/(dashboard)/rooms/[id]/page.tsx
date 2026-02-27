@@ -92,18 +92,22 @@ export default function RoomDetailPage(props: {
 		setIsCreatingTask(true);
 		setError(null);
 		try {
+			const payload = {
+				unitId: roomId,
+				taskType: "turnover",
+				priority: "NORMAL",
+				notes: "Scheduled from room details page",
+			};
+			console.log('Creating cleaning task with payload:', payload);
+			
 			const response = await fetch("/api/cleaning/tasks", {
 				method: "POST",
 				headers: { "Content-Type": "application/json" },
-				body: JSON.stringify({
-					unitId: roomId,
-					taskType: "turnover",
-					priority: "NORMAL",
-					notes: "Scheduled from room details page",
-				}),
+				body: JSON.stringify(payload),
 			});
 
 			const data = await response.json();
+			console.log('Cleaning task response:', { status: response.status, data });
 
 			if (response.ok && data.success) {
 				// Refresh room data to show updated status
@@ -112,11 +116,16 @@ export default function RoomDetailPage(props: {
 				if (refreshData.success) {
 					setRoom(refreshData.data);
 				}
+				setError(null);
 			} else {
-				setError(data?.message || "Failed to create cleaning task");
+				const errorMsg = data?.message || "Failed to create cleaning task";
+				console.error('Error creating cleaning task:', errorMsg);
+				setError(errorMsg);
 			}
 		} catch (error) {
-			setError(error instanceof Error ? error.message : "Failed to create cleaning task");
+			const errorMsg = error instanceof Error ? error.message : "Failed to create cleaning task";
+			console.error('Exception creating cleaning task:', error);
+			setError(errorMsg);
 		} finally {
 			setIsCreatingTask(false);
 		}
@@ -127,18 +136,22 @@ export default function RoomDetailPage(props: {
 		setIsCreatingRequest(true);
 		setError(null);
 		try {
+			const payload = {
+				unitId: roomId,
+				category: "general",
+				description: "General maintenance requested from room details page",
+				priority: "NORMAL",
+			};
+			console.log('Creating maintenance request with payload:', payload);
+			
 			const response = await fetch("/api/maintenance/requests", {
 				method: "POST",
 				headers: { "Content-Type": "application/json" },
-				body: JSON.stringify({
-					unitId: roomId,
-					category: "general",
-					description: "General maintenance requested from room details page",
-					priority: "NORMAL",
-				}),
+				body: JSON.stringify(payload),
 			});
 
 			const data = await response.json();
+			console.log('Maintenance request response:', { status: response.status, data });
 
 			if (response.ok && data.success) {
 				// Refresh room data to show updated status
@@ -147,11 +160,16 @@ export default function RoomDetailPage(props: {
 				if (refreshData.success) {
 					setRoom(refreshData.data);
 				}
+				setError(null);
 			} else {
-				setError(data?.message || "Failed to create maintenance request");
+				const errorMsg = data?.message || "Failed to create maintenance request";
+				console.error('Error creating maintenance request:', errorMsg);
+				setError(errorMsg);
 			}
 		} catch (error) {
-			setError(error instanceof Error ? error.message : "Failed to create maintenance request");
+			const errorMsg = error instanceof Error ? error.message : "Failed to create maintenance request";
+			console.error('Exception creating maintenance request:', error);
+			setError(errorMsg);
 		} finally {
 			setIsCreatingRequest(false);
 		}
@@ -363,8 +381,13 @@ export default function RoomDetailPage(props: {
 											This room is not currently under maintenance.
 										</p>
 									)}
-									<Button className="w-full" variant="outline">
-										+ Create Maintenance Request
+									<Button 
+										className="w-full" 
+										variant="outline"
+										onClick={handleCreateMaintenanceRequest}
+										disabled={isCreatingRequest || room.status === "MAINTENANCE"}
+									>
+										{isCreatingRequest ? "Creating..." : "+ Create Maintenance Request"}
 									</Button>
 								</div>
 							</TabsContent>
@@ -385,8 +408,13 @@ export default function RoomDetailPage(props: {
 											This room is not currently scheduled for cleaning.
 										</p>
 									)}
-									<Button className="w-full" variant="outline">
-										+ Schedule Cleaning Task
+									<Button 
+										className="w-full" 
+										variant="outline"
+										onClick={handleCreateCleaningTask}
+										disabled={isCreatingTask || room.status === "CLEANING"}
+									>
+										{isCreatingTask ? "Scheduling..." : "+ Schedule Cleaning Task"}
 									</Button>
 								</div>
 							</TabsContent>

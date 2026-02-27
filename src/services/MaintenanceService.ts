@@ -275,6 +275,8 @@ export class MaintenanceService {
             MaintenanceStatus.ASSIGNED,
             MaintenanceStatus.IN_PROGRESS,
             MaintenanceStatus.ON_HOLD,
+            MaintenanceStatus.COMPLETED,
+            MaintenanceStatus.VERIFIED,
           ],
         },
         priority: priority ? { equals: priority } : undefined,
@@ -282,7 +284,7 @@ export class MaintenanceService {
       include: {
         unit: { select: { roomNumber: true } },
       },
-      orderBy: [{ priority: 'asc' }, { createdAt: 'asc' }],
+      orderBy: [{ priority: 'asc' }, { status: 'asc' }, { createdAt: 'asc' }],
     });
   }
 

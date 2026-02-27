@@ -7,7 +7,7 @@
 import { useEffect, useState } from 'react';
 import { useAuth } from '@/components/auth-context';
 import { Button } from '@/components/ui/button';
-import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
+import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Skeleton } from '@/components/ui/skeleton';
 import { MaintenanceRequestCard } from '@/components/maintenance/MaintenanceRequestCard';
 import { MaintenanceStatus, MaintenancePriority } from '@prisma/client';
@@ -47,6 +47,9 @@ export default function MaintenancePage() {
 
   useEffect(() => {
     fetchRequests();
+    // Refresh requests every 30 seconds to show active requests
+    const interval = setInterval(fetchRequests, 30000);
+    return () => clearInterval(interval);
   }, [statusFilter, priorityFilter]);
 
   const fetchRequests = async () => {
@@ -67,15 +70,33 @@ export default function MaintenancePage() {
     }
   };
 
-  const handleRequestAction = async (requestId: string, action: string) => {
+  const handleRequestAction = async (requestId: string, action: string, approved?: boolean) => {
     try {
+      const body: Record<string, any> = {};
+      
+      // For verify action, include approval status
+      if (action === 'verify') {
+        body.approved = approved === true;
+      }
+      
       const response = await fetch(`/api/maintenance/requests/${requestId}/${action}`, {
         method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(body),
       });
-      if (!response.ok) throw new Error('Failed to update request');
+      
+      const data = await response.json();
+      
+      if (!response.ok) {
+        throw new Error(data.message || 'Failed to update request');
+      }
+      
+      setError(null);
       await fetchRequests();
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'An error occurred');
+      const errorMsg = err instanceof Error ? err.message : 'An error occurred';
+      setError(errorMsg);
+      console.error(`Error performing ${action} action:`, err);
     }
   };
 
@@ -93,14 +114,17 @@ export default function MaintenancePage() {
 
   const openCount = requests.filter((r) => r.status === 'OPEN').length;
   const inProgressCount = requests.filter((r) => r.status === 'IN_PROGRESS').length;
-  const completedCount = requests.filter((r) => r.status === 'COMPLETED' || r.status === 'VERIFIED').length;
+  const awaitingVerification = requests.filter((r) => r.status === 'COMPLETED').length;
+  const verifiedCount = requests.filter((r) => r.status === 'VERIFIED').length;
   const criticalCount = requests.filter((r) => r.priority === 'CRITICAL').length;
+  const activeRequests = requests.filter((r) => r.status === 'IN_PROGRESS');
+  const completedRequests = requests.filter((r) => r.status === 'COMPLETED');
 
   return (
     <div className="space-y-6 p-6">
       <h1 className="text-3xl font-bold">Maintenance Management</h1>
 
-      <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
+      <div className="grid grid-cols-1 md:grid-cols-5 gap-4">
         <Card>
           <CardHeader className="pb-2">
             <CardTitle className="text-sm font-medium text-muted-foreground">
@@ -119,18 +143,29 @@ export default function MaintenancePage() {
             </CardTitle>
           </CardHeader>
           <CardContent>
-            <div className="text-2xl font-bold">{inProgressCount}</div>
+            <div className="text-2xl font-bold text-amber-600">{inProgressCount}</div>
           </CardContent>
         </Card>
 
         <Card>
           <CardHeader className="pb-2">
             <CardTitle className="text-sm font-medium text-muted-foreground">
-              Completed
+              Awaiting Verification
             </CardTitle>
           </CardHeader>
           <CardContent>
-            <div className="text-2xl font-bold">{completedCount}</div>
+            <div className="text-2xl font-bold text-orange-600">{awaitingVerification}</div>
+          </CardContent>
+        </Card>
+
+        <Card>
+          <CardHeader className="pb-2">
+            <CardTitle className="text-sm font-medium text-muted-foreground">
+              Verified ✓
+            </CardTitle>
+          </CardHeader>
+          <CardContent>
+            <div className="text-2xl font-bold text-green-600">{verifiedCount}</div>
           </CardContent>
         </Card>
 
@@ -199,15 +234,23 @@ export default function MaintenancePage() {
             </p>
           ) : (
             <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
-              {requests.map((request) => (
-                <MaintenanceRequestCard
-                  key={request.id}
-                  request={request}
-                  onLogWork={(id) => handleRequestAction(id, 'log')}
-                  onComplete={(id) => handleRequestAction(id, 'complete')}
-                  onVerify={(id) => handleRequestAction(id, 'verify')}
-                />
-              ))}
+              {requests.map((request) => {
+                // Custom handler for verify to allow approve/reject
+                const handleVerify = (id: string) => {
+                  const approved = confirm('Verify this maintenance request as complete? The room will become available for booking if verified.');
+                  handleRequestAction(id, 'verify', approved);
+                };
+                
+                return (
+                  <MaintenanceRequestCard
+                    key={request.id}
+                    request={request}
+                    onLogWork={(id) => handleRequestAction(id, 'log')}
+                    onComplete={(id) => handleRequestAction(id, 'complete')}
+                    onVerify={handleVerify}
+                  />
+                );
+              })}
             </div>
           )}
         </CardContent>

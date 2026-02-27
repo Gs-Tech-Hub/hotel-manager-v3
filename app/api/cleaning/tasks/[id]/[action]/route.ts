@@ -64,39 +64,17 @@ export async function POST(
         );
       }
 
-      const body = await request.json();
-      const task = await cleaningService.completeTask(taskId, body.notes, permCtx);
-
-      // Mark room as AVAILABLE when task is completed and inspected
-      const cleTask = await prisma.cleaningTask.findUnique({
-        where: { id: taskId },
-        include: { unit: true },
-      });
-
-      if (cleTask && cleTask.unit) {
-        // Check if there are other active cleaning tasks for this room
-        const otherActiveTasks = await prisma.cleaningTask.findMany({
-          where: {
-            unitId: cleTask.unitId,
-            id: { not: taskId },
-            status: { in: ['PENDING', 'IN_PROGRESS'] },
-          },
-        });
-
-        // If this is an inspection-required task, keep room in CLEANING status
-        // The room will go AVAILABLE after inspection approval
-        if (otherActiveTasks.length === 0) {
-          // No other active tasks, room can go available after this is inspected
-          // For now, update room status to show it's ready for inspection
-          await prisma.unit.update({
-            where: { id: cleTask.unitId },
-            data: {
-              status: 'CLEANING', // Keep as CLEANING until inspection completes
-              statusUpdatedAt: new Date(),
-            },
-          });
+      let body: any = {};
+      const contentLength = request.headers.get('content-length');
+      if (contentLength && parseInt(contentLength) > 0) {
+        try {
+          body = await request.json();
+        } catch (e) {
+          body = {};
         }
       }
+
+      const task = await cleaningService.completeTask(taskId, body.notes, permCtx);
 
       return NextResponse.json(
         successResponse({ data: task, message: 'Cleaning task completed' }),
@@ -111,7 +89,15 @@ export async function POST(
         );
       }
 
-      const body = await request.json();
+      let body: any = {};
+      const contentLength = request.headers.get('content-length');
+      if (contentLength && parseInt(contentLength) > 0) {
+        try {
+          body = await request.json();
+        } catch (e) {
+          body = {};
+        }
+      }
       const approved = body.approved === true;
 
       const task = await cleaningService.inspectTask(taskId, approved, body.notes, permCtx);

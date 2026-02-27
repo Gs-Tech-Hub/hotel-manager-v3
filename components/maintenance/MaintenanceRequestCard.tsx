@@ -63,7 +63,7 @@ export function MaintenanceRequestCard({
   isLoading = false,
 }: MaintenanceRequestCardProps) {
   const canAssign = !request.assignedToId && request.status === 'OPEN';
-  const canLogWork = request.assignedToId && ['ASSIGNED', 'IN_PROGRESS'].includes(request.status);
+  const canLogWork = ['OPEN', 'ASSIGNED', 'IN_PROGRESS'].includes(request.status); // Can log work without assignment
   const canComplete = request.status === 'IN_PROGRESS';
   const canVerify = request.status === 'COMPLETED';
 
@@ -71,17 +71,20 @@ export function MaintenanceRequestCard({
     (new Date().getTime() - new Date(request.createdAt).getTime()) / (1000 * 60 * 60 * 24)
   );
 
+  // Create a human-readable request name
+  const requestName = `${request.category.charAt(0).toUpperCase() + request.category.slice(1)} - Room ${request.unit.roomNumber}`;
+
   return (
     <Card className="hover:shadow-md transition-shadow">
       <CardHeader>
-        <div className="flex items-start justify-between">
+        <div className="flex flex-col gap-3">
           <div>
-            <CardTitle className="text-lg">WO #{request.workOrderNo}</CardTitle>
+            <CardTitle className="text-lg">{requestName}</CardTitle>
             <CardDescription>
-              Room {request.unit.roomNumber} • {request.category} • Created {daysAge} days ago
+              WO #{request.workOrderNo} • Created {daysAge} days ago
             </CardDescription>
           </div>
-          <div className="flex gap-2">
+          <div className="flex flex-wrap gap-2">
             <Badge className={STATUS_COLORS[request.status]}>
               {request.status.replace(/_/g, ' ')}
             </Badge>

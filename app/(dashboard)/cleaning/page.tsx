@@ -7,7 +7,7 @@
 import { useEffect, useState } from 'react';
 import { useAuth } from '@/components/auth-context';
 import { Button } from '@/components/ui/button';
-import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
+import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Skeleton } from '@/components/ui/skeleton';
 import { CleaningTaskCard } from '@/components/cleaning/CleaningTaskCard';
 import {
@@ -44,6 +44,9 @@ export default function CleaningPage() {
 
   useEffect(() => {
     fetchTasks();
+    // Refresh tasks every 30 seconds to show active tasks
+    const interval = setInterval(fetchTasks, 30000);
+    return () => clearInterval(interval);
   }, [statusFilter, priorityFilter]);
 
   const fetchTasks = async () => {
@@ -64,15 +67,33 @@ export default function CleaningPage() {
     }
   };
 
-  const handleTaskAction = async (taskId: string, action: string) => {
+  const handleTaskAction = async (taskId: string, action: string, approved?: boolean) => {
     try {
+      const body: Record<string, any> = {};
+      
+      // For inspect action, include approval status
+      if (action === 'inspect') {
+        body.approved = approved === true;
+      }
+      
       const response = await fetch(`/api/cleaning/tasks/${taskId}/${action}`, {
         method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(body),
       });
-      if (!response.ok) throw new Error('Failed to update task');
+      
+      const data = await response.json();
+      
+      if (!response.ok) {
+        throw new Error(data.message || 'Failed to update task');
+      }
+      
+      setError(null);
       await fetchTasks();
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'An error occurred');
+      const errorMsg = err instanceof Error ? err.message : 'An error occurred';
+      setError(errorMsg);
+      console.error(`Error performing ${action} action:`, err);
     }
   };
 
@@ -90,13 +111,16 @@ export default function CleaningPage() {
 
   const pendingCount = tasks.filter((t) => t.status === 'PENDING').length;
   const inProgressCount = tasks.filter((t) => t.status === 'IN_PROGRESS').length;
-  const completedCount = tasks.filter((t) => t.status === 'COMPLETED').length;
+  const awaitingInspection = tasks.filter((t) => t.status === 'COMPLETED').length;
+  const inspectedCount = tasks.filter((t) => t.status === 'INSPECTED').length;
+  const activeTasks = tasks.filter((t) => t.status === 'IN_PROGRESS');
+  const completedTasks = tasks.filter((t) => t.status === 'COMPLETED');
 
   return (
     <div className="space-y-6 p-6">
       <h1 className="text-3xl font-bold">Cleaning Management</h1>
 
-      <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
+      <div className="grid grid-cols-1 md:grid-cols-5 gap-4">
         <Card>
           <CardHeader className="pb-2">
             <CardTitle className="text-sm font-medium text-muted-foreground">
@@ -115,18 +139,29 @@ export default function CleaningPage() {
             </CardTitle>
           </CardHeader>
           <CardContent>
-            <div className="text-2xl font-bold">{inProgressCount}</div>
+            <div className="text-2xl font-bold text-blue-600">{inProgressCount}</div>
           </CardContent>
         </Card>
 
         <Card>
           <CardHeader className="pb-2">
             <CardTitle className="text-sm font-medium text-muted-foreground">
-              Completed
+              Awaiting Inspection
             </CardTitle>
           </CardHeader>
           <CardContent>
-            <div className="text-2xl font-bold">{completedCount}</div>
+            <div className="text-2xl font-bold text-amber-600">{awaitingInspection}</div>
+          </CardContent>
+        </Card>
+
+        <Card>
+          <CardHeader className="pb-2">
+            <CardTitle className="text-sm font-medium text-muted-foreground">
+              Inspected ✓
+            </CardTitle>
+          </CardHeader>
+          <CardContent>
+            <div className="text-2xl font-bold text-green-600">{inspectedCount}</div>
           </CardContent>
         </Card>
 
@@ -195,15 +230,23 @@ export default function CleaningPage() {
             </p>
           ) : (
             <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
-              {tasks.map((task) => (
-                <CleaningTaskCard
-                  key={task.id}
-                  task={task as any}
-                  onStart={(id) => handleTaskAction(id, 'start')}
-                  onComplete={(id) => handleTaskAction(id, 'complete')}
-                  onInspect={(id) => handleTaskAction(id, 'inspect')}
-                />
-              ))}
+              {tasks.map((task) => {
+                // Custom handler for inspect to allow approve/reject
+                const handleInspect = (id: string) => {
+                  const approved = confirm('Approve this cleaning task? The room will become available for booking if approved.');
+                  handleTaskAction(id, 'inspect', approved);
+                };
+                
+                return (
+                  <CleaningTaskCard
+                    key={task.id}
+                    task={task as any}
+                    onStart={(id) => handleTaskAction(id, 'start')}
+                    onComplete={(id) => handleTaskAction(id, 'complete')}
+                    onInspect={handleInspect}
+                  />
+                );
+              })}
             </div>
           )}
         </CardContent>

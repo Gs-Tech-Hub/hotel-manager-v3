@@ -41,7 +41,8 @@ export async function POST(
     };
 
     // Check action permissions
-    if (action === 'start') {
+    if (action === 'start' || action === 'log') {
+      // 'log' and 'start' are equivalent - start work on a maintenance request
       const hasAccess = await checkPermission(permCtx, 'maintenance.work', 'maintenance');
       if (!hasAccess) {
         return NextResponse.json(
@@ -71,7 +72,7 @@ export async function POST(
       });
 
       return NextResponse.json(
-        successResponse({ data: updated, message: 'Maintenance request started' }),
+        successResponse({ data: updated, message: 'Maintenance work started' }),
         { status: 200 }
       );
     } else if (action === 'complete') {
@@ -83,7 +84,15 @@ export async function POST(
         );
       }
 
-      const body = await request.json();
+      let body: any = {};
+      const contentLength = request.headers.get('content-length');
+      if (contentLength && parseInt(contentLength) > 0) {
+        try {
+          body = await request.json();
+        } catch (e) {
+          body = {};
+        }
+      }
 
       const mainReq = await prisma.maintenanceRequest.findUnique({
         where: { id: requestId },
@@ -107,30 +116,6 @@ export async function POST(
         },
       });
 
-      // Check if room can go back to AVAILABLE
-      if (mainReq.unit) {
-        // Check if there are other active maintenance requests for this room
-        const otherActiveRequests = await prisma.maintenanceRequest.findMany({
-          where: {
-            unitId: mainReq.unitId,
-            id: { not: requestId },
-            status: { in: ['OPEN', 'ASSIGNED', 'IN_PROGRESS'] },
-          },
-        });
-
-        if (otherActiveRequests.length === 0) {
-          // No other active requests, room can go available after verification
-          // For now, keep as MAINTENANCE until verification
-          await prisma.unit.update({
-            where: { id: mainReq.unitId },
-            data: {
-              status: 'MAINTENANCE',
-              statusUpdatedAt: new Date(),
-            },
-          });
-        }
-      }
-
       return NextResponse.json(
         successResponse({ data: updated, message: 'Maintenance request completed' }),
         { status: 200 }
@@ -144,7 +129,15 @@ export async function POST(
         );
       }
 
-      const body = await request.json();
+      let body: any = {};
+      const contentLength = request.headers.get('content-length');
+      if (contentLength && parseInt(contentLength) > 0) {
+        try {
+          body = await request.json();
+        } catch (e) {
+          body = {};
+        }
+      }
       const approved = body.approved === true;
 
       const mainReq = await prisma.maintenanceRequest.findUnique({
