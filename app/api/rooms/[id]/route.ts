@@ -57,9 +57,19 @@ export async function PUT(
     const { id } = await params;
     const body = await req.json();
 
+    // Extract only allowed fields for update
+    const allowedFields = ['roomNumber', 'unitKind', 'status', 'departmentId', 'notes'];
+    const updateData: any = {};
+
+    for (const field of allowedFields) {
+      if (field in body) {
+        updateData[field] = body[field];
+      }
+    }
+
     const unit = await prisma.unit.update({
       where: { id },
-      data: body,
+      data: updateData,
       include: {
         roomType: true,
         department: true,

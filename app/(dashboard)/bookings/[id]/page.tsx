@@ -217,6 +217,22 @@ export default function BookingDetailPage({
 				}),
 			});
 
+			// Create cleaning task for the room
+			const cleaningRes = await fetch(`/api/cleaning/tasks`, {
+				method: "POST",
+				headers: { "Content-Type": "application/json" },
+				body: JSON.stringify({
+					unitId: booking.unit.id,
+					taskType: "FULL_CLEAN",
+					priority: "NORMAL",
+					notes: `Post-checkout cleaning for booking ${booking.bookingId}`,
+				}),
+			});
+
+			if (!cleaningRes.ok) {
+				console.error("Failed to create cleaning task, but checkout completed");
+			}
+
 			const data = await bookingRes.json();
 			if (data.data) {
 				setBooking(data.data);
@@ -336,7 +352,7 @@ export default function BookingDetailPage({
 					<div>
 						<h1 className="text-3xl font-bold">{booking.bookingId}</h1>
 						<p className="text-muted-foreground">
-							{`${booking.customer.firstName || ''} ${booking.customer.lastName || ''}`.trim() || "Unknown Guest"}
+							{booking.customer ? `${booking.customer.firstName || ''} ${booking.customer.lastName || ''}`.trim() || "Unknown Guest" : "Unknown Guest"}
 						</p>
 					</div>
 				</div>
@@ -369,7 +385,7 @@ export default function BookingDetailPage({
 								Name
 							</Label>
 							<p className="font-semibold">
-								{`${booking.customer.firstName || ''} ${booking.customer.lastName || ''}`.trim() || "Unknown Guest"}
+								{booking.customer ? `${booking.customer.firstName || ''} ${booking.customer.lastName || ''}`.trim() || "Unknown Guest" : "Unknown Guest"}
 							</p>
 						</div>
 						<div>
@@ -377,10 +393,10 @@ export default function BookingDetailPage({
 								Email
 							</Label>
 							<p className="font-semibold">
-								{booking.customer.email}
+								{booking.customer?.email || "N/A"}
 							</p>
 						</div>
-						{booking.customer.phone && (
+						{booking.customer?.phone && (
 							<div>
 								<Label className="text-muted-foreground">
 									Phone

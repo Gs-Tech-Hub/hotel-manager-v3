@@ -56,6 +56,27 @@ export async function POST(req: NextRequest) {
       );
     }
 
+    // Check if room is available for booking
+    const { prisma } = await import('@/lib/auth/prisma');
+    const unit = await prisma.unit.findUnique({
+      where: { id: body.unitId },
+    });
+
+    if (!unit) {
+      return sendError(
+        ErrorCodes.NOT_FOUND,
+        'Room not found'
+      );
+    }
+
+    // Block booking if room is in CLEANING, MAINTENANCE, or BLOCKED status
+    if (['CLEANING', 'MAINTENANCE', 'BLOCKED'].includes(unit.status)) {
+      return sendError(
+        ErrorCodes.CONFLICT,
+        `Cannot book room - room is currently ${unit.status.toLowerCase()}`
+      );
+    }
+
     // Create booking with default values
     const bookingData = {
       ...body,

@@ -410,13 +410,25 @@ export default function BookingCreatePage() {
 									<SelectValue placeholder="Select a unit" />
 								</SelectTrigger>
 								<SelectContent>
-									{units.map((unit) => (
-										<SelectItem key={unit.id} value={unit.id}>
-											{unit.roomNumber} - {unit.roomType.name} ({unit.roomType.capacity} guests)
-										</SelectItem>
-									))}
+									{units.map((unit) => {
+										const isNotBookable = ['CLEANING', 'MAINTENANCE', 'BLOCKED'].includes(unit.status);
+										const statusIcon = unit.status === 'AVAILABLE' ? '✓ AVAILABLE' : `✗ ${unit.status}`;
+										const displayText = `${unit.roomNumber} - ${unit.roomType.name} (${unit.roomType.capacity}) ${statusIcon}`;
+										
+										return (
+											<SelectItem 
+												key={unit.id} 
+												value={unit.id}
+											>
+												{displayText}
+											</SelectItem>
+										);
+									})}
 								</SelectContent>
 							</Select>
+							<p className="text-xs text-muted-foreground mt-1">
+								✓ = Bookable | ✗ = Not bookable (Cleaning/Maintenance/Blocked)
+							</p>
 						</div>
 
 						<div>
