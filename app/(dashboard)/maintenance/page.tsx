@@ -37,6 +37,16 @@ interface MaintenanceRequest {
   createdAt: Date;
 }
 
+// Helper to get 1 week date range
+function get1WeekDateRange() {
+  const today = new Date();
+  const sevenDaysAgo = new Date(today.getTime() - 7 * 24 * 60 * 60 * 1000);
+  return {
+    startDate: sevenDaysAgo.toISOString().split('T')[0],
+    endDate: today.toISOString().split('T')[0],
+  };
+}
+
 export default function MaintenancePage() {
   const { user, hasAnyRole } = useAuth();
   const [requests, setRequests] = useState<MaintenanceRequest[]>([]);
@@ -44,13 +54,15 @@ export default function MaintenancePage() {
   const [error, setError] = useState<string | null>(null);
   const [statusFilter, setStatusFilter] = useState('');
   const [priorityFilter, setPriorityFilter] = useState('');
+  const [startDate, setStartDate] = useState(get1WeekDateRange().startDate);
+  const [endDate, setEndDate] = useState(get1WeekDateRange().endDate);
 
   useEffect(() => {
     fetchRequests();
     // Refresh requests every 30 seconds to show active requests
     const interval = setInterval(fetchRequests, 30000);
     return () => clearInterval(interval);
-  }, [statusFilter, priorityFilter]);
+  }, [statusFilter, priorityFilter, startDate, endDate]);
 
   const fetchRequests = async () => {
     try {
@@ -58,6 +70,8 @@ export default function MaintenancePage() {
       const params = new URLSearchParams();
       if (statusFilter) params.append('status', statusFilter);
       if (priorityFilter) params.append('priority', priorityFilter);
+      if (startDate) params.append('startDate', startDate);
+      if (endDate) params.append('endDate', endDate);
 
       const response = await fetch(`/api/maintenance/requests?${params}`);
       if (!response.ok) throw new Error('Failed to fetch maintenance requests');
@@ -183,9 +197,9 @@ export default function MaintenancePage() {
 
       <Card>
         <CardHeader>
-          <div className="flex items-center justify-between">
+          <div className="space-y-3">
             <CardTitle>Maintenance Work Orders</CardTitle>
-            <div className="flex gap-2">
+            <div className="flex flex-wrap gap-2">
               <Select value={statusFilter || 'all'} onValueChange={(val) => setStatusFilter(val === 'all' ? '' : val)}>
                 <SelectTrigger className="w-40">
                   <SelectValue placeholder="Filter by status" />
@@ -211,6 +225,20 @@ export default function MaintenancePage() {
                   <SelectItem value="CRITICAL">Critical</SelectItem>
                 </SelectContent>
               </Select>
+
+              <input
+                type="date"
+                value={startDate}
+                onChange={(e) => setStartDate(e.target.value)}
+                className="px-3 py-2 border border-input rounded-md bg-background text-sm"
+              />
+
+              <input
+                type="date"
+                value={endDate}
+                onChange={(e) => setEndDate(e.target.value)}
+                className="px-3 py-2 border border-input rounded-md bg-background text-sm"
+              />
             </div>
           </div>
         </CardHeader>

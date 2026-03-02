@@ -8,6 +8,7 @@ import { extractUserContext, loadUserWithRoles, hasAnyRole } from '@/lib/user-co
 import { maintenanceService } from '@/src/services/MaintenanceService';
 import { successResponse, errorResponse, ErrorCodes } from '@/lib/api-response';
 import { checkPermission, type PermissionContext } from '@/lib/auth/rbac';
+import { buildDateFilter } from '@/lib/date-filter';
 
 export async function GET(request: NextRequest) {
   try {
@@ -45,14 +46,30 @@ export async function GET(request: NextRequest) {
     const searchParams = request.nextUrl.searchParams;
     const priority = searchParams.get('priority');
     const status = searchParams.get('status');
+    const startDate = searchParams.get('startDate');
+    const endDate = searchParams.get('endDate');
 
     // Get open requests
     const requests = await maintenanceService.getOpenRequests(priority as any);
 
-    // Filter by status if provided
-    const filtered = status
-      ? requests.filter((r) => r.status === status)
-      : requests;
+    // Build date filter if provided
+    let dateFilter: any = {};
+    if (startDate || endDate) {
+      dateFilter = buildDateFilter(startDate, endDate);
+    }
+
+    // Apply all filters
+    const filtered = requests.filter((r) => {
+      // Filter by status
+      if (status && r.status !== status) return false;
+      // Filter by date if needed
+      if (Object.keys(dateFilter).length > 0) {
+        const requestDate = r.createdAt;
+        if (dateFilter.createdAt?.gte && requestDate < dateFilter.createdAt.gte) return false;
+        if (dateFilter.createdAt?.lte && requestDate > dateFilter.createdAt.lte) return false;
+      }
+      return true;
+    });
 
     return NextResponse.json(
       successResponse({ data: { requests: filtered } }),

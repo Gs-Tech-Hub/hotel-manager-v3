@@ -8,6 +8,7 @@ import { extractUserContext, loadUserWithRoles, hasAnyRole } from '@/lib/user-co
 import { cleaningService } from '@/src/services/CleaningService';
 import { successResponse, errorResponse, ErrorCodes } from '@/lib/api-response';
 import { checkPermission, type PermissionContext } from '@/lib/auth/rbac';
+import { buildDateFilter } from '@/lib/date-filter';
 
 export async function GET(request: NextRequest) {
   try {
@@ -45,14 +46,33 @@ export async function GET(request: NextRequest) {
     const searchParams = request.nextUrl.searchParams;
     const departmentId = searchParams.get('departmentId');
     const status = searchParams.get('status');
+    const priority = searchParams.get('priority');
+    const startDate = searchParams.get('startDate');
+    const endDate = searchParams.get('endDate');
 
     // Get pending tasks
     const tasks = await cleaningService.getPendingTasks(departmentId || undefined);
 
-    // Filter by status if provided
-    const filtered = status
-      ? tasks.filter((t) => t.status === status)
-      : tasks;
+    // Build date filter if provided
+    let dateFilter: any = {};
+    if (startDate || endDate) {
+      dateFilter = buildDateFilter(startDate, endDate);
+    }
+
+    // Apply all filters
+    const filtered = tasks.filter((t) => {
+      // Filter by status
+      if (status && t.status !== status) return false;
+      // Filter by priority
+      if (priority && t.priority !== priority) return false;
+      // Filter by date if needed
+      if (Object.keys(dateFilter).length > 0) {
+        const taskDate = t.createdAt;
+        if (dateFilter.createdAt?.gte && taskDate < dateFilter.createdAt.gte) return false;
+        if (dateFilter.createdAt?.lte && taskDate > dateFilter.createdAt.lte) return false;
+      }
+      return true;
+    });
 
     return NextResponse.json(
       successResponse({ data: { tasks: filtered } }),
