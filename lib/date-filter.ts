@@ -130,3 +130,34 @@ export function isToday(dateStr: string): boolean {
 export function formatDateToString(date: Date): string {
   return date.toISOString().split('T')[0];
 }
+
+/**
+ * Build a Prisma date filter for booking checkin date
+ * Filters bookings by their check-in date to show today's bookings
+ * @param fromDate - Start date (YYYY-MM-DD) or null
+ * @param toDate - End date (YYYY-MM-DD) or null
+ * @returns Object to spread into Prisma where clause, or empty object
+ */
+export function buildBookingCheckinFilter(fromDate?: string | null, toDate?: string | null): Record<string, any> {
+  if (!fromDate && !toDate) {
+    return {};
+  }
+
+  const filter: any = {};
+
+  if (fromDate && toDate) {
+    // Both dates provided: include entire range
+    filter.checkin = {
+      gte: parseLocalDate(fromDate),
+      lt: new Date(getEndOfLocalDay(toDate).getTime() + 1), // Start of next day
+    };
+  } else if (fromDate) {
+    // Only from date: from that date onwards
+    filter.checkin = { gte: parseLocalDate(fromDate) };
+  } else if (toDate) {
+    // Only to date: up to end of that date
+    filter.checkin = { lt: new Date(getEndOfLocalDay(toDate).getTime() + 1) };
+  }
+
+  return filter;
+}

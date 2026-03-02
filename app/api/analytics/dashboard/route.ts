@@ -10,7 +10,7 @@ import { prisma } from '@/lib/auth/prisma';
 import { extractUserContext, loadUserWithRoles, hasAnyRole } from '@/lib/user-context';
 import { checkPermission, type PermissionContext } from '@/lib/auth/rbac';
 import { successResponse, errorResponse, ErrorCodes, getStatusCode } from '@/lib/api-response';
-import { buildDateFilter } from '@/lib/date-filter';
+import { buildDateFilter, buildBookingCheckinFilter } from '@/lib/date-filter';
 
 interface DashboardMetrics {
   salesData: {
@@ -19,6 +19,7 @@ interface DashboardMetrics {
   };
   bookingData: {
     totalReservations: number;
+    totalIncome: number;
   };
   employeeData: {
     activeEmployees: number;
@@ -66,12 +67,12 @@ export async function GET(request: NextRequest) {
     const endDate = searchParams.get('endDate');
     const timezone = searchParams.get('timezone') || 'UTC';
 
-    // Build date filter
+    // Build date filters - use createdAt for orders, checkin for bookings
     const dateFilter = buildDateFilter(startDate, endDate);
+    const bookingDateFilter = buildBookingCheckinFilter(startDate, endDate);
 
     // Fetch all data in parallel
-    const [orderHeaders, orderPayments, employees, discounts, bookings] = await Promise.all([
-      (prisma as any).orderHeader.findMany({
+    const [orderHeaders, orderPayments, employees, discounts, bookings] = await Promise.all([ (prisma as any).orderHeader.findMany({
         where: {
           ...dateFilter,
           status: {
@@ -101,7 +102,10 @@ export async function GET(request: NextRequest) {
       (prisma as any).discountRule.findMany(),
       (prisma as any).booking.findMany({
         where: {
-          ...dateFilter,
+          ...bookingDateFilter,
+        },
+        include: {
+          payment: true,
         },
       }),
     ]);
@@ -127,6 +131,16 @@ export async function GET(request: NextRequest) {
 
     // Calculate booking data
     const totalReservations = bookings.length;
+    
+    // Calculate booking payment income from bookings with completed payments
+    let totalPaymentIncome = 0;
+    for (const booking of bookings) {
+      if (booking.payment && booking.payment.paymentStatus === 'completed') {
+        totalPaymentIncome += booking.payment.totalPrice ?? 0;
+        // Add booking income to total revenue
+        totalRevenue += booking.payment.totalPrice ?? 0;
+      }
+    }
 
     // Calculate employee data
     const activeEmployees = employees.filter((e: any) => e.employmentData && (e.employmentData as any).employmentStatus === 'active').length;
@@ -139,6 +153,7 @@ export async function GET(request: NextRequest) {
       },
       bookingData: {
         totalReservations,
+        totalIncome: totalPaymentIncome,
       },
       employeeData: {
         activeEmployees,

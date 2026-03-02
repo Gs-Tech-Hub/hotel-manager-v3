@@ -57,6 +57,7 @@ export interface QueryParams extends PaginationParams {
   filters?: FilterOptions[];
   sort?: SortOptions[];
   include?: string[];
+  where?: Record<string, any>; // Date filter or other where conditions
 }
 
 // API Request/Response metadata

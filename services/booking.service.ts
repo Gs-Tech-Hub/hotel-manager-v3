@@ -51,13 +51,14 @@ export class BookingService extends BaseService<IBooking> {
     params: QueryParams = {}
   ): Promise<PaginatedResponse<any> | ReturnType<typeof errorResponse>> {
     try {
-      const { page = 1, limit = 10, skip = 0, filters = [] } = params;
+      const { page = 1, limit = 10, skip = 0, filters = [], where: dateWhere = {} } = params;
       const pageNum = Math.max(1, page);
       const pageSize = Math.min(100, Math.max(1, limit));
       const skipNum = skip || (pageNum - 1) * pageSize;
 
-      // Build where clause from filters
-      const where: Record<string, any> = {};
+      // Build where clause from filters and date range
+      const where: Record<string, any> = dateWhere; // Start with date filter
+      
       for (const filter of filters) {
         const { field, operator, value } = filter;
         switch (operator) {

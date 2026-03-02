@@ -1,28 +1,43 @@
 /**
  * GET /api/bookings
- * Get all bookings with pagination
+ * Get all bookings with pagination and date filtering
  * 
  * Query Parameters:
  * - page: number (default: 1)
  * - limit: number (default: 10)
  * - status: booking status filter
+ * - startDate: start date (YYYY-MM-DD)
+ * - endDate: end date (YYYY-MM-DD)
  */
 
 import { NextRequest } from 'next/server';
 import { bookingService } from '@/services/booking.service';
 import { sendSuccess, sendError, getQueryParams } from '@/lib/api-handler';
 import { ErrorCodes } from '@/lib/api-response';
+import { buildBookingCheckinFilter } from '@/lib/date-filter';
+import type { FilterOptions } from '@/types/api';
 
 export async function GET(req: NextRequest) {
   try {
     const { page, limit, status } = getQueryParams(req);
+    const searchParams = req.nextUrl.searchParams;
+    const startDate = searchParams.get('startDate');
+    const endDate = searchParams.get('endDate');
+
+    // Build date filter based on booking checkin date
+    const dateFilter = buildBookingCheckinFilter(startDate, endDate);
+
+    const filters: FilterOptions[] = [];
+    
+    if (status) {
+      filters.push({ field: 'bookingStatus', operator: 'eq', value: status });
+    }
 
     const response = await bookingService.findAll({
       page,
       limit,
-      ...(status && {
-        filters: [{ field: 'bookingStatus', operator: 'eq', value: status }],
-      }),
+      filters,
+      where: dateFilter, // Pass date filter as where clause
     });
 
     if ('error' in response) {
