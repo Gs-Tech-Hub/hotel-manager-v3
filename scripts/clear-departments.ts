@@ -29,7 +29,7 @@ async function main() {
     await prisma.orderDepartment.deleteMany({ where: { departmentId: { in: deptIds } } });
 
     // Delete terminals bound to these departments
-    await prisma.terminal.deleteMany({ where: { departmentId: { in: deptIds } } });
+    // Note: Terminals are now section-scoped via DepartmentSection relations
 
     // Delete department inventories
     await prisma.departmentInventory.deleteMany({ where: { departmentId: { in: deptIds } } });

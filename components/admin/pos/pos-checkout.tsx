@@ -402,49 +402,16 @@ export default function POSCheckoutShell({ terminalId }: { terminalId?: string }
   }, [])
 
   // Load terminal data from query parameter
+  // NOTE: This uses the legacy /api/pos/terminals endpoint which is not implemented
+  // New sales terminal code should use SalesTerminal component instead
   useEffect(() => {
     if (!terminalIdFromQuery) {
-      setTerminalError('No terminal specified. Please select a terminal from the dashboard.')
+      setTerminalError('No terminal specified. Please use the new SalesTerminal component.')
       return
     }
-
-    let mounted = true
-    setLoadingTerminal(true)
-    setTerminalError(null)
-
-    // Fetch all terminals to find the one with this terminal ID
-    fetch('/api/pos/terminals', { credentials: 'include' })
-      .then((r) => r.json())
-      .then((json) => {
-        if (!mounted) return
-        if (json && json.success && Array.isArray(json.data)) {
-          // Find the terminal matching the terminalIdFromQuery
-          const foundTerminal = json.data.find((t: any) => t.id === terminalIdFromQuery)
-          if (foundTerminal) {
-            setDepartmentSection({
-              id: foundTerminal.id,
-              name: foundTerminal.name,
-              departmentCode: foundTerminal.departmentCode,
-              departmentName: foundTerminal.departmentName,
-              sectionCode: foundTerminal.sectionCode
-            })
-          } else {
-            setTerminalError('Terminal not found')
-          }
-        } else {
-          setTerminalError('Failed to load terminals')
-        }
-      })
-      .catch((err) => {
-        console.error('Failed to fetch terminals', err)
-        if (!mounted) return
-        setTerminalError('Failed to load terminals (network)')
-      })
-      .finally(() => { if (mounted) setLoadingTerminal(false) })
-
-    return () => {
-      mounted = false
-    }
+    // Legacy endpoint no longer supported - terminals are now section-scoped
+    setTerminalError('Legacy POS terminal interface. Please use the Sales Terminal in the main menu.')
+    setLoadingTerminal(false)
   }, [terminalIdFromQuery])
 
   // Load products for selected section

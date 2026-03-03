@@ -28,6 +28,7 @@ import {
 	AlertCircleIcon,
 	Briefcase,
 	Flashlight,
+	Layers,
 
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
@@ -151,7 +152,7 @@ const sidebarGroups = [
 			{
 				title: "Sales Terminal",
 				href: "/terminal",
-				icon: ShoppingCart,
+				icon: Layers,
 				badge: null,
 			},
 			{
@@ -163,7 +164,7 @@ const sidebarGroups = [
 			{
 				title: "Discounts",
 				href: "/discounts",
-				icon: BarChart3,
+				icon: DollarSign,
 				badge: null,
 			},
 		],

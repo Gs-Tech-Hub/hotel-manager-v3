@@ -37,6 +37,7 @@ export async function listSections({
         departmentId: true,
         metadata: true,
         isActive: true,
+        hasTerminal: true,
         createdAt: true,
         updatedAt: true,
       },
@@ -97,7 +98,7 @@ export async function createSection(
         },
       });
 
-      // If hasTerminal is true, create a terminal for this section
+      // If hasTerminal is true, create a section-specific terminal (starts inactive)
       let terminal = null;
       if (hasTerminal) {
         const terminalSlug = `${department.code}-${name.toLowerCase().replace(/\s+/g, '-')}-${Date.now()}`;
@@ -106,10 +107,9 @@ export async function createSection(
             name: `${name} Terminal`,
             slug: terminalSlug,
             description: `Sales terminal for ${department.name} - ${name}`,
-            departmentId,
-            type: 'sales',
-            status: 'inactive',  // Start as inactive, admin must activate
-            sectionIds: JSON.stringify([section.id]),
+            type: 'section',  // Section-specific terminal
+            isActive: false,  // Start as inactive, admin can activate if needed
+            status: 'offline',
           },
         });
 

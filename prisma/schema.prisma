@@ -799,7 +799,6 @@ model Department {
   isActive    Boolean @default(true)
 
   orderDepartments OrderDepartment[]
-  terminals Terminal[]
 
   // sections under this department
   sections DepartmentSection[]
@@ -958,25 +957,30 @@ model ServiceUsageSession {
 }
 
 // POS Terminals (point-of-sale devices / logical terminals)
+// Terminal Types:
+// - 'consolidated': Central terminal that can sell for multiple selected sections
+// - 'section': Section-specific terminal (legacy, can be active/inactive)
 model Terminal {
   id           String    @id @default(cuid())
   name         String
   slug         String    @unique
   description  String?
 
-  // optional relation to Department (if a terminal is bound to a department)
-  departmentId String?
-  department   Department? @relation(fields: [departmentId], references: [id], onDelete: SetNull)
-
   // Sections that use this terminal
   sections     DepartmentSection[]
 
-  // Which sections can use this terminal (JSON array of section IDs)
-  // If null/empty, terminal can sell from all active sections with hasTerminal=true
-  sectionIds   String @default("[]") // JSON array
+  // Which sections can use this consolidated terminal (JSON array of section IDs)
+  // Only applicable for 'consolidated' type terminals
+  allowedSectionIds  String @default("[]") // JSON array
 
-  // Terminal type: 'sales' (main POS), 'extra' (extras only), 'multi-section' (sells from multiple sections)
-  type         String  @default("sales") // sales, extra, multi-section
+  // Terminal type: 'consolidated' (central multi-section), 'section' (section-specific)
+  type         String  @default("section") // consolidated, section
+  
+  // Is this the default consolidated terminal?
+  isDefault    Boolean @default(false)
+  
+  // Terminal active status (can be toggled for section terminals)
+  isActive     Boolean @default(true)
   
   status       String  @default("offline") // online, offline, maintenance
   metadata     Json?   @default("{}")
@@ -987,7 +991,9 @@ model Terminal {
   @@map("terminals")
   @@index([slug])
   @@index([status])
-  @@index([departmentId])
+  @@index([type])
+  @@index([isDefault])
+  @@index([isActive])
 }
 
 model DiscountRule {

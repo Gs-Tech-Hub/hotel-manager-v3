@@ -9,9 +9,9 @@ type POSTerminal = {
   id: string
   name: string
   slug?: string
-  departmentCode?: string
-  departmentName?: string
+  type?: string
   status?: string
+  isActive?: boolean
   today?: { count: number; total: number }
 }
 
@@ -46,7 +46,7 @@ export default function POSTerminalsPage() {
       <div className="flex items-center justify-between">
         <div>
           <h1 className="text-3xl font-bold">POS Terminals</h1>
-          <p className="text-sm text-muted-foreground mt-1">Available sales points and sections</p>
+          <p className="text-sm text-muted-foreground mt-1">Individual section terminals with active/inactive status</p>
         </div>
         <div className="flex gap-2">
           <button 
@@ -84,7 +84,7 @@ export default function POSTerminalsPage() {
             <div className="space-y-3">
               <div>
                 <h3 className="font-semibold text-gray-900">{terminal.name}</h3>
-                <p className="text-xs text-gray-500 mt-1">{terminal.departmentName || 'No department'}</p>
+                <p className="text-xs text-gray-500 mt-1">{terminal.type ? `Type: ${terminal.type}` : 'Type not set'} {terminal.isActive !== false ? '(Active)' : '(Inactive)'}</p>
               </div>
 
               <div className="flex items-center gap-2">

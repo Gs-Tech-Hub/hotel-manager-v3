@@ -20,7 +20,7 @@ async function main() {
 
     try {
       await prisma.orderDepartment.updateMany({ where: { departmentId: legacy.id }, data: { departmentId: canonical.id } })
-      await prisma.terminal.updateMany({ where: { departmentId: legacy.id }, data: { departmentId: canonical.id } })
+      // Note: Terminals are now section-scoped, no departmentId field
       await prisma.departmentInventory.updateMany({ where: { departmentId: legacy.id }, data: { departmentId: canonical.id } })
       await prisma.departmentTransfer.updateMany({ where: { fromDepartmentId: legacy.id }, data: { fromDepartmentId: canonical.id } })
       await prisma.departmentTransfer.updateMany({ where: { toDepartmentId: legacy.id }, data: { toDepartmentId: canonical.id } })

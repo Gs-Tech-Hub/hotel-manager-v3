@@ -95,8 +95,7 @@ async function main(opts: SeedOptions = { perEntity: true }) {
         console.log(`Migrating legacy department ${legacy.code} -> restaurant`)
         // Reassign order_departments
         await prisma.orderDepartment.updateMany({ where: { departmentId: legacy.id }, data: { departmentId: canonicalRestaurant.id } })
-        // Reassign terminals
-        await prisma.terminal.updateMany({ where: { departmentId: legacy.id }, data: { departmentId: canonicalRestaurant.id } })
+        // Note: Terminals are now section-scoped, so no direct department reassignment needed
         // Delete legacy department
         await prisma.department.delete({ where: { id: legacy.id } })
         console.log(`Legacy department ${legacy.code} migrated and removed.`)
