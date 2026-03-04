@@ -250,15 +250,21 @@ export default function InventoryTransferPage() {
               onChange={(e) => setSelectedCategory(e.target.value)}
             >
               <option value="all">All items</option>
-              {categories.map((cat) => (
-                <option key={cat} value={cat}>
-                  {cat === 'drink' && '🍷 Drinks'}
-                  {cat === 'food' && '🍽️ Food'}
-                  {cat === 'inventoryItem' && '📦 Inventory'}
-                  {cat === 'extra' && '⭐ Extras'}
-                  {!['drink', 'food', 'inventoryItem', 'extra'].includes(cat) && cat}
-                </option>
-              ))}
+              {categories.map((cat) => {
+                // Map product types to user-friendly display names
+                const categoryDisplay: Record<string, string> = {
+                  'drink': '🍷 Drinks',
+                  'food': '🍽️ Food',
+                  'inventoryItem': '📦 Inventory Items',
+                  'extra': '⭐ Extras/Services',
+                }
+                const displayName = categoryDisplay[cat] || `📦 ${cat}`
+                return (
+                  <option key={cat} value={cat}>
+                    {displayName}
+                  </option>
+                )
+              })}
             </select>
           </div>
 

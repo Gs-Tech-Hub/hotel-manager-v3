@@ -1,7 +1,11 @@
 "use client"
 
 import { useState, useEffect } from 'react'
-import { useRouter } from 'next/navigation'
+import { useRouter, useSearchParams } from 'next/navigation'
+import { formatTablePrice, formatOrderTotal } from '@/lib/formatters'
+import { normalizeToCents } from '@/lib/price'
+import { POSPayment } from '@/components/admin/pos/pos-payment'
+import { DiscountDropdown } from '@/components/pos/orders/DiscountDropdown'
 
 type Terminal = {
   id: string
@@ -41,6 +45,7 @@ type Product = {
   id: string
   name: string
   price: number
+  quantity?: number
   sectionId: string
   sectionName: string
   departmentCode: string
@@ -60,6 +65,10 @@ type CartItem = {
 
 export default function SalesTerminal() {
   const router = useRouter()
+  const searchParams = useSearchParams()
+  
+  // Add-to-order mode support
+  const addToOrderId = searchParams.get('addToOrder')
   
   // State
   const [terminals, setTerminals] = useState<Terminal[]>([])
@@ -71,7 +80,119 @@ export default function SalesTerminal() {
   const [cart, setCart] = useState<CartItem[]>([])
   const [loading, setLoading] = useState(true)
   const [searchQuery, setSearchQuery] = useState('')
-  const [view, setView] = useState<'terminal-select' | 'scope-select' | 'terminal'>('terminal-select')
+  const [view, setView] = useState<'terminal-select' | 'scope-select' | 'terminal' | 'receipt'>('terminal-select')
+  const [taxEnabled, setTaxEnabled] = useState(true)
+  const [taxRate, setTaxRate] = useState(10)
+  const [appliedDiscountIds, setAppliedDiscountIds] = useState<string[]>([])
+  const [validatedDiscounts, setValidatedDiscounts] = useState<any[]>([])
+  const [discountMap, setDiscountMap] = useState<Map<string, any>>(new Map())
+  const [checkoutError, setCheckoutError] = useState<string | null>(null)
+  const [isCheckingOut, setIsCheckingOut] = useState(false)
+  const [showPayment, setShowPayment] = useState(false)
+  const [receipt, setReceipt] = useState<any | null>(null)
+  const [isProcessingPayment, setIsProcessingPayment] = useState(false)
+
+  // Fetch tax settings on mount
+  useEffect(() => {
+    const fetchTaxSettings = async () => {
+      try {
+        const response = await fetch('/api/settings/tax')
+        const data = await response.json()
+        if (data.success && data.data?.settings) {
+          setTaxEnabled(data.data.settings.enabled ?? true)
+          setTaxRate(data.data.settings.taxRate ?? 10)
+        }
+      } catch (err) {
+        console.warn('[SalesTerminal] Failed to fetch tax settings, using defaults:', err)
+      }
+    }
+    fetchTaxSettings()
+  }, [])
+
+  // Validate discounts when applied or subtotal changes
+  const subtotal = cart.reduce((sum, item) => sum + (normalizeToCents(item.basePrice) * item.quantity), 0)
+  
+  useEffect(() => {
+    if (appliedDiscountIds.length === 0) {
+      setValidatedDiscounts([])
+      return
+    }
+
+    let mounted = true
+
+    const validateDiscounts = async () => {
+      const validated = []
+      const errors = []
+
+      for (const discountId of appliedDiscountIds) {
+        try {
+          const discount = discountMap.get(discountId)
+          if (!discount) {
+            console.warn(`[SalesTerminal] Discount ${discountId} not in map`)
+            continue
+          }
+
+          // Hit the validation endpoint
+          const res = await fetch(`/api/discounts/${discountId}/validate`, {
+            method: 'POST',
+            credentials: 'include',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ subtotal }),
+          })
+
+          const json = await res.json()
+
+          if (!res.ok || !json?.success) {
+            const errorMsg = json?.error?.message || `Discount ${discountId} is invalid`
+            errors.push(errorMsg)
+            console.warn(`[SalesTerminal] Discount validation failed for ${discountId}: ${errorMsg}`)
+            continue
+          }
+
+          if (json && json.success && json.data) {
+            const rule = json.data
+            let discountAmount = 0
+
+            if (rule.type === 'percentage') {
+              discountAmount = Math.round((subtotal * rule.value) / 100)
+            } else {
+              discountAmount = Math.round(rule.value * (rule.minorUnit || 100))
+            }
+
+            validated.push({
+              id: discountId,
+              code: discount.code,
+              type: rule.type,
+              value: rule.value,
+              description: rule.description,
+              discountAmount,
+              minorUnit: rule.minorUnit || 100
+            })
+            console.log(`[SalesTerminal] Discount validated: ${discountId} = ${discountAmount} cents`)
+          }
+        } catch (err) {
+          const msg = err instanceof Error ? err.message : String(err)
+          errors.push(`Failed to validate discount: ${msg}`)
+          console.error(`[SalesTerminal] Failed to validate discount:`, err)
+        }
+      }
+
+      if (mounted) {
+        setValidatedDiscounts(validated)
+        if (errors.length > 0) {
+          console.warn('[SalesTerminal] Discount validation errors:', errors)
+          if (errors.length > 0) {
+            setCheckoutError(`Discount issue: ${errors[0]}`)
+          }
+        }
+      }
+    }
+
+    validateDiscounts()
+    return () => {
+      mounted = false
+    }
+  }, [appliedDiscountIds, subtotal, discountMap])
 
   // Load terminals, departments, and sections
   useEffect(() => {
@@ -152,6 +273,7 @@ export default function SalesTerminal() {
                   id: p.id,
                   name: p.name,
                   price: Math.round(Number(p.unitPrice) || 0),
+                  quantity: Number(p.quantity || p.available || 0),
                   sectionId: section.id,
                   sectionName: section.name,
                   departmentCode: dept.code,
@@ -183,6 +305,7 @@ export default function SalesTerminal() {
                   id: p.id,
                   name: p.name,
                   price: Math.round(Number(p.unitPrice) || 0),
+                  quantity: Number(p.quantity || p.available || 0),
                   sectionId: section.id,
                   sectionName: section.name,
                   departmentCode: dept.code,
@@ -232,15 +355,43 @@ export default function SalesTerminal() {
   }
 
   const handleAddToCart = (product: Product) => {
+    // CRITICAL: Validate stock before adding to cart
+    const availableQty = product.quantity ?? 0
+    const currentInCart = cart.filter(item => item.productId === product.id).reduce((sum, item) => sum + item.quantity, 0)
+    
+    if (availableQty <= 0) {
+      // Product is out of stock
+      const errorMsg = `"${product.name}" is out of stock`
+      alert(errorMsg)
+      return
+    }
+    
+    // Check if adding one more would exceed available quantity
+    if (currentInCart + 1 > availableQty) {
+      const errorMsg = `Only ${availableQty} of "${product.name}" available. Already have ${currentInCart} in cart.`
+      alert(errorMsg)
+      return
+    }
+    
     setCart(prev => {
       const existing = prev.find(item => item.productId === product.id)
       if (existing) {
+        const newQuantity = existing.quantity + 1
+        const maxAllowed = product.quantity ?? 0
+        
+        // Enforce inventory limit on quantity increase
+        if (newQuantity > maxAllowed) {
+          const errorMsg = `Cannot add more than ${maxAllowed} of "${product.name}"`
+          alert(errorMsg)
+          return prev
+        }
+        
         return prev.map(item =>
           item.productId === product.id
             ? {
                 ...item,
-                quantity: item.quantity + 1,
-                subtotal: (item.quantity + 1) * item.basePrice,
+                quantity: newQuantity,
+                subtotal: newQuantity * item.basePrice,
               }
             : item
         )
@@ -266,15 +417,29 @@ export default function SalesTerminal() {
   const handleUpdateQuantity = (cartId: string, quantity: number) => {
     if (quantity <= 0) {
       setCart(prev => prev.filter(item => item.id !== cartId))
-    } else {
-      setCart(prev =>
-        prev.map(item =>
-          item.id === cartId
-            ? { ...item, quantity, subtotal: quantity * item.basePrice }
-            : item
-        )
-      )
+      return
     }
+    
+    // CRITICAL: Validate quantity against available stock
+    const cartItem = cart.find(item => item.id === cartId)
+    if (!cartItem) return
+    
+    // Find the product to get max available quantity
+    const product = products.find(p => p.id === cartItem.productId)
+    const maxAllowed = product?.quantity ?? 0
+    
+    if (quantity > maxAllowed) {
+      alert(`Cannot exceed ${maxAllowed} available units of "${cartItem.productName}"`)
+      return
+    }
+    
+    setCart(prev =>
+      prev.map(item =>
+        item.id === cartId
+          ? { ...item, quantity, subtotal: quantity * item.basePrice }
+          : item
+      )
+    )
   }
 
   const handleRemoveFromCart = (cartId: string) => {
@@ -283,52 +448,154 @@ export default function SalesTerminal() {
 
   const handleCheckout = async () => {
     if (cart.length === 0) {
-      alert('Cart is empty')
+      setCheckoutError('Cart is empty')
       return
     }
 
-    try {
-      // Group items by department
-      const itemsByDept: { [key: string]: CartItem[] } = {}
-      cart.forEach(item => {
-        if (!itemsByDept[item.departmentCode]) {
-          itemsByDept[item.departmentCode] = []
-        }
-        itemsByDept[item.departmentCode].push(item)
-      })
+    setIsCheckingOut(true)
+    setCheckoutError(null)
 
-      // Create order for each department
-      for (const [deptCode, items] of Object.entries(itemsByDept)) {
-        const res = await fetch(`/api/departments/${encodeURIComponent(deptCode)}/orders`, {
+    try {
+      const items = cart.map(item => ({
+        productId: item.productId,
+        productType: 'inventory',
+        productName: item.productName,
+        departmentCode: item.departmentCode,
+        departmentSectionId: item.sectionId,
+        quantity: item.quantity,
+        unitPrice: normalizeToCents(item.basePrice),
+      }))
+
+      // If adding to existing order, add items one by one
+      if (addToOrderId) {
+        console.log('[SalesTerminal] Adding items to existing order:', addToOrderId)
+        
+        for (const item of items) {
+          const addRes = await fetch(`/api/orders/${addToOrderId}/items`, {
+            method: 'POST',
+            credentials: 'include',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(item),
+          })
+
+          const addJson = await addRes.json()
+
+          if (!addRes.ok || !addJson?.success) {
+            const msg = addJson?.error?.message || `Failed to add item (${addRes.status})`
+            setCheckoutError(`Failed to add "${item.productName}": ${msg}`)
+            return
+          }
+        }
+
+        // Fetch updated order
+        const fetchRes = await fetch(`/api/orders/${addToOrderId}`, {
+          credentials: 'include',
+        })
+        const fetchJson = await fetchRes.json()
+
+        if (fetchRes.ok && fetchJson?.success && fetchJson.data) {
+          setReceipt({
+            ...fetchJson.data,
+            isDeferred: false,
+            orderTypeDisplay: 'ITEMS ADDED',
+          })
+          setCart([])
+          setAppliedDiscountIds([])
+          setValidatedDiscounts([])
+          setView('receipt')
+        } else {
+          const msg = fetchJson?.error?.message || 'Failed to fetch updated order'
+          setCheckoutError(`Items added but failed to fetch updated order: ${msg}`)
+          return
+        }
+      } else {
+        // Create new order - don't process payment yet, show payment UI
+        const payload = {
+          items,
+          discounts: appliedDiscountIds,
+          notes: `Sales Terminal Order (${selectedTerminal?.name || 'Terminal'})`,
+        }
+
+        console.log('[SalesTerminal] Creating order with payload:', payload)
+
+        const res = await fetch('/api/orders', {
           method: 'POST',
+          credentials: 'include',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            items: items.map(item => ({
-              productId: item.productId,
-              quantity: item.quantity,
-              price: item.basePrice,
-              sectionId: item.sectionId,
-            })),
-            notes: `Sales Terminal Order (${selectedTerminal?.name || 'Terminal'})`,
-          }),
+          body: JSON.stringify(payload),
         })
 
-        if (!res.ok) {
-          throw new Error(`Failed to create order for ${deptCode}`)
+        const json = await res.json()
+
+        if (!res.ok || !json?.success) {
+          const msg = json?.error?.message || `Order failed (${res.status})`
+          console.error('[SalesTerminal] Order creation failed:', msg)
+          setCheckoutError(`Order creation failed: ${msg}`)
+          return
         }
+
+        console.log('[SalesTerminal] Order created successfully:', json.data.id)
+        
+        // Show payment UI for new orders
+        setReceipt(json.data)
+        setShowPayment(true)
+      }
+    } catch (e: any) {
+      console.error('[SalesTerminal] Checkout error:', e)
+      setCheckoutError(e?.message || 'Failed to complete checkout')
+    } finally {
+      setIsCheckingOut(false)
+    }
+  }
+
+  const handlePaymentComplete = async (payment: any) => {
+    if (!receipt) return
+
+    setIsProcessingPayment(true)
+    try {
+      const amountCents = payment.isMinor ? payment.amount : normalizeToCents(payment.amount)
+
+      const res = await fetch('/api/orders/settle', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          orderId: receipt.id,
+          paymentMethod: payment.method,
+          amount: amountCents,
+        }),
+        credentials: 'include',
+      })
+
+      if (!res.ok) {
+        const json = await res.json()
+        throw new Error(json.error?.message || 'Payment failed')
       }
 
-      alert('Orders created successfully')
+      // Clear state and show receipt
+      setShowPayment(false)
       setCart([])
+      setAppliedDiscountIds([])
+      setValidatedDiscounts([])
       setSelectedSections(new Set())
-      setView('terminal-select')
-    } catch (e: any) {
-      console.error('Checkout error:', e)
-      alert(e?.message || 'Failed to complete checkout')
+      setView('receipt')
+      
+      // Auto-reset after 3 seconds
+      setTimeout(() => {
+        setView('terminal-select')
+        setSelectedTerminal(null)
+      }, 3000)
+    } catch (error) {
+      setCheckoutError(error instanceof Error ? error.message : 'Payment failed')
+    } finally {
+      setIsProcessingPayment(false)
     }
   }
 
   const totalAmount = cart.reduce((sum, item) => sum + item.subtotal, 0)
+  const discountedSubtotal = Math.max(0, subtotal - validatedDiscounts.reduce((sum, d) => sum + (d.discountAmount || 0), 0))
+  const estimatedTax = taxEnabled ? Math.round((discountedSubtotal * taxRate) / 100) : 0
+  const estimatedTotal = discountedSubtotal + estimatedTax
+  const totalDiscountAmount = validatedDiscounts.reduce((sum, d) => sum + (d.discountAmount || 0), 0)
   const filteredProducts = products.filter(p =>
     p.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
     p.sectionName.toLowerCase().includes(searchQuery.toLowerCase())
@@ -531,8 +798,59 @@ export default function SalesTerminal() {
   }
 
   // Terminal view
-  return (
-    <div className="min-h-screen bg-gray-50 flex flex-col">
+  if (view === 'receipt' && receipt) {
+    return (
+      <div className="min-h-screen bg-gray-50 flex items-center justify-center p-6">
+        <div className="max-w-2xl w-full bg-white rounded-lg shadow-lg p-8">
+          <div className="text-center mb-6">
+            <h1 className="text-3xl font-bold text-green-600">✓ Order Complete</h1>
+            <p className="text-gray-600 mt-2">Order #{receipt.orderNumber}</p>
+          </div>
+
+          <div className="space-y-4 mb-6">
+            <div className="grid grid-cols-2 gap-4 p-4 bg-gray-50 rounded">
+              <div>
+                <div className="text-sm text-gray-600">Total Amount</div>
+                <div className="text-2xl font-bold">{formatTablePrice(receipt.total || 0)}</div>
+              </div>
+              <div>
+                <div className="text-sm text-gray-600">Status</div>
+                <div className="text-xl font-semibold text-green-600">{receipt.paymentStatus || 'Pending'}</div>
+              </div>
+            </div>
+
+            <div className="p-4 bg-blue-50 border border-blue-200 rounded">
+              <h3 className="font-semibold mb-3">Items</h3>
+              <div className="space-y-2">
+                {(receipt.lines || []).map((line: any, i: number) => (
+                  <div key={i} className="flex justify-between text-sm">
+                    <span>{line.productName} x{line.quantity}</span>
+                    <span>{formatTablePrice(line.lineTotal || 0)}</span>
+                  </div>
+                ))}
+              </div>
+            </div>
+          </div>
+
+          <button
+            onClick={() => {
+              setView('terminal-select')
+              setSelectedTerminal(null)
+              setReceipt(null)
+            }}
+            className="w-full px-6 py-3 bg-blue-600 text-white rounded-lg font-semibold hover:bg-blue-700"
+          >
+            New Order
+          </button>
+        </div>
+      </div>
+    )
+  }
+
+  // Terminal view
+  if (view === 'terminal') {
+    return (
+      <div className="min-h-screen bg-gray-50 flex flex-col">
       {/* Header */}
       <div className="bg-white border-b sticky top-0 z-10">
         <div className="max-w-7xl mx-auto px-6 py-4 flex items-center justify-between">
@@ -588,7 +906,7 @@ export default function SalesTerminal() {
                   <div className="font-semibold">{product.name}</div>
                   <div className="text-sm text-gray-600 mt-1">{product.sectionName}</div>
                   <div className="text-lg font-bold text-blue-600 mt-2">
-                    ${(product.price / 100).toFixed(2)}
+                    {formatTablePrice(normalizeToCents(product.price))}
                   </div>
                 </button>
               ))
@@ -597,7 +915,7 @@ export default function SalesTerminal() {
         </div>
 
         {/* Cart Section */}
-        <div className="w-96 bg-white rounded-lg shadow-lg p-6 flex flex-col max-h-screen sticky top-24">
+        <div className="w-96 bg-white rounded-lg shadow-lg p-6 flex flex-col max-h-screen sticky top-24 overflow-y-auto">
           <h2 className="text-xl font-bold mb-4">Cart</h2>
 
           <div className="flex-1 overflow-y-auto mb-4 space-y-2">
@@ -634,6 +952,7 @@ export default function SalesTerminal() {
                         onChange={e => handleUpdateQuantity(item.id, parseInt(e.target.value) || 1)}
                         className="w-12 text-center border rounded py-1 text-sm"
                         min="1"
+                        max={products.find(p => p.id === item.productId)?.quantity || 999}
                       />
                       <button
                         onClick={() => handleUpdateQuantity(item.id, item.quantity + 1)}
@@ -643,7 +962,7 @@ export default function SalesTerminal() {
                       </button>
                     </div>
                     <div className="font-medium">
-                      ${(item.subtotal / 100).toFixed(2)}
+                      {formatTablePrice(normalizeToCents(item.subtotal))}
                     </div>
                   </div>
                 </div>
@@ -651,27 +970,98 @@ export default function SalesTerminal() {
             )}
           </div>
 
-          {/* Cart Summary */}
-          <div className="border-t pt-4 space-y-2">
-            <div className="flex justify-between text-sm">
-              <span>Subtotal:</span>
-              <span>${(totalAmount / 100).toFixed(2)}</span>
+          {/* Price Breakdown Section */}
+          <div className="border-t pt-4 space-y-3">
+            {checkoutError && (
+              <div className="p-2 bg-red-50 border border-red-200 rounded text-sm text-red-700">
+                {checkoutError}
+              </div>
+            )}
+
+            {/* Price Summary */}
+            <div className="space-y-2 pb-3 border-b">
+              <div className="flex justify-between text-sm">
+                <span>Subtotal:</span>
+                <span>{formatTablePrice(subtotal)}</span>
+              </div>
+              
+              {validatedDiscounts.length > 0 && (
+                <div className="space-y-1">
+                  {validatedDiscounts.map((d, i) => (
+                    <div key={i} className="flex justify-between text-sm text-green-700">
+                      <span>{d.code}:</span>
+                      <span>-{formatTablePrice(d.discountAmount)}</span>
+                    </div>
+                  ))}
+                </div>
+              )}
+
+              {taxEnabled && (
+                <div className="flex justify-between text-sm text-gray-600">
+                  <span>Tax ({taxRate}%):</span>
+                  <span>{formatTablePrice(estimatedTax)}</span>
+                </div>
+              )}
             </div>
+
             <div className="flex justify-between font-bold text-lg bg-blue-50 p-3 rounded">
               <span>Total:</span>
-              <span>${(totalAmount / 100).toFixed(2)}</span>
+              <span className="text-blue-600">{formatTablePrice(estimatedTotal)}</span>
             </div>
           </div>
 
-          <button
-            onClick={handleCheckout}
-            disabled={cart.length === 0}
-            className="w-full mt-4 px-4 py-3 bg-green-600 text-white rounded-lg font-bold hover:bg-green-700 disabled:bg-gray-400 disabled:cursor-not-allowed text-lg"
-          >
-            Checkout
-          </button>
+          {/* Discount Dropdown */}
+          {cart.length > 0 && !showPayment && (
+            <div className="mt-4 p-3 bg-gray-50 border rounded">
+              <DiscountDropdown
+                departmentCode={Array.from(selectedSections).length > 0 
+                  ? departments.find(d => d.id === sections.find(s => s.id === Array.from(selectedSections)[0])?.departmentId)?.code 
+                  : undefined}
+                subtotal={subtotal}
+                appliedDiscounts={appliedDiscountIds}
+                onAddDiscount={(id, discount) => {
+                  console.log(`[SalesTerminal] Adding discount ID: ${id}`)
+                  setAppliedDiscountIds((s) => [...s, id])
+                  if (discount) {
+                    setDiscountMap((map) => new Map(map).set(id, discount))
+                  }
+                }}
+                onRemoveDiscount={(id) => {
+                  console.log(`[SalesTerminal] Removing discount ID: ${id}`)
+                  setAppliedDiscountIds((s) => s.filter((x) => x !== id))
+                  setValidatedDiscounts((s) => s.filter((d) => d.id !== id))
+                  setDiscountMap((map) => {
+                    const newMap = new Map(map)
+                    newMap.delete(id)
+                    return newMap
+                  })
+                }}
+                disabled={false}
+              />
+            </div>
+          )}
+
+          {/* Checkout Button or Payment UI */}
+          {showPayment && receipt ? (
+            <div className="mt-4">
+              <POSPayment
+                total={receipt.total || estimatedTotal}
+                onComplete={handlePaymentComplete}
+                onCancel={() => setShowPayment(false)}
+              />
+            </div>
+          ) : (
+            <button
+              onClick={handleCheckout}
+              disabled={cart.length === 0 || isCheckingOut || isProcessingPayment}
+              className="w-full mt-4 px-4 py-3 bg-green-600 text-white rounded-lg font-bold hover:bg-green-700 disabled:bg-gray-400 disabled:cursor-not-allowed text-lg"
+            >
+              {isCheckingOut ? 'Processing...' : addToOrderId ? 'Add Items' : 'Checkout'}
+            </button>
+          )}
         </div>
       </div>
     </div>
   )
+}   
 }

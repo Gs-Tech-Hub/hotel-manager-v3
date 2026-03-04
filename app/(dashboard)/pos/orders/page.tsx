@@ -165,56 +165,15 @@ export default function PosOrdersPage() {
         }
     };
 
-    // Add items handler - routes to originating section terminal to maintain inventory integrity
+    // Add items handler - routes to unified sales terminal to maintain inventory integrity
     const handleAddItems = async () => {
         if (!selectedOrderForItems) return;
         
         try {
-            // Get originating section ID from first line
-            const firstLine = selectedOrderForItems.lines?.[0];
-            if (!firstLine?.departmentSectionId) {
-                throw new Error("Cannot determine order origin section");
-            }
-            
-            const sectionId = firstLine.departmentSectionId;
-            console.log('[Orders] Adding items - section ID:', sectionId);
-            
-            // Fetch terminals to find the one matching this section ID
-            const res = await fetch('/api/pos/terminals', { credentials: 'include' });
-            const json = await res.json();
-            
-            if (!json?.success || !Array.isArray(json.data)) {
-                throw new Error("Failed to load terminals");
-            }
-            
-            console.log('[Orders] Available terminals:', json.data);
-            
-            // Find the terminal (section) matching this ID
-            const foundTerminal = json.data.find((t: any) => t.id === sectionId);
-            console.log('[Orders] Found terminal:', foundTerminal);
-            
-            if (!foundTerminal) {
-                throw new Error("Terminal not found");
-            }
-            
-            // Get slug - generate from name if not set in DB
-            let slug = foundTerminal.slug;
-            if (!slug && foundTerminal.name) {
-                slug = foundTerminal.name
-                    .toLowerCase()
-                    .replace(/\s+/g, '-')
-                    .replace(/[^a-z0-9\-]/g, '');
-                console.log('[Orders] Generated slug from name:', slug);
-            }
-            
-            if (!slug) {
-                throw new Error("Cannot generate terminal route - missing name or slug");
-            }
-            
-            // Route to section terminal with order context using proper slug-based route
-            // Format: /pos-terminals/{slug}/checkout?terminal={terminalId}&addToOrder={orderId}
-            const targetUri = `/pos-terminals/${encodeURIComponent(slug)}/checkout?terminal=${sectionId}&addToOrder=${selectedOrderForItems.id}`;
-            console.log('[Orders] Navigating to:', targetUri);
+            // Route to the consolidated sales terminal with order context
+            // This allows adding items from all sections with full discount flow
+            const targetUri = `/sales-terminal?addToOrder=${selectedOrderForItems.id}`;
+            console.log('[Orders] Routing to sales terminal for add items:', targetUri);
             window.location.href = targetUri;
         } catch (error) {
             console.error('[Orders] Error adding items:', error);
