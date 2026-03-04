@@ -424,6 +424,81 @@ export class SectionService {
       return { items: mapped, total, page, pageSize }
     }
 
+    // Extras - available to any department
+    if (type === 'extra') {
+      // For sections, only get extras that have been transferred to that section
+      if (resolvedSectionId) {
+        // Get total count of transferred extras for this section (before pagination)
+        const totalTransferred = await prisma.departmentInventory.count({
+          where: {
+            departmentId: dept.id,
+            sectionId: resolvedSectionId,
+            quantity: { gt: 0 },
+          },
+        })
+
+        if (totalTransferred === 0) {
+          // No transferred extras for this section
+          return { items: [], total: 0, page, pageSize }
+        }
+
+        // Query paginated transferred extras for section - get from Extra table
+        const sectionInventories = await prisma.departmentInventory.findMany({
+          where: {
+            departmentId: dept.id,
+            sectionId: resolvedSectionId,
+            quantity: { gt: 0 },
+          },
+          select: { inventoryItemId: true },
+          skip,
+          take: pageSize,
+          orderBy: { createdAt: 'desc' },
+        })
+
+        const extraIds = sectionInventories.map((si) => si.inventoryItemId)
+
+        // Get extras matching the transferred IDs
+        const where: any = { id: { in: extraIds } }
+        if (search) where.name = { contains: search, mode: 'insensitive' }
+
+        const items = await prisma.extra.findMany({ 
+          where,
+          orderBy: { name: 'asc' }
+        })
+
+        // Extras use departmentExtras for pricing/availability tracking
+        let mapped = items.map((e: any) => ({
+          id: e.id,
+          name: e.name,
+          type: 'extra',
+          available: 1, // Extras are typically all-or-nothing
+          unitPrice: Math.round(Number(e.pricePerCount || e.pricePerMinute || 0) * 100),
+          unit: e.unit || 'portion',
+        }))
+
+        return { items: mapped, total: totalTransferred, page, pageSize }
+      }
+
+      // For parent departments (no section filter), get all extras available
+      const where: any = {}
+      if (search) where.name = { contains: search, mode: 'insensitive' }
+      const [items, total] = await Promise.all([
+        prisma.extra.findMany({ where, skip, take: pageSize, orderBy: { name: 'asc' } }),
+        prisma.extra.count({ where }),
+      ])
+
+      let mapped = items.map((e: any) => ({
+        id: e.id,
+        name: e.name,
+        type: 'extra',
+        available: 1, // Extras are typically all-or-nothing
+        unitPrice: Math.round(Number(e.pricePerCount || e.pricePerMinute || 0) * 100),
+        unit: e.unit || 'portion',
+      }))
+
+      return { items: mapped, total, page, pageSize }
+    }
+
     // Generic inventory fallback
     {
       const where: any = {}

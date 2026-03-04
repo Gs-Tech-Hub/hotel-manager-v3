@@ -250,15 +250,17 @@ export default function TransferPanel({ sourceCode, onClose, initialTarget }: { 
                 value={targetDept ?? ''} 
                 onChange={(e) => setTargetDept(e.target.value || null)}
               >
-                <option value="">Select destination section...</option>
+                <option value="">Select destination section or department...</option>
                 {sections.map((s) => (
                   <option key={s.id} value={s.id}>{s.name}</option>
                 ))}
-                <optgroup label="Other Departments">
-                  {departments.map((d) => (
-                    <option key={d.id} value={d.code}>{d.name}</option>
-                  ))}
-                </optgroup>
+                {departments.length > 0 && (
+                  <optgroup label="Departments">
+                    {departments.map((d) => (
+                      <option key={d.id} value={d.code}>{d.name}</option>
+                    ))}
+                  </optgroup>
+                )}
               </select>
 
               <div className="mt-4">

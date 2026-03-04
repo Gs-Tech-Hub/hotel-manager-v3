@@ -140,15 +140,18 @@ export default function SalesTerminal() {
             if (!dept) continue
 
             try {
+              // Construct section code as parent:slug format for API
+              const sectionCode = section.slug ? `${dept.code}:${section.slug}` : `${dept.code}:${section.id}`
               const res = await fetch(
-                `/api/departments/${encodeURIComponent(dept.code)}/inventory?sectionId=${sectionId}`
+                `/api/departments/${encodeURIComponent(dept.code)}/products?section=${encodeURIComponent(sectionCode)}&pageSize=200`
               )
               if (res.ok) {
                 const data = await res.json()
-                const sectionProducts = (data.data || []).map((p: any) => ({
+                const items = data.data?.items || data.data || []
+                const sectionProducts = items.map((p: any) => ({
                   id: p.id,
                   name: p.name,
-                  price: p.price || 0,
+                  price: Math.round(Number(p.unitPrice) || 0),
                   sectionId: section.id,
                   sectionName: section.name,
                   departmentCode: dept.code,
@@ -168,15 +171,18 @@ export default function SalesTerminal() {
             if (!dept) continue
 
             try {
+              // Construct section code as parent:slug format for API
+              const sectionCode = section.slug ? `${dept.code}:${section.slug}` : `${dept.code}:${section.id}`
               const res = await fetch(
-                `/api/departments/${encodeURIComponent(dept.code)}/inventory?sectionId=${section.id}`
+                `/api/departments/${encodeURIComponent(dept.code)}/products?section=${encodeURIComponent(sectionCode)}&pageSize=200`
               )
               if (res.ok) {
                 const data = await res.json()
-                const sectionProducts = (data.data || []).map((p: any) => ({
+                const items = data.data?.items || data.data || []
+                const sectionProducts = items.map((p: any) => ({
                   id: p.id,
                   name: p.name,
-                  price: p.price || 0,
+                  price: Math.round(Number(p.unitPrice) || 0),
                   sectionId: section.id,
                   sectionName: section.name,
                   departmentCode: dept.code,

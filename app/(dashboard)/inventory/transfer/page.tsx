@@ -197,8 +197,10 @@ export default function InventoryTransferPage() {
 
   async function submit() {
     if (!source) return alert('Missing source department')
-    if (!destination) return alert('Choose a destination section')
     if (cart.length === 0) return alert('Add items')
+    if (!destination) {
+      return alert('Choose a destination section or department to complete the transfer')
+    }
     setSubmitting(true)
     try {
       const items = cart.map((c) => ({ type: c.productType, id: c.id, quantity: c.quantity }))
