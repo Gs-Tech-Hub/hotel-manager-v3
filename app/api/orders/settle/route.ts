@@ -8,6 +8,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { extractUserContext, loadUserWithRoles, hasAnyRole } from '@/lib/user-context';
 import { successResponse, errorResponse, ErrorCodes, getStatusCode } from '@/lib/api-response';
+import { prisma } from '@/lib/auth/prisma';
 import { paymentService } from '@/services/payment.service';
 
 /**
@@ -95,21 +96,44 @@ export async function POST(request: NextRequest) {
       return NextResponse.json(result, { status: statusCode });
     }
 
+    // Extract payment data from the response
+    const paymentData = result.data || result;
+    const paymentId = paymentData.id;
+
+    // Fetch order to get order details and calculate financial state
+    const order = await (prisma as any).orderHeader.findUnique({
+      where: { id: orderId },
+      include: { payments: true, customer: true },
+    });
+
+    if (!order) {
+      return NextResponse.json(
+        errorResponse(ErrorCodes.NOT_FOUND, 'Order not found'),
+        { status: getStatusCode(ErrorCodes.NOT_FOUND) }
+      );
+    }
+
+    // Calculate financial state
+    const totalPaid = order.payments.reduce((sum: number, p: any) => sum + p.amount, 0);
+    const amountDue = Math.max(0, order.total - totalPaid);
+    const isFullyPaid = amountDue <= 0;
+
     // Return settlement response
     return NextResponse.json(
       successResponse({
         data: {
-          orderId: result.orderId,
-          orderNumber: result.orderNumber,
-          paymentId: result.paymentId,
-          paymentAmount: result.paymentAmount,
-          totalPaid: result.totalPaid,
-          amountDue: result.amountDue,
-          isFullyPaid: result.isFullyPaid,
-          customer: result.customer,
+          orderId: order.id,
+          orderNumber: order.orderNumber,
+          paymentId,
+          paymentAmount: amount,
+          totalPaid,
+          amountDue,
+          isFullyPaid,
+          customer: order.customer,
+          sectionAllocations: paymentData.sectionAllocations || [],
           timestamp: new Date().toISOString(),
         },
-        message: result.isFullyPaid
+        message: isFullyPaid
           ? 'Order fully paid - moving to processing'
           : 'Partial payment recorded',
       }),

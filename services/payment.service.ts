@@ -212,6 +212,10 @@ export class PaymentService extends BaseService<IPayment> {
       // Extract payment from transaction result
       const paymentResult = payment.newPayment;
 
+      // Calculate section-level payment allocations
+      const sectionAllocations = this.calculateSectionPaymentAllocations(order, amount);
+      console.log(`[Payment] Section allocations:`, sectionAllocations);
+
       // ==================== ASYNC SECTION METADATA UPDATE ====================
       console.log(`[Payment] Starting async section updates for ${affectedSectionIds.size} sections`);
       if (affectedSectionIds.size > 0) {
@@ -228,7 +232,10 @@ export class PaymentService extends BaseService<IPayment> {
       const totalTime = Date.now() - startTime;
       console.log(`[Payment] recordOrderPayment COMPLETE (${totalTime}ms total) - Timeline:`, timeline);
 
-      return successResponse(paymentResult);
+      return successResponse({
+        ...paymentResult,
+        sectionAllocations,
+      });
     } catch (error) {
       const totalTime = Date.now() - startTime;
       console.error(`[Payment] recordOrderPayment FAILED after ${totalTime}ms:`, error);
@@ -377,6 +384,10 @@ export class PaymentService extends BaseService<IPayment> {
       // Extract payment from transaction result
       const paymentResult = payment.newPayment;
 
+      // Calculate section-level payment allocations
+      const sectionAllocations = this.calculateSectionPaymentAllocations(order, amount);
+      console.log(`[Deferred Payment] Section allocations:`, sectionAllocations);
+
       // ==================== ASYNC SECTION METADATA UPDATE ====================
       console.log(`[Deferred Payment] Starting async section updates for ${affectedSectionIds.size} sections`);
       if (affectedSectionIds.size > 0) {
@@ -393,7 +404,10 @@ export class PaymentService extends BaseService<IPayment> {
       const totalTime = Date.now() - startTime;
       console.log(`[Deferred Payment] COMPLETE (${totalTime}ms total) - Timeline:`, timeline);
 
-      return successResponse(paymentResult);
+      return successResponse({
+        ...paymentResult,
+        sectionAllocations,
+      });
     } catch (error) {
       const totalTime = Date.now() - startTime;
       console.error(`[Deferred Payment] FAILED after ${totalTime}ms:`, error);
@@ -613,6 +627,85 @@ export class PaymentService extends BaseService<IPayment> {
       console.error(`Error updating metadata for section ${sectionId}:`, err);
       // Fail silently - metadata updates shouldn't block payment
     }
+  }
+
+  /**
+   * Calculate how a payment is allocated across sections
+   * For orders with items from multiple sections, this breaks down
+   * how much of the payment belongs to each section (proportional to their line totals)
+   */
+  private calculateSectionPaymentAllocations(order: any, paymentAmount: number) {
+    const sectionAllocations: {
+      sectionId: string;
+      sectionCode?: string;
+      sectionName?: string;
+      lineTotal: number;
+      paymentAllocated: number;
+      paymentStatus: string;
+    }[] = [];
+
+    // Group lines by section
+    const sectionTotals = new Map<string, { lineTotal: number; sectionCode?: string; sectionName?: string }>();
+    let totalOrderLineAmount = 0;
+
+    for (const line of order.lines || []) {
+      const sectionId = line.departmentSectionId || 'unassigned';
+      const lineTotal = line.lineTotal || 0;
+      totalOrderLineAmount += lineTotal;
+
+      if (!sectionTotals.has(sectionId)) {
+        sectionTotals.set(sectionId, {
+          lineTotal: 0,
+          sectionCode: line.departmentSection?.slug,
+          sectionName: line.departmentSection?.name,
+        });
+      }
+      const st = sectionTotals.get(sectionId)!;
+      st.lineTotal += lineTotal;
+    }
+
+    // Calculate payment allocation per section (proportional)
+    let allocatedSoFar = 0;
+    let sectionIndex = 0;
+    const sectionIds = Array.from(sectionTotals.keys());
+
+    for (const sectionId of sectionIds) {
+      const st = sectionTotals.get(sectionId)!;
+      const isLastSection = sectionIndex === sectionIds.length - 1;
+
+      // Allocate proportionally, but ensure last section gets remainder to avoid rounding errors
+      let sectionAllocation = 0;
+      if (isLastSection) {
+        sectionAllocation = paymentAmount - allocatedSoFar;
+      } else if (totalOrderLineAmount > 0) {
+        sectionAllocation = Math.round(
+          (st.lineTotal / totalOrderLineAmount) * paymentAmount
+        );
+      }
+      
+      allocatedSoFar += sectionAllocation;
+
+      // Determine payment status for this section
+      let paymentStatus = 'unpaid';
+      if (sectionAllocation >= st.lineTotal) {
+        paymentStatus = 'paid';
+      } else if (sectionAllocation > 0) {
+        paymentStatus = 'partial';
+      }
+
+      sectionAllocations.push({
+        sectionId,
+        sectionCode: st.sectionCode,
+        sectionName: st.sectionName,
+        lineTotal: st.lineTotal,
+        paymentAllocated: sectionAllocation,
+        paymentStatus,
+      });
+
+      sectionIndex++;
+    }
+
+    return sectionAllocations;
   }
 }
 

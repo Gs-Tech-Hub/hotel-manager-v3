@@ -182,16 +182,18 @@ export function DiscountDropdown({
                 
                 return (
                   <SelectItem key={discount.id} value={discount.id}>
-                    <div className="flex items-center gap-3">
-                      <span className="font-semibold">{discount.code}</span>
-                      <span className="text-xs bg-blue-100 text-blue-800 px-2 py-1 rounded capitalize">
-                        {discount.type === "employee" ? "Staff" : discount.type}
-                      </span>
-                      <span className="text-xs text-muted-foreground">
-                        {discountDisplay}
-                      </span>
+                    <div className="flex flex-col gap-1 w-full max-w-sm">
+                      <div className="flex items-center gap-2 flex-wrap">
+                        <span className="font-semibold text-sm">{discount.code}</span>
+                        <span className="text-xs bg-blue-100 text-blue-800 px-2 py-0.5 rounded capitalize whitespace-nowrap">
+                          {discount.type === "employee" ? "Staff" : discount.type}
+                        </span>
+                        <span className="text-xs text-muted-foreground font-medium">
+                          {discountDisplay}
+                        </span>
+                      </div>
                       {discount.description && (
-                        <span className="text-xs text-muted-foreground max-w-xs">
+                        <span className="text-xs text-muted-foreground break-words line-clamp-2">
                           {discount.description}
                         </span>
                       )}

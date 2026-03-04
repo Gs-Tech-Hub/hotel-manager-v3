@@ -6,6 +6,7 @@ import { formatTablePrice, formatOrderTotal } from '@/lib/formatters'
 import { normalizeToCents } from '@/lib/price'
 import { POSPayment } from '@/components/admin/pos/pos-payment'
 import { DiscountDropdown } from '@/components/pos/orders/DiscountDropdown'
+import { EmployeeTargeting } from '@/components/pos/orders/EmployeeDiscountSelector'
 
 type Terminal = {
   id: string
@@ -91,6 +92,9 @@ export default function SalesTerminal() {
   const [showPayment, setShowPayment] = useState(false)
   const [receipt, setReceipt] = useState<any | null>(null)
   const [isProcessingPayment, setIsProcessingPayment] = useState(false)
+  const [showEmployeeTargeting, setShowEmployeeTargeting] = useState(false)
+  const [selectedEmployee, setSelectedEmployee] = useState<any | null>(null)
+  const [isChargingEmployee, setIsChargingEmployee] = useState(false)
 
   // Fetch tax settings on mount
   useEffect(() => {
@@ -132,12 +136,11 @@ export default function SalesTerminal() {
             continue
           }
 
-          // Hit the validation endpoint
-          const res = await fetch(`/api/discounts/${discountId}/validate`, {
-            method: 'POST',
+          // Hit the validation endpoint with discount code
+          const res = await fetch(`/api/discounts/validate?code=${encodeURIComponent(discount.code || discountId)}&subtotal=${subtotal}`, {
+            method: 'GET',
             credentials: 'include',
             headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ subtotal }),
           })
 
           const json = await res.json()
@@ -536,9 +539,18 @@ export default function SalesTerminal() {
 
         console.log('[SalesTerminal] Order created successfully:', json.data.id)
         
-        // Show payment UI for new orders
-        setReceipt(json.data)
-        setShowPayment(true)
+        // Check if any applied discounts are employee discounts
+        const hasEmployeeDiscount = validatedDiscounts.some(d => d.type === 'employee')
+        
+        if (hasEmployeeDiscount) {
+          // Show employee targeting modal for employee discount flow
+          setReceipt(json.data)
+          setShowEmployeeTargeting(true)
+        } else {
+          // Show payment UI for regular orders
+          setReceipt(json.data)
+          setShowPayment(true)
+        }
       }
     } catch (e: any) {
       console.error('[SalesTerminal] Checkout error:', e)
@@ -571,19 +583,33 @@ export default function SalesTerminal() {
         throw new Error(json.error?.message || 'Payment failed')
       }
 
-      // Clear state and show receipt
+      const json = await res.json()
+
+      // Store payment details including section allocations
+      const paymentDetails = json.data || {}
+      console.log('[SalesTerminal] Payment completed with allocations:', paymentDetails.sectionAllocations)
+
+      // Clear state and show receipt with payment details
       setShowPayment(false)
+      setShowEmployeeTargeting(false)
+      setSelectedEmployee(null)
       setCart([])
       setAppliedDiscountIds([])
       setValidatedDiscounts([])
       setSelectedSections(new Set())
+      setReceipt({
+        ...receipt,
+        ...paymentDetails,
+        paymentMethod: payment.method,
+        sectionAllocations: paymentDetails.sectionAllocations,
+      })
       setView('receipt')
       
-      // Auto-reset after 3 seconds
+      // Auto-reset after 5 seconds (increased to allow reading section breakdown)
       setTimeout(() => {
         setView('terminal-select')
         setSelectedTerminal(null)
-      }, 3000)
+      }, 5000)
     } catch (error) {
       setCheckoutError(error instanceof Error ? error.message : 'Payment failed')
     } finally {
@@ -830,6 +856,35 @@ export default function SalesTerminal() {
                 ))}
               </div>
             </div>
+
+            {/* Section Payment Breakdown */}
+            {receipt.sectionAllocations && receipt.sectionAllocations.length > 0 && (
+              <div className="p-4 bg-indigo-50 border border-indigo-200 rounded">
+                <h3 className="font-semibold mb-3 text-indigo-900">Payment Allocation by Section</h3>
+                <div className="space-y-2">
+                  {receipt.sectionAllocations.map((allocation: any, i: number) => (
+                    <div key={i} className="flex items-center justify-between p-3 bg-white rounded border border-indigo-100">
+                      <div className="flex-1">
+                        <div className="font-medium text-sm">{allocation.sectionName || allocation.sectionCode || 'Section'}</div>
+                        <div className="text-xs text-gray-600">Order Total: {formatTablePrice(allocation.lineTotal)}</div>
+                      </div>
+                      <div className="text-right">
+                        <div className="font-semibold text-indigo-600">{formatTablePrice(allocation.paymentAllocated)}</div>
+                        <div className={`text-xs font-medium ${
+                          allocation.paymentStatus === 'paid' ? 'text-green-600' :
+                          allocation.paymentStatus === 'partial' ? 'text-yellow-600' :
+                          'text-gray-600'
+                        }`}>
+                          {allocation.paymentStatus === 'paid' && '✓ Paid'}
+                          {allocation.paymentStatus === 'partial' && '⚠ Partial'}
+                          {allocation.paymentStatus === 'unpaid' && '○ Unpaid'}
+                        </div>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
           </div>
 
           <button
@@ -1061,7 +1116,105 @@ export default function SalesTerminal() {
           )}
         </div>
       </div>
+
+      {/* Employee Targeting Modal for Employee Discounts */}
+      {showEmployeeTargeting && (
+        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
+          <div className="bg-white rounded-lg shadow-lg max-w-md w-full max-h-[90vh] overflow-y-auto">
+            <EmployeeTargeting
+              orderTotal={receipt ? receipt.total / 100 : estimatedTotal / 100}
+              onEmployeeSelected={(emp) => {
+                console.log('[SalesTerminal] Employee selected:', emp)
+                setSelectedEmployee(emp)
+              }}
+              onCancel={() => {
+                console.log('[SalesTerminal] Employee targeting cancelled')
+                setShowEmployeeTargeting(false)
+                setSelectedEmployee(null)
+              }}
+              onChargeToEmployee={async (employeeId, chargeAmountDollars) => {
+                try {
+                  setIsChargingEmployee(true)
+                  
+                  const chargeAmount = receipt?.total || estimatedTotal
+                  console.log('[SalesTerminal] EMPLOYEE CHARGE FLOW: Creating charge for employee:', employeeId, 'amount cents:', chargeAmount, 'dollars:', chargeAmountDollars)
+                  
+                  // Step 1: Create employee charge
+                  const chargeRes = await fetch(`/api/employees/${employeeId}/charges`, {
+                    method: 'POST',
+                    credentials: 'include',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                      chargeType: 'order_discount',
+                      amount: chargeAmountDollars,
+                      description: `Order ${receipt?.id} - Employee Discount Charge`,
+                      reason: 'Employee discount auto-charge from Sales Terminal',
+                      date: new Date().toISOString(),
+                    }),
+                  })
+                  
+                  const chargeJson = await chargeRes.json()
+                  console.log('[SalesTerminal] Charge response:', { status: chargeRes.status, body: chargeJson })
+                  
+                  if (!chargeRes.ok || !chargeJson?.success) {
+                    throw new Error((chargeJson?.error?.message) || 'Failed to charge employee')
+                  }
+                  
+                  const chargeData = chargeJson.data
+                  if (!chargeData) {
+                    console.error('[SalesTerminal] chargeData is null:', chargeJson)
+                    throw new Error('Invalid charge response structure - missing data')
+                  }
+                  
+                  console.log('[SalesTerminal] Employee charge created:', chargeData.id)
+                  
+                  // Step 2: Settle the order payment as charged
+                  const settleRes = await fetch('/api/orders/settle', {
+                    method: 'POST',
+                    credentials: 'include',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                      orderId: receipt?.id,
+                      paymentMethod: 'employee',
+                      employeeId: employeeId,
+                      amount: chargeAmount,
+                      isDeferred: false,
+                    }),
+                  })
+                  
+                  const settleJson = await settleRes.json()
+                  console.log('[SalesTerminal] Order settle response:', { status: settleRes.status, body: settleJson })
+                  
+                  if (!settleRes.ok || !settleJson?.success) {
+                    // If settle fails, we should try to reverse the charge
+                    console.error('[SalesTerminal] Order settle failed, may need to reverse charge')
+                    throw new Error((settleJson?.error?.message) || 'Failed to settle order')
+                  }
+                  
+                  // Success! Handle payment complete
+                  await handlePaymentComplete({
+                    method: 'employee',
+                    isDeferred: false,
+                    employeeId: employeeId,
+                  })
+                } catch (err: any) {
+                  const msg = err?.message || 'Unknown error'
+                  console.error('[SalesTerminal] Employee charge failed:', err)
+                  setCheckoutError(`Employee charge failed: ${msg}`)
+                } finally {
+                  setIsChargingEmployee(false)
+                }
+              }}
+              onProceedToPayment={async () => {
+                console.log('[SalesTerminal] Employee targeting completed, proceeding to payment')
+                setShowEmployeeTargeting(false)
+                setShowPayment(true)
+              }}
+            />
+          </div>
+        </div>
+      )}
     </div>
   )
-}   
+}
 }
