@@ -88,8 +88,9 @@ export class SectionService {
       return { items: [], total: 0, page, pageSize }
     }
 
-    // Drink/food specializations
-    if ((type === 'drink' || dept.referenceType === 'BarAndClub') && dept.referenceId) {
+    // UNIFIED INVENTORY SYSTEM: All items (drinks, food, inventory) are discoverable by any department
+    // Drinks - available to any department (not just BarAndClub)
+    if (type === 'drink') {
       // For sections, only get drinks that have been transferred to that section
       if (resolvedSectionId) {
         // Get total count of transferred drinks for this section (before pagination)
@@ -122,10 +123,7 @@ export class SectionService {
         const drinkIds = sectionInventories.map((si) => si.inventoryItemId)
 
         // Get drinks matching the transferred IDs (no pagination here - IDs already paginated)
-        const where: any = { 
-          barAndClubId: dept.referenceId,
-          id: { in: drinkIds }
-        }
+        const where: any = { id: { in: drinkIds } }
         if (search) where.name = { contains: search, mode: 'insensitive' }
 
         const items = await prisma.drink.findMany({ 
@@ -190,8 +188,8 @@ export class SectionService {
         return { items: mapped, total: totalTransferred, page, pageSize }
       }
 
-      // For parent departments (no section filter), get all drinks
-      const where: any = { barAndClubId: dept.referenceId }
+      // For parent departments (no section filter), get all drinks available
+      const where: any = {}
       if (search) where.name = { contains: search, mode: 'insensitive' }
       const [items, total] = await Promise.all([
         prisma.drink.findMany({ where, skip, take: pageSize, orderBy: { name: 'asc' } }),
@@ -258,8 +256,8 @@ export class SectionService {
       return { items: mapped, total, page, pageSize }
     }
 
-    // Food specialization
-    if ((type === 'food' || dept.referenceType === 'Restaurant') && dept.referenceId) {
+    // Food - available to any department (not just Restaurant)
+    if (type === 'food') {
       // For sections, only get food items that have been transferred to that section
       if (resolvedSectionId) {
         // Get total count of transferred food items for this section (before pagination)
@@ -292,10 +290,8 @@ export class SectionService {
         const foodIds = sectionInventories.map((si) => si.inventoryItemId)
 
         // Get food items matching the transferred IDs (no pagination here - IDs already paginated)
-        const where: any = { 
-          restaurantId: dept.referenceId,
-          id: { in: foodIds }
-        }
+        // CHANGED: Remove restaurantId filter - food is now universally accessible
+        const where: any = { id: { in: foodIds } }
         if (search) where.name = { contains: search, mode: 'insensitive' }
 
         const items = await prisma.foodItem.findMany({ 
@@ -304,7 +300,7 @@ export class SectionService {
         })
 
         const foodBalances = await stockService.getBalances('food', items.map(f => f.id), dept.id, resolvedSectionId)
-        let mapped = items.map((f: any) => ({ id: f.id, name: f.name, type: 'food', available: foodBalances.get(f.id) ?? 0 > 0 ? 1 : 0, unitPrice: Math.round(Number(f.price) * 100) }))
+        let mapped = items.map((f: any) => ({ id: f.id, name: f.name, type: 'food', available: foodBalances.get(f.id) ?? 0, unitPrice: Math.round(Number(f.price) * 100) }))
 
         if (includeDetails && mapped.length > 0) {
           const ids = mapped.map((m: any) => m.id)
@@ -355,8 +351,9 @@ export class SectionService {
         return { items: mapped, total: totalTransferred, page, pageSize }
       }
 
-      // For parent departments (no section filter), get all food items
-      const where: any = { restaurantId: dept.referenceId }
+      // For parent departments (no section filter), get all food items available
+      // CHANGED: Remove restaurantId filter - food is now universally accessible
+      const where: any = {}
       if (search) where.name = { contains: search, mode: 'insensitive' }
       const [items, total] = await Promise.all([
         prisma.foodItem.findMany({ where, skip, take: pageSize, orderBy: { name: 'asc' } }),
@@ -367,7 +364,7 @@ export class SectionService {
       const foodIds = items.map((f: any) => f.id)
       const foodBalances = await stockService.getBalances('food', foodIds, dept.id)
 
-      let mapped = items.map((f: any) => ({ id: f.id, name: f.name, type: 'food', available: foodBalances.get(f.id) ?? 0 > 0 ? 1 : 0, unitPrice: Math.round(Number(f.price) * 100) }))
+      let mapped = items.map((f: any) => ({ id: f.id, name: f.name, type: 'food', available: foodBalances.get(f.id) ?? 0, unitPrice: Math.round(Number(f.price) * 100) }))
 
       if (includeDetails && mapped.length > 0) {
         const ids = mapped.map((m: any) => m.id)

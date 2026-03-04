@@ -80,10 +80,10 @@ export async function POST(request: NextRequest, { params }: { params: Promise<{
       return NextResponse.json(errorResponse(ErrorCodes.NOT_FOUND, 'Source or destination department not found'), { status: getStatusCode(ErrorCodes.NOT_FOUND) })
     }
 
-    // Only support drink, inventoryItem, and extra transfers
-    const unsupported = items.find((it: any) => it.type !== 'drink' && it.type !== 'inventoryItem' && it.type !== 'extra')
+    // Only support drink, food, inventoryItem, and extra transfers
+    const unsupported = items.find((it: any) => it.type !== 'drink' && it.type !== 'food' && it.type !== 'inventoryItem' && it.type !== 'extra')
     if (unsupported) {
-      return NextResponse.json(errorResponse(ErrorCodes.VALIDATION_ERROR, 'Only transfers of type "drink", "inventoryItem", or "extra" are supported by this endpoint'), { status: getStatusCode(ErrorCodes.VALIDATION_ERROR) })
+      return NextResponse.json(errorResponse(ErrorCodes.VALIDATION_ERROR, 'Only transfers of type "drink", "food", "inventoryItem", or "extra" are supported by this endpoint'), { status: getStatusCode(ErrorCodes.VALIDATION_ERROR) })
     }
 
     // Normalize and validate items
@@ -105,21 +105,29 @@ export async function POST(request: NextRequest, { params }: { params: Promise<{
 
     // Use stockService for ALL availability validation - single source of truth
     // This ensures consistency between what displays and what can be transferred
-    const availabilityChecks = await stockService.checkAvailabilityBatch(
-      'drink', // productType - handle drinks first
-      mappedItems.filter(m => m.productType === 'drink').map(m => ({ productId: m.productId, requiredQuantity: m.quantity })),
-      fromDept.id
-    )
+    // NOW: All items (drink, food, inventoryItem, extra) are universally discoverable and transferable
+    
+    const drinkItems = mappedItems.filter(m => m.productType === 'drink')
+    const invItems = mappedItems.filter(m => m.productType === 'inventoryItem')
+    const foodItems = mappedItems.filter(m => m.productType === 'food')
+    const extraItems = mappedItems.filter(m => m.productType === 'extra')
 
-    for (const check of availabilityChecks) {
-      if (!check.hasStock) {
-        return NextResponse.json(errorResponse(ErrorCodes.VALIDATION_ERROR, check.message || `Insufficient stock for product ${check.productId}`), { status: getStatusCode(ErrorCodes.VALIDATION_ERROR) })
+    // Check drinks
+    if (drinkItems.length > 0) {
+      const availabilityChecks = await stockService.checkAvailabilityBatch(
+        'drink',
+        drinkItems.map(m => ({ productId: m.productId, requiredQuantity: m.quantity })),
+        fromDept.id
+      )
+      for (const check of availabilityChecks) {
+        if (!check.hasStock) {
+          return NextResponse.json(errorResponse(ErrorCodes.VALIDATION_ERROR, check.message || `Insufficient stock for product ${check.productId}`), { status: getStatusCode(ErrorCodes.VALIDATION_ERROR) })
+        }
       }
     }
 
     // Check inventory items separately
-    const invItems = mappedItems.filter(m => m.productType === 'inventoryItem')
-    if (invItems.length) {
+    if (invItems.length > 0) {
       const invChecks = await stockService.checkAvailabilityBatch('inventoryItem', invItems.map(m => ({ productId: m.productId, requiredQuantity: m.quantity })), fromDept.id)
       for (const check of invChecks) {
         if (!check.hasStock) {
@@ -128,9 +136,18 @@ export async function POST(request: NextRequest, { params }: { params: Promise<{
       }
     }
 
+    // Check food items - NOW UNIVERSALLY TRANSFERABLE (not restricted to restaurant departments)
+    if (foodItems.length > 0) {
+      const foodChecks = await stockService.checkAvailabilityBatch('food', foodItems.map(m => ({ productId: m.productId, requiredQuantity: m.quantity })), fromDept.id)
+      for (const check of foodChecks) {
+        if (!check.hasStock) {
+          return NextResponse.json(errorResponse(ErrorCodes.VALIDATION_ERROR, check.message || `Insufficient food stock for ${check.productId}`), { status: getStatusCode(ErrorCodes.VALIDATION_ERROR) })
+        }
+      }
+    }
+
     // Check extras separately
-    const extraItems = mappedItems.filter(m => m.productType === 'extra')
-    if (extraItems.length) {
+    if (extraItems.length > 0) {
       for (const extraItem of extraItems) {
         const deptExtra = await prisma.departmentExtra.findFirst({
           where: {

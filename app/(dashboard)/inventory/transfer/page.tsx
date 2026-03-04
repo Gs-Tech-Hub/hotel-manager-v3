@@ -4,11 +4,11 @@ export const dynamic = 'force-dynamic'
 
 import React, { useEffect, useState } from 'react'
 import { mapDeptCodeToCategory } from '@/lib/utils'
+import { formatTablePrice } from '@/lib/formatters'
 import Link from 'next/link'
 import { useRouter } from 'next/navigation'
-import Price from '@/components/ui/Price'
 
-type Item = { id: string; name: string; quantity?: number; available?: number; unitPrice?: number; itemType?: 'inventory' | 'extra'; sku?: string; unit?: string; category?: string }
+type Item = { id: string; name: string; quantity?: number; available?: number; unitPrice?: number; itemType?: 'inventory' | 'extra'; sku?: string; unit?: string; category?: string; productType?: 'drink' | 'food' | 'inventoryItem' | 'extra' }
 
 export default function InventoryTransferPage() {
   const router = useRouter()
@@ -29,13 +29,15 @@ export default function InventoryTransferPage() {
   const [pageSize] = useState(20)
   const [total, setTotal] = useState(0)
   const [products, setProducts] = useState<Item[]>([])
+  const [categories, setCategories] = useState<string[]>([])
+  const [selectedCategory, setSelectedCategory] = useState<string>('all')
   const [loading, setLoading] = useState(false)
   const [submitting, setSubmitting] = useState(false)
 
   const [sections, setSections] = useState<Array<{ id: string; code: string; name: string }>>([])
   const [destination, setDestination] = useState<string | null>(null)
 
-  const [cart, setCart] = useState<{ id: string; name: string; quantity: number; itemType: 'inventory' | 'extra' }[]>([])
+  const [cart, setCart] = useState<{ id: string; name: string; quantity: number; productType: 'drink' | 'food' | 'inventoryItem' | 'extra' }[]>([])
   const [sourceDeptId, setSourceDeptId] = useState<string | null>(null)
 
   useEffect(() => {
@@ -45,6 +47,13 @@ export default function InventoryTransferPage() {
     fetchProducts(1)
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [source])
+
+  useEffect(() => {
+    if (!source) return
+    // Refetch products when category selection changes
+    fetchProducts(1)
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [selectedCategory])
 
   async function fetchSourceDepartment() {
     if (!source) return
@@ -86,16 +95,52 @@ export default function InventoryTransferPage() {
     if (!source) return
     setLoading(true)
     try {
-      // Use the department-specific endpoint that includes both inventory and extras
-      const res = await fetch(`/api/departments/${encodeURIComponent(source)}/items?limit=100`)
+      // Use the products endpoint which now supports universal discovery
+      // This returns all discoverable items: drinks, food, inventory items, extras
+      let url = `/api/departments/${encodeURIComponent(source)}/products?pageSize=100`
+      if (selectedCategory !== 'all') {
+        url += `&type=${encodeURIComponent(selectedCategory)}`
+      }
+      console.log('Fetching products from:', url)
+      const res = await fetch(url)
       const j = await res.json()
-      // Show all items with available > 0, but allow transfer for all (UI will handle trackInventory separately)
-      const filtered = (j.data?.items || []).filter((item: any) => Number(item.available ?? item.quantity ?? 0) > 0)
-      setProducts(filtered)
-      setTotal(filtered.length)
-      setPage(p)
+      console.log('Response status:', res.ok, 'Success:', j?.success, 'Data items:', (j.data?.items || []).length)
+      
+      if (res.ok && j?.success) {
+        // Transform products endpoint response to items format for display
+        const items = (j.data?.items || []).map((product: any) => ({
+          id: product.id,
+          name: product.name,
+          sku: product.sku || '',
+          category: product.type || 'inventory',
+          quantity: product.available || 0,
+          available: product.available || 0,
+          itemType: 'inventory' as const,
+          productType: product.type as 'drink' | 'food' | 'inventoryItem' | 'extra',
+          unitPrice: product.unitPrice
+        }))
+        console.log('Transformed items:', items.length, 'Items:', items)
+        
+        // Extract unique categories from all items
+        const uniqueCategories: string[] = ([...new Set(items.map((item: any) => item.category as string))] as string[]).sort()
+        setCategories(uniqueCategories)
+        console.log('Categories found:', uniqueCategories)
+        
+        // Filter to only show items with available > 0
+        const filtered = items.filter((item: any) => Number(item.available ?? 0) > 0)
+        console.log('Filtered items (available > 0):', filtered.length)
+        setProducts(filtered)
+        setTotal(filtered.length)
+        setPage(p)
+      } else {
+        console.error('Response not ok or no success flag:', res.ok, j?.success)
+        setProducts([])
+        setTotal(0)
+      }
     } catch (e) {
       console.error('failed to load products', e)
+      setProducts([])
+      setTotal(0)
     } finally {
       setLoading(false)
     }
@@ -103,13 +148,27 @@ export default function InventoryTransferPage() {
 
   async function quickSearch(qs: string) {
     try {
-      // Search in department items (includes extras)
-      const res = await fetch(`/api/departments/${encodeURIComponent(source || '')}/items?limit=10`)
+      // Search in department products (universal discovery)
+      let url = `/api/departments/${encodeURIComponent(source || '')}/products?pageSize=100`
+      if (selectedCategory !== 'all') {
+        url += `&type=${encodeURIComponent(selectedCategory)}`
+      }
+      const res = await fetch(url)
       const j = await res.json()
-      const all = j.data?.items || []
+      const all = (j.data?.items || []).map((product: any) => ({
+        id: product.id,
+        name: product.name,
+        sku: product.sku || '',
+        category: product.type || 'inventory',
+        quantity: product.available || 0,
+        available: product.available || 0,
+        itemType: 'inventory' as const,
+        productType: product.type as 'drink' | 'food' | 'inventoryItem' | 'extra',
+        unitPrice: product.unitPrice
+      }))
       // Filter locally by search term AND by available quantity > 0
       const filtered = all.filter((item: any) => 
-        (Number(item.available ?? item.quantity ?? 0) > 0) &&
+        (Number(item.available ?? 0) > 0) &&
         (item.name.toLowerCase().includes(qs.toLowerCase()) ||
          item.sku?.toLowerCase().includes(qs.toLowerCase()))
       )
@@ -120,20 +179,20 @@ export default function InventoryTransferPage() {
   }
 
   function addToCart(item: Item) {
-    const itemType = item.itemType || 'inventory'
+    const productType = item.productType || 'inventoryItem'
     setCart((c) => {
-      const found = c.find((x) => x.id === item.id && x.itemType === itemType)
-      if (found) return c.map((x) => x.id === item.id && x.itemType === itemType ? { ...x, quantity: Math.min((item.available ?? 0), x.quantity + 1) } : x)
-      return [...c, { id: item.id, name: item.name, quantity: 1, itemType }]
+      const found = c.find((x) => x.id === item.id && x.productType === productType)
+      if (found) return c.map((x) => x.id === item.id && x.productType === productType ? { ...x, quantity: Math.min((item.available ?? 0), x.quantity + 1) } : x)
+      return [...c, { id: item.id, name: item.name, quantity: 1, productType }]
     })
   }
 
-  function updateQty(id: string, itemType: 'inventory' | 'extra', qty: number) {
-    setCart((c) => c.map((x) => x.id === id && x.itemType === itemType ? { ...x, quantity: qty } : x))
+  function updateQty(id: string, productType: 'drink' | 'food' | 'inventoryItem' | 'extra', qty: number) {
+    setCart((c) => c.map((x) => x.id === id && x.productType === productType ? { ...x, quantity: qty } : x))
   }
 
-  function removeItem(id: string, itemType: 'inventory' | 'extra') { 
-    setCart((c) => c.filter((x) => !(x.id === id && x.itemType === itemType))) 
+  function removeItem(id: string, productType: 'drink' | 'food' | 'inventoryItem' | 'extra') { 
+    setCart((c) => c.filter((x) => !(x.id === id && x.productType === productType))) 
   }
 
   async function submit() {
@@ -142,7 +201,7 @@ export default function InventoryTransferPage() {
     if (cart.length === 0) return alert('Add items')
     setSubmitting(true)
     try {
-      const items = cart.map((c) => ({ type: c.itemType === 'extra' ? 'extra' : 'inventoryItem', id: c.id, quantity: c.quantity }))
+      const items = cart.map((c) => ({ type: c.productType, id: c.id, quantity: c.quantity }))
       const res = await fetch(`/api/departments/${encodeURIComponent(source)}/transfer`, {
         method: 'POST', headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ toDepartmentCode: destination, items })
@@ -181,20 +240,40 @@ export default function InventoryTransferPage() {
 
       <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
         <div className="md:col-span-2">
+          <div className="mb-4">
+            <label className="text-sm block font-medium mb-2">Filter by category</label>
+            <select 
+              className="w-full p-2 border rounded mb-4" 
+              value={selectedCategory} 
+              onChange={(e) => setSelectedCategory(e.target.value)}
+            >
+              <option value="all">All items</option>
+              {categories.map((cat) => (
+                <option key={cat} value={cat}>
+                  {cat === 'drink' && '🍷 Drinks'}
+                  {cat === 'food' && '🍽️ Food'}
+                  {cat === 'inventoryItem' && '📦 Inventory'}
+                  {cat === 'extra' && '⭐ Extras'}
+                  {!['drink', 'food', 'inventoryItem', 'extra'].includes(cat) && cat}
+                </option>
+              ))}
+            </select>
+          </div>
+
           <div className="mb-2">
             <label className="text-sm">Quick product search</label>
             <input value={query} onChange={(e) => { setQuery(e.target.value); quickSearch(e.target.value) }} className="w-full p-2 border rounded" placeholder="Search products by name or SKU" />
             <div className="bg-white border rounded mt-1 max-h-40 overflow-auto">
               {results.map((r) => (
-                <div key={`${r.itemType}_${r.id}`} className="p-2 flex items-center justify-between hover:bg-gray-50 border-b">
+                <div key={`${r.productType}_${r.id}`} className="p-2 flex items-center justify-between hover:bg-gray-50 border-b">
                   <div className="flex-1">
                     <div className="font-medium text-sm flex items-center gap-2">
                       {r.name}
-                      {r.itemType === 'extra' && <span className="text-xs bg-purple-100 text-purple-800 px-2 py-0.5 rounded">Extra</span>}
+                      {r.productType === 'extra' && <span className="text-xs bg-purple-100 text-purple-800 px-2 py-0.5 rounded">Extra</span>}
                     </div>
                     <div className="text-xs text-muted-foreground">
                       Stock: {r.available ?? 0}
-                      {r.unitPrice !== undefined && <span className="ml-2">| Price: <Price amount={r.unitPrice} isMinor={false} /></span>}
+                      {r.unitPrice !== undefined && <span className="ml-2">| Price: {formatTablePrice(r.unitPrice)}</span>}
                     </div>
                   </div>
                   <button className="px-2 py-1 border rounded text-sm whitespace-nowrap ml-2" onClick={() => addToCart(r)}>Add</button>
@@ -207,18 +286,18 @@ export default function InventoryTransferPage() {
             <div className="text-sm font-medium mb-2">All items</div>
             <div className="space-y-2 max-h-[60vh] overflow-auto border rounded p-2 bg-white">
               {loading ? <div className="text-sm">Loading...</div> : products.map((p) => (
-                <div key={`${p.itemType}_${p.id}`} className="p-2 flex items-center justify-between border-b hover:bg-gray-50">
+                <div key={`${p.productType}_${p.id}`} className="p-2 flex items-center justify-between border-b hover:bg-gray-50">
                   <div className="flex-1">
                     <div className="font-medium flex items-center gap-2">
                       {p.name}
-                      {p.itemType === 'extra' && <span className="text-xs bg-purple-100 text-purple-800 px-2 py-0.5 rounded">Extra</span>}
+                      {p.productType === 'extra' && <span className="text-xs bg-purple-100 text-purple-800 px-2 py-0.5 rounded">Extra</span>}
                     </div>
                     <div className="text-xs text-muted-foreground">
                       Available: <span className="font-mono bg-blue-50 px-2 py-0.5 rounded">{String(p.available ?? p.quantity ?? 0)}</span>
-                      {p.itemType === 'extra' ? (
-                        <span className="ml-3">Unit: {p.unit || 'portion'} | Price: <Price amount={p.unitPrice || 0} isMinor={false} /></span>
+                      {p.productType === 'extra' ? (
+                        <span className="ml-3">Unit: {p.unit || 'portion'} | Price: {formatTablePrice(p.unitPrice || 0)}</span>
                       ) : (
-                        p.unitPrice !== undefined && <span className="ml-3">Price: <Price amount={p.unitPrice} isMinor={false} /></span>
+                        p.unitPrice !== undefined && <span className="ml-3">Price: {formatTablePrice(p.unitPrice)}</span>
                       )}
                     </div>
                   </div>
@@ -251,16 +330,16 @@ export default function InventoryTransferPage() {
             <div className="text-sm font-medium">Cart</div>
             <div className="mt-2 space-y-2">
               {cart.map((c) => (
-                <div key={`${c.itemType}_${c.id}`} className="flex items-center justify-between border rounded p-2">
+                <div key={`${c.productType}_${c.id}`} className="flex items-center justify-between border rounded p-2">
                   <div>
                     <div className="font-medium flex items-center gap-2">
                       {c.name}
-                      {c.itemType === 'extra' && <span className="text-xs bg-purple-100 text-purple-800 px-2 py-0.5 rounded">Extra</span>}
+                      {c.productType === 'extra' && <span className="text-xs bg-purple-100 text-purple-800 px-2 py-0.5 rounded">Extra</span>}
                     </div>
                   </div>
                   <div className="flex items-center gap-2">
-                    <input type="number" min={1} value={c.quantity} onChange={(e) => updateQty(c.id, c.itemType, Math.max(1, Number(e.target.value || 1)))} className="w-20 p-1 border rounded" />
-                    <button className="px-2 py-1 border rounded" onClick={() => removeItem(c.id, c.itemType)}>Remove</button>
+                    <input type="number" min={1} value={c.quantity} onChange={(e) => updateQty(c.id, c.productType, Math.max(1, Number(e.target.value || 1)))} className="w-20 p-1 border rounded" />
+                    <button className="px-2 py-1 border rounded" onClick={() => removeItem(c.id, c.productType)}>Remove</button>
                   </div>
                 </div>
               ))}

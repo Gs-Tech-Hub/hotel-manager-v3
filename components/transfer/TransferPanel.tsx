@@ -2,6 +2,7 @@
 
 import React, { useEffect, useState } from 'react'
 import { mapDeptCodeToCategory } from '@/lib/utils'
+import { formatTablePrice } from '@/lib/formatters'
 import Pagination from '@/components/ui/Pagination'
 import Cart from '@/components/transfer/Cart'
 
@@ -16,6 +17,7 @@ type MenuItem = {
   pricingModel?: 'per_count' | 'per_time'
   pricePerCount?: number
   pricePerMinute?: number
+  productType?: 'drink' | 'food' | 'inventoryItem' | 'extra'  // New field for actual product type
 }
 
 export default function TransferPanel({ sourceCode, onClose, initialTarget }: { sourceCode: string; onClose: () => void; initialTarget?: string | null }) {
@@ -30,102 +32,84 @@ export default function TransferPanel({ sourceCode, onClose, initialTarget }: { 
   const [sections, setSections] = useState<Array<{ id: string; code: string; name: string }>>([])
   const [departments, setDepartments] = useState<Array<{ id: string; code: string; name: string }>>([])
   const [targetDept, setTargetDept] = useState<string | null>(initialTarget ?? null)
-  const [sourceSectionId, setSourceSectionId] = useState<string | null>(null)
 
   useEffect(() => {
     if (initialTarget) setTargetDept(initialTarget)
   }, [initialTarget])
 
-  const [cart, setCart] = useState<{ id: string; name: string; type: 'item' | 'service'; quantity: number; inventoryType: 'item' | 'service' }[]>([])
+  const [cart, setCart] = useState<{ id: string; name: string; type: 'item' | 'service'; quantity: number; inventoryType: 'item' | 'service'; productType?: 'drink' | 'food' | 'inventoryItem' | 'extra' }[]>([])
 
-  useEffect(() => { fetchDepartmentsAndSections(); fetchProducts(1) }, [inventoryType, sourceSectionId])
+  useEffect(() => { 
+    fetchDepartmentsAndSections()
+    // Fetch products from the SOURCE DEPARTMENT to enable universal discovery
+    // Don't wait for section selection - show all items at department level
+    fetchProducts(1) 
+  }, [inventoryType, sourceCode, search])
 
   async function fetchDepartmentsAndSections() {
     try {
-      const [deptRes, availRes] = await Promise.all([
-        fetch('/api/departments'),
-        fetch(`/api/inventory/available-for-transfer?departmentId=${sourceCode}`)
-      ])
+      const deptRes = await fetch('/api/departments')
       const deptData = await deptRes.json()
-      const availData = availRes.ok ? await availRes.json() : { data: [] }
       
       // Map departments
       const list = deptData.data || deptData || []
       const depts = list.map((d: any) => ({ id: d.id, code: d.code, name: d.name }))
-      
-      // Get sections from the available inventory response
-      const sectionMap = new Map<string, { id: string; code: string; name: string }>()
-      if (availData?.data) {
-        availData.data.forEach((item: any) => {
-          if (item.section && !sectionMap.has(item.section.id)) {
-            sectionMap.set(item.section.id, {
-              id: item.section.id,
-              code: `${sourceCode}:${item.section.slug || item.section.id}`,
-              name: item.section.name
-            })
-          }
-        })
-      }
-      
-      setSections(Array.from(sectionMap.values()))
       setDepartments(depts)
-      
-      // Auto-select first section if available
-      if (sectionMap.size > 0 && !sourceSectionId) {
-        setSourceSectionId(Array.from(sectionMap.values())[0].id)
-      }
     } catch (e) {
-      console.error('failed to load departments/sections', e)
+      console.error('failed to load departments', e)
     }
   }
 
   async function fetchProducts(p = 1) {
-    if (!sourceCode || !sourceSectionId) return
+    if (!sourceCode) return
     setLoading(true)
     try {
-      // Fetch unified inventory for this section
-      const typeParam = inventoryType !== 'all' ? `type=${inventoryType}` : 'type=all'
-      const res = await fetch(`/api/inventory/by-section/${sourceSectionId}?${typeParam}`)
+      // Fetch all discoverable products from the SOURCE DEPARTMENT
+      // This includes drinks, food, inventory items, and extras that can be transferred
+      // We query the department level (not section) to see all available items for transfer
+      const typeParam = inventoryType === 'items' ? 'type=inventoryItem' : inventoryType === 'services' ? 'type=extra' : ''
+      const searchParam = search ? `&search=${encodeURIComponent(search)}` : ''
+      
+      // Use the products endpoint which now supports universal discovery
+      const res = await fetch(`/api/departments/${sourceCode}/products?${typeParam}${searchParam}&pageSize=100`)
       const j = await res.json()
       
       if (res.ok && j?.success) {
-        // Combine items and services into single list
+        // Map all discoverable items from the unified endpoint
+        // The items returned include: drinks, food, inventoryItems depending on type filter
         const items = (j.data?.items || []).map((it: any) => ({ 
           id: it.id, 
           name: it.name, 
-          available: it.available,
-          quantity: it.quantity,
-          reserved: it.reserved,
-          unitPrice: it.price,
-          type: 'item'
+          available: it.available ?? 0,
+          unitPrice: it.unitPrice,
+          type: 'item',
+          productType: determineProductType(sourceCode, it.type)  // Infer from result or context
         }))
         
-        const services = (j.data?.services || []).map((svc: any) => ({
-          id: svc.id,
-          name: svc.name,
-          available: true, // Services are always "available"
-          pricingModel: svc.pricingModel,
-          pricePerCount: svc.pricePerCount,
-          pricePerMinute: svc.pricePerMinute,
-          type: 'service'
-        }))
-        
-        const allProducts = [...items, ...services]
-        
-        // Apply search filter if needed
-        const filtered = search 
-          ? allProducts.filter(p => p.name.toLowerCase().includes(search.toLowerCase()))
-          : allProducts
-        
-        setProducts(filtered)
-        setTotal(filtered.length)
+        setProducts(items)
+        setTotal(items.length)
         setPage(p)
+      } else {
+        setProducts([])
+        setTotal(0)
       }
     } catch (e) {
       console.error('fetchProducts error', e)
+      setProducts([])
+      setTotal(0)
     } finally {
       setLoading(false)
     }
+  }
+
+  // Infer product type based on the response data
+  function determineProductType(deptCode: string, itemType?: string): 'drink' | 'food' | 'inventoryItem' {
+    // If API explicitly returns type, use it
+    if (itemType === 'drink') return 'drink'
+    if (itemType === 'food') return 'food'
+    if (itemType === 'inventoryItem') return 'inventoryItem'
+    // Default based on department
+    return 'inventoryItem'
   }
 
   function addToCart(item: MenuItem) {
@@ -137,12 +121,12 @@ export default function TransferPanel({ sourceCode, onClose, initialTarget }: { 
       if (item.type === 'service') {
         // Services: all-or-nothing, can only have qty 1
         if (found) return c // Already added
-        return [...c, { id: item.id, name: item.name, type: 'service', quantity: 1, inventoryType: 'service' }]
+        return [...c, { id: item.id, name: item.name, type: 'service', quantity: 1, inventoryType: 'service', productType: item.productType }]
       } else {
         // Items: quantity-aware
         const avail = typeof item.available === 'boolean' ? (item.available ? 1 : 0) : Number(item.available ?? 0)
         if (found) return c.map((x) => x.id === item.id ? { ...x, quantity: Math.min(avail, x.quantity + 1) } : x)
-        return [...c, { id: item.id, name: item.name, type: 'item', quantity: 1, inventoryType: 'item' }]
+        return [...c, { id: item.id, name: item.name, type: 'item', quantity: 1, inventoryType: 'item', productType: item.productType }]
       }
     })
   }
@@ -155,33 +139,30 @@ export default function TransferPanel({ sourceCode, onClose, initialTarget }: { 
 
   async function submit() {
     if (!targetDept) return alert('Choose a destination department or section')
-    if (cart.length === 0) return alert('Add items or services to transfer')
+    if (cart.length === 0) return alert('Add items to transfer')
+    
     try {
-      const items: any[] = []
-      const services: any[] = []
+      // Map cart items to the transfer API format
+      // The API expects: { type: 'drink' | 'food' | 'inventoryItem' | 'extra', id, quantity }
+      const items = cart.map((c) => ({
+        type: c.inventoryType === 'service' ? 'extra' : (c.productType || 'inventoryItem' as 'drink' | 'food' | 'inventoryItem' | 'extra'),
+        id: c.id,
+        quantity: c.quantity
+      }))
       
-      cart.forEach((c) => {
-        if (c.inventoryType === 'service') {
-          services.push({ id: c.id, quantity: 1 }) // Services: all-or-nothing
-        } else {
-          items.push({ id: c.id, quantity: c.quantity })
-        }
-      })
-      
-      const res = await fetch('/api/inventory/transfer-unified', {
+      // Use the standard department transfer endpoint
+      const res = await fetch(`/api/departments/${sourceCode}/transfer`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          fromSectionId: sourceSectionId,
-          toSectionId: targetDept,
-          items: items.length > 0 ? items : undefined,
-          services: services.length > 0 ? services : undefined
+          toDepartmentCode: targetDept,
+          items
         })
       })
       
       const j = await res.json()
       if (!res.ok || !j?.success) {
-        alert(j?.error?.message || 'Failed to create transfer')
+        alert(j?.error?.message || j?.data?.message || 'Failed to create transfer')
       } else {
         alert('Transfer created successfully')
         setCart([])
@@ -207,19 +188,6 @@ export default function TransferPanel({ sourceCode, onClose, initialTarget }: { 
 
         <div className="mt-4 space-y-4">
           <div className="flex items-center gap-3 flex-wrap">
-            {sections.length > 0 && (
-              <select 
-                className="p-2 border rounded" 
-                value={sourceSectionId ?? ''} 
-                onChange={(e) => setSourceSectionId(e.target.value || null)}
-              >
-                <option value="">Select source section...</option>
-                {sections.map((s) => (
-                  <option key={s.id} value={s.id}>{s.name}</option>
-                ))}
-              </select>
-            )}
-            
             <select className="p-2 border rounded" value={inventoryType} onChange={(e) => setInventoryType(e.target.value as any)}>
               <option value="all">All Items & Services</option>
               <option value="items">Items Only</option>
@@ -252,11 +220,12 @@ export default function TransferPanel({ sourceCode, onClose, initialTarget }: { 
                             <div className="text-xs text-muted-foreground">
                               Available: {typeof p.available === 'boolean' ? (p.available ? '1' : '0') : String(p.available ?? 0)} | 
                               Qty: {p.quantity ?? 0} | Reserved: {p.reserved ?? 0}
+                              {p.unitPrice !== undefined && <div>Price: {formatTablePrice(p.unitPrice)}</div>}
                             </div>
                           )}
                           {p.type === 'service' && (
                             <div className="text-xs text-muted-foreground">
-                              {p.pricingModel === 'per_count' ? `$${p.pricePerCount?.toFixed(2)} per count` : `$${p.pricePerMinute?.toFixed(2)} per min`}
+                              {p.pricingModel === 'per_count' ? `${formatTablePrice(Math.round((p.pricePerCount || 0) * 100))} per count` : `${formatTablePrice(Math.round((p.pricePerMinute || 0) * 100))} per min`}
                             </div>
                           )}
                         </div>
