@@ -640,6 +640,8 @@ export class PaymentService extends BaseService<IPayment> {
       sectionCode?: string;
       sectionName?: string;
       lineTotal: number;
+      discountAllocated: number;
+      finalAmount: number;
       paymentAllocated: number;
       paymentStatus: string;
     }[] = [];
@@ -664,8 +666,11 @@ export class PaymentService extends BaseService<IPayment> {
       st.lineTotal += lineTotal;
     }
 
-    // Calculate payment allocation per section (proportional)
-    let allocatedSoFar = 0;
+    // Calculate discount allocation per section (proportional to each section's line total)
+    // This ensures equal application of discounts across departments
+    const totalDiscount = order.discountTotal || 0;
+    let discountAllocatedSoFar = 0;
+    let paymentAllocatedSoFar = 0;
     let sectionIndex = 0;
     const sectionIds = Array.from(sectionTotals.keys());
 
@@ -673,21 +678,40 @@ export class PaymentService extends BaseService<IPayment> {
       const st = sectionTotals.get(sectionId)!;
       const isLastSection = sectionIndex === sectionIds.length - 1;
 
-      // Allocate proportionally, but ensure last section gets remainder to avoid rounding errors
-      let sectionAllocation = 0;
-      if (isLastSection) {
-        sectionAllocation = paymentAmount - allocatedSoFar;
+      // Calculate this section's proportion of discount (equal treatment)
+      let sectionDiscount = 0;
+      if (isLastSection && totalOrderLineAmount > 0) {
+        // Last section gets remainder to avoid rounding errors
+        sectionDiscount = totalDiscount - discountAllocatedSoFar;
       } else if (totalOrderLineAmount > 0) {
-        sectionAllocation = Math.round(
-          (st.lineTotal / totalOrderLineAmount) * paymentAmount
+        sectionDiscount = Math.round(
+          (st.lineTotal / totalOrderLineAmount) * totalDiscount
         );
       }
       
-      allocatedSoFar += sectionAllocation;
+      discountAllocatedSoFar += sectionDiscount;
 
-      // Determine payment status for this section
+      // Calculate final amount for this section (after discount applied)
+      const finalAmount = Math.max(0, st.lineTotal - sectionDiscount);
+
+      // Allocate payment proportionally to final (discounted) amounts
+      let sectionAllocation = 0;
+      const totalFinalAmount = order.total; // Order total after all discounts applied
+      
+      if (isLastSection) {
+        // Last section gets remainder to avoid rounding errors
+        sectionAllocation = paymentAmount - paymentAllocatedSoFar;
+      } else if (totalFinalAmount > 0) {
+        sectionAllocation = Math.round(
+          (finalAmount / totalFinalAmount) * paymentAmount
+        );
+      }
+      
+      paymentAllocatedSoFar += sectionAllocation;
+
+      // Determine payment status for this section (compare against final discounted amount)
       let paymentStatus = 'unpaid';
-      if (sectionAllocation >= st.lineTotal) {
+      if (sectionAllocation >= finalAmount) {
         paymentStatus = 'paid';
       } else if (sectionAllocation > 0) {
         paymentStatus = 'partial';
@@ -698,6 +722,8 @@ export class PaymentService extends BaseService<IPayment> {
         sectionCode: st.sectionCode,
         sectionName: st.sectionName,
         lineTotal: st.lineTotal,
+        discountAllocated: sectionDiscount,
+        finalAmount,
         paymentAllocated: sectionAllocation,
         paymentStatus,
       });

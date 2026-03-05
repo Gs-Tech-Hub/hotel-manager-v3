@@ -1,11 +1,13 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { extractUserContext } from '@/lib/user-context';
+import { extractUserContext, loadUserWithRoles, hasAnyRole } from '@/lib/user-context';
+import { checkPermission, type PermissionContext } from '@/lib/auth/rbac';
 import { prisma } from '@/lib/auth/prisma';
-import { errorResponse, successResponse } from '@/lib/api-response';
+import { errorResponse, successResponse, ErrorCodes, getStatusCode } from '@/lib/api-response';
 
 /**
  * GET /api/employees/[id]/charges
  * Get all charges/debts for an employee
+ * Requires: employees.read permission
  */
 export async function GET(
   req: NextRequest,
@@ -14,7 +16,33 @@ export async function GET(
   try {
     const ctx = await extractUserContext(req);
     if (!ctx.userId) {
-      return NextResponse.json(errorResponse('UNAUTHORIZED', 'User not authenticated'), { status: 401 });
+      return NextResponse.json(
+        errorResponse(ErrorCodes.UNAUTHORIZED, 'User not authenticated'),
+        { status: getStatusCode(ErrorCodes.UNAUTHORIZED) }
+      );
+    }
+
+    // Load user with roles
+    const userWithRoles = await loadUserWithRoles(ctx.userId);
+    if (!userWithRoles) {
+      return NextResponse.json(
+        errorResponse(ErrorCodes.FORBIDDEN, 'Insufficient permissions'),
+        { status: getStatusCode(ErrorCodes.FORBIDDEN) }
+      );
+    }
+
+    // Check permission to read employee data
+    const permCtx: PermissionContext = {
+      userId: ctx.userId,
+      userType: userWithRoles.isAdmin ? 'admin' : hasAnyRole(userWithRoles, ['admin', 'manager', 'staff']) ? 'employee' : 'other',
+    };
+
+    const canRead = await checkPermission(permCtx, 'employees.read', 'employees');
+    if (!canRead) {
+      return NextResponse.json(
+        errorResponse(ErrorCodes.FORBIDDEN, 'Insufficient permissions to view employee charges'),
+        { status: getStatusCode(ErrorCodes.FORBIDDEN) }
+      );
     }
 
     const { id } = await params;
@@ -29,8 +57,8 @@ export async function GET(
 
     if (!employment) {
       return NextResponse.json(
-        errorResponse('NOT_FOUND', 'Employment data not found'),
-        { status: 404 }
+        errorResponse(ErrorCodes.NOT_FOUND, 'Employment data not found'),
+        { status: getStatusCode(ErrorCodes.NOT_FOUND) }
       );
     }
 
@@ -65,8 +93,8 @@ export async function GET(
   } catch (error) {
     console.error('[API] Failed to get charges:', error);
     return NextResponse.json(
-      errorResponse('INTERNAL_ERROR', 'Failed to get charges'),
-      { status: 500 }
+      errorResponse(ErrorCodes.INTERNAL_ERROR, 'Failed to get charges'),
+      { status: getStatusCode(ErrorCodes.INTERNAL_ERROR) }
     );
   }
 }
@@ -74,6 +102,7 @@ export async function GET(
 /**
  * POST /api/employees/[id]/charges
  * Create a new charge/debt for an employee
+ * Requires: employees.charges:create permission
  */
 export async function POST(
   req: NextRequest,
@@ -82,7 +111,33 @@ export async function POST(
   try {
     const ctx = await extractUserContext(req);
     if (!ctx.userId) {
-      return NextResponse.json(errorResponse('UNAUTHORIZED', 'User not authenticated'), { status: 401 });
+      return NextResponse.json(
+        errorResponse(ErrorCodes.UNAUTHORIZED, 'User not authenticated'),
+        { status: getStatusCode(ErrorCodes.UNAUTHORIZED) }
+      );
+    }
+
+    // Load user with roles
+    const userWithRoles = await loadUserWithRoles(ctx.userId);
+    if (!userWithRoles) {
+      return NextResponse.json(
+        errorResponse(ErrorCodes.FORBIDDEN, 'Insufficient permissions'),
+        { status: getStatusCode(ErrorCodes.FORBIDDEN) }
+      );
+    }
+
+    // Check permission to create employee charges
+    const permCtx: PermissionContext = {
+      userId: ctx.userId,
+      userType: userWithRoles.isAdmin ? 'admin' : hasAnyRole(userWithRoles, ['admin', 'manager', 'staff']) ? 'employee' : 'other',
+    };
+
+    const canCreate = await checkPermission(permCtx, 'employees.charges:create', 'employees');
+    if (!canCreate) {
+      return NextResponse.json(
+        errorResponse(ErrorCodes.FORBIDDEN, 'Insufficient permissions to create employee charges'),
+        { status: getStatusCode(ErrorCodes.FORBIDDEN) }
+      );
     }
 
     const { id } = await params;
@@ -99,8 +154,8 @@ export async function POST(
     // Validate required fields
     if (!chargeType || !amount || !date) {
       return NextResponse.json(
-        errorResponse('BAD_REQUEST', 'Missing required fields: chargeType, amount, date'),
-        { status: 400 }
+        errorResponse(ErrorCodes.VALIDATION_ERROR, 'Missing required fields: chargeType, amount, date'),
+        { status: getStatusCode(ErrorCodes.VALIDATION_ERROR) }
       );
     }
 
@@ -111,8 +166,8 @@ export async function POST(
 
     if (!employment) {
       return NextResponse.json(
-        errorResponse('NOT_FOUND', 'Employment data not found'),
-        { status: 404 }
+        errorResponse(ErrorCodes.NOT_FOUND, 'Employment data not found'),
+        { status: getStatusCode(ErrorCodes.NOT_FOUND) }
       );
     }
 
@@ -154,14 +209,14 @@ export async function POST(
       },
     });
 
-    console.log(`[API] Created charge for employee: ${id}`, { chargeId: charge.id, employeeId: id });
+    console.log(`[API] Employee charge created: ${id} by ${ctx.userId}`, { chargeId: charge.id, amount: charge.amount, type: chargeType });
 
     return NextResponse.json(successResponse({ data: charge }), { status: 201 });
   } catch (error: any) {
     console.error('[API] Failed to create charge:', error);
     return NextResponse.json(
-      errorResponse('INTERNAL_ERROR', error.message || 'Failed to create charge'),
-      { status: 500 }
+      errorResponse(ErrorCodes.INTERNAL_ERROR, error.message || 'Failed to create charge'),
+      { status: getStatusCode(ErrorCodes.INTERNAL_ERROR) }
     );
   }
 }

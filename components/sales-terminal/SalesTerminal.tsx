@@ -358,23 +358,25 @@ export default function SalesTerminal() {
   }
 
   const handleAddToCart = (product: Product) => {
-    // CRITICAL: Validate stock before adding to cart
+    // CRITICAL: Validate stock before adding to cart - prevent adding items we don't have
     const availableQty = product.quantity ?? 0
     const currentInCart = cart.filter(item => item.productId === product.id).reduce((sum, item) => sum + item.quantity, 0)
     
     if (availableQty <= 0) {
-      // Product is out of stock
-      const errorMsg = `"${product.name}" is out of stock`
-      alert(errorMsg)
+      // Product is out of stock - cannot add
+      setCheckoutError(`"${product.name}" is out of stock and cannot be added`)
       return
     }
     
     // Check if adding one more would exceed available quantity
     if (currentInCart + 1 > availableQty) {
-      const errorMsg = `Only ${availableQty} of "${product.name}" available. Already have ${currentInCart} in cart.`
-      alert(errorMsg)
+      const errorMsg = `Only ${availableQty} of "${product.name}" available (already have ${currentInCart} in cart)`
+      setCheckoutError(errorMsg)
       return
     }
+    
+    // Clear error on successful add
+    setCheckoutError(null)
     
     setCart(prev => {
       const existing = prev.find(item => item.productId === product.id)
@@ -384,8 +386,6 @@ export default function SalesTerminal() {
         
         // Enforce inventory limit on quantity increase
         if (newQuantity > maxAllowed) {
-          const errorMsg = `Cannot add more than ${maxAllowed} of "${product.name}"`
-          alert(errorMsg)
           return prev
         }
         
@@ -420,6 +420,7 @@ export default function SalesTerminal() {
   const handleUpdateQuantity = (cartId: string, quantity: number) => {
     if (quantity <= 0) {
       setCart(prev => prev.filter(item => item.id !== cartId))
+      setCheckoutError(null)
       return
     }
     
@@ -432,9 +433,12 @@ export default function SalesTerminal() {
     const maxAllowed = product?.quantity ?? 0
     
     if (quantity > maxAllowed) {
-      alert(`Cannot exceed ${maxAllowed} available units of "${cartItem.productName}"`)
+      setCheckoutError(`Cannot exceed ${maxAllowed} available units of "${cartItem.productName}"`)
       return
     }
+    
+    // Clear error on successful update
+    setCheckoutError(null)
     
     setCart(prev =>
       prev.map(item =>
@@ -449,6 +453,64 @@ export default function SalesTerminal() {
     setCart(prev => prev.filter(item => item.id !== cartId))
   }
 
+  // Pre-checkout inventory validation: verify live stock in section before order creation
+  const validateCartInventory = async () => {
+    try {
+      console.log('[SalesTerminal] Validating live inventory for cart items')
+      
+      // Group items by department code (to call endpoint for each dept)
+      const itemsByDept = new Map<string, typeof cart>()
+      for (const item of cart) {
+        const key = item.departmentCode
+        if (!itemsByDept.has(key)) {
+          itemsByDept.set(key, [])
+        }
+        itemsByDept.get(key)!.push(item)
+      }
+      
+      // Check inventory for each department's section
+      for (const [deptCode, items] of itemsByDept) {
+        for (const item of items) {
+          try {
+            // Endpoint: GET /api/departments/[code]/section/inventory?productId=X&sectionId=Y
+            const url = new URL(`/api/departments/${deptCode}/section/inventory`, window.location.origin)
+            url.searchParams.set('productId', item.productId)
+            url.searchParams.set('sectionId', item.sectionId)
+            
+            const inventoryRes = await fetch(url.toString(), { credentials: 'include' })
+            
+            if (!inventoryRes.ok) {
+              console.warn(`[SalesTerminal] Could not verify inventory for ${item.productName} in dept ${deptCode}`)
+              continue // Continue if inventory check fails - backend will validate
+            }
+            
+            const inventoryData = await inventoryRes.json()
+            // Expected: { success: true, data: {..., quantity: 5 } }
+            const currentQty = inventoryData.data?.quantity ?? inventoryData.quantity ?? 0
+            
+            // Check if we have enough stock
+            if (currentQty < item.quantity) {
+              const msg = `Insufficient stock: "${item.productName}" has ${currentQty} available but you need ${item.quantity}`
+              setCheckoutError(msg)
+              console.error('[SalesTerminal] Inventory validation failed:', msg)
+              return false
+            }
+          } catch (err) {
+            console.warn(`[SalesTerminal] Failed to check inventory for ${item.productName}:`, err)
+            continue // Continue if this specific check fails
+          }
+        }
+      }
+      
+      console.log('[SalesTerminal] Inventory validation passed for all items')
+      return true
+    } catch (err) {
+      console.warn('[SalesTerminal] Inventory pre-validation failed (non-blocking):', err)
+      // Don't block checkout if validation request fails - let backend validate
+      return true
+    }
+  }
+
   const handleCheckout = async () => {
     if (cart.length === 0) {
       setCheckoutError('Cart is empty')
@@ -459,18 +521,24 @@ export default function SalesTerminal() {
     setCheckoutError(null)
 
     try {
-      const items = cart.map(item => ({
-        productId: item.productId,
-        productType: 'inventory',
-        productName: item.productName,
-        departmentCode: item.departmentCode,
-        departmentSectionId: item.sectionId,
-        quantity: item.quantity,
-        unitPrice: normalizeToCents(item.basePrice),
-      }))
-
+      // Pre-checkout: validate live inventory before proceeding
+      const inventoryValid = await validateCartInventory()
+      if (!inventoryValid) {
+        setIsCheckingOut(false)
+        return
+      }
       // If adding to existing order, add items one by one
       if (addToOrderId) {
+        const items = cart.map(item => ({
+          productId: item.productId,
+          productType: 'inventory',
+          productName: item.productName,
+          departmentCode: item.departmentCode,
+          departmentSectionId: item.sectionId,
+          quantity: item.quantity,
+          unitPrice: normalizeToCents(item.basePrice),
+        }))
+
         console.log('[SalesTerminal] Adding items to existing order:', addToOrderId)
         
         for (const item of items) {
@@ -512,45 +580,18 @@ export default function SalesTerminal() {
           return
         }
       } else {
-        // Create new order - don't process payment yet, show payment UI
-        const payload = {
-          items,
-          discounts: appliedDiscountIds,
-          notes: `Sales Terminal Order (${selectedTerminal?.name || 'Terminal'})`,
-        }
-
-        console.log('[SalesTerminal] Creating order with payload:', payload)
-
-        const res = await fetch('/api/orders', {
-          method: 'POST',
-          credentials: 'include',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify(payload),
-        })
-
-        const json = await res.json()
-
-        if (!res.ok || !json?.success) {
-          const msg = json?.error?.message || `Order failed (${res.status})`
-          console.error('[SalesTerminal] Order creation failed:', msg)
-          setCheckoutError(`Order creation failed: ${msg}`)
-          return
-        }
-
-        console.log('[SalesTerminal] Order created successfully:', json.data.id)
-        
-        // Check if any applied discounts are employee discounts
+        // NEW ORDER FLOW: Check if any applied discounts are employee discounts
         const hasEmployeeDiscount = validatedDiscounts.some(d => d.type === 'employee')
         
-        if (hasEmployeeDiscount) {
-          // Show employee targeting modal for employee discount flow
-          setReceipt(json.data)
+        if (hasEmployeeDiscount && !selectedEmployee?.id) {
+          // Show employee targeting modal to select employee for charge
           setShowEmployeeTargeting(true)
-        } else {
-          // Show payment UI for regular orders
-          setReceipt(json.data)
+          // Don't proceed to payment - return to checkout to allow adding items
+        } else if (!hasEmployeeDiscount) {
+          // Only go to payment if no employee discount required
           setShowPayment(true)
         }
+        // If employee discount AND employee IS selected: stay in checkout to allow adding items
       }
     } catch (e: any) {
       console.error('[SalesTerminal] Checkout error:', e)
@@ -561,51 +602,140 @@ export default function SalesTerminal() {
   }
 
   const handlePaymentComplete = async (payment: any) => {
-    if (!receipt) return
-
     setIsProcessingPayment(true)
     try {
       const amountCents = payment.isMinor ? payment.amount : normalizeToCents(payment.amount)
 
-      const res = await fetch('/api/orders/settle', {
+      // Step 1: Create order with items and discounts
+      const items = cart.map(item => ({
+        productId: item.productId,
+        productType: 'inventory',
+        productName: item.productName,
+        departmentCode: item.departmentCode,
+        departmentSectionId: item.sectionId,
+        quantity: item.quantity,
+        unitPrice: normalizeToCents(item.basePrice),
+      }))
+
+      const payload = {
+        items,
+        discounts: appliedDiscountIds,
+        notes: `Sales Terminal Order (${selectedTerminal?.name || 'Terminal'})`,
+      }
+
+      console.log('[SalesTerminal] Creating order with payload:', payload)
+
+      const createRes = await fetch('/api/orders', {
+        method: 'POST',
+        credentials: 'include',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(payload),
+      })
+
+      const createJson = await createRes.json()
+
+      if (!createRes.ok || !createJson?.success) {
+        const msg = createJson?.error?.message || `Order creation failed (${createRes.status})`
+        console.error('[SalesTerminal] Order creation failed:', msg)
+        throw new Error(msg)
+      }
+
+      const orderId = createJson.data.id
+      console.log('[SalesTerminal] Order created successfully:', orderId)
+
+      // Step 2: Process payment for the created order
+      const settleRes = await fetch('/api/orders/settle', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          orderId: receipt.id,
+          orderId,
           paymentMethod: payment.method,
           amount: amountCents,
         }),
         credentials: 'include',
       })
 
-      if (!res.ok) {
-        const json = await res.json()
-        throw new Error(json.error?.message || 'Payment failed')
+      if (!settleRes.ok) {
+        const json = await settleRes.json()
+        throw new Error(json.error?.message || 'Payment settlement failed')
       }
 
-      const json = await res.json()
+      const settleJson = await settleRes.json()
+      const paymentDetails = settleJson.data || {}
+      console.log('[SalesTerminal] Payment settled with allocations:', paymentDetails.sectionAllocations)
 
-      // Store payment details including section allocations
-      const paymentDetails = json.data || {}
-      console.log('[SalesTerminal] Payment completed with allocations:', paymentDetails.sectionAllocations)
+      // Step 2.5: Create employee charge if employee was selected
+      if (selectedEmployee?.id) {
+        try {
+          const chargeAmountDollars = estimatedTotal / 100 // Convert cents to dollars
+          console.log('[SalesTerminal] Creating employee charge for order:', orderId, 'employee:', selectedEmployee.id, 'amount:', chargeAmountDollars)
+          
+          const chargeRes = await fetch(`/api/employees/${selectedEmployee.id}/charges`, {
+            method: 'POST',
+            credentials: 'include',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              chargeType: 'order_discount',
+              amount: chargeAmountDollars,
+              description: `Sales Terminal Order ${orderId} - Employee Discount Charge`,
+              reason: 'Employee discount auto-charge from Sales Terminal',
+              date: new Date().toISOString(),
+            }),
+          })
+          
+          const chargeJson = await chargeRes.json()
+          
+          if (!chargeRes.ok || !chargeJson?.success) {
+            console.warn('[SalesTerminal] Failed to create employee charge (non-blocking):', chargeJson?.error?.message)
+            // Don't fail order if charge creation fails - charge is secondary to order
+          } else {
+            console.log('[SalesTerminal] Employee charge created:', chargeJson.data?.id)
+          }
+        } catch (chargeErr) {
+          console.warn('[SalesTerminal] Exception creating employee charge (non-blocking):', chargeErr)
+          // Don't throw - employee charge failure should not block order completion
+        }
+      }
 
-      // Clear state and show receipt with payment details
+      // Step 3: Fetch complete order with all details for receipt
+      let finalReceipt = createJson.data
+      try {
+        const fetchRes = await fetch(`/api/orders/${orderId}`, {
+          credentials: 'include',
+        })
+        if (fetchRes.ok) {
+          const fetchData = await fetchRes.json()
+          if (fetchData.success && fetchData.data) {
+            finalReceipt = {
+              ...fetchData.data,
+              ...paymentDetails,
+              paymentMethod: payment.method,
+              sectionAllocations: paymentDetails.sectionAllocations,
+            }
+          }
+        }
+      } catch (fetchErr) {
+        console.warn('[SalesTerminal] Failed to refetch order, using settlement response:', fetchErr)
+        finalReceipt = {
+          ...createJson.data,
+          ...paymentDetails,
+          paymentMethod: payment.method,
+          sectionAllocations: paymentDetails.sectionAllocations,
+        }
+      }
+
+      // Clear state and show receipt
       setShowPayment(false)
       setShowEmployeeTargeting(false)
-      setSelectedEmployee(null)
+      setSelectedEmployee(null) // Reset after charge is created
       setCart([])
       setAppliedDiscountIds([])
       setValidatedDiscounts([])
       setSelectedSections(new Set())
-      setReceipt({
-        ...receipt,
-        ...paymentDetails,
-        paymentMethod: payment.method,
-        sectionAllocations: paymentDetails.sectionAllocations,
-      })
+      setReceipt(finalReceipt)
       setView('receipt')
       
-      // Auto-reset after 5 seconds (increased to allow reading section breakdown)
+      // Auto-reset after 5 seconds
       setTimeout(() => {
         setView('terminal-select')
         setSelectedTerminal(null)
@@ -825,6 +955,10 @@ export default function SalesTerminal() {
 
   // Terminal view
   if (view === 'receipt' && receipt) {
+    const paymentStatusColor = receipt.paymentStatus === 'paid' ? 'text-green-600 bg-green-50' :
+                                receipt.paymentStatus === 'partial' ? 'text-yellow-600 bg-yellow-50' :
+                                'text-gray-600 bg-gray-50';
+    
     return (
       <div className="min-h-screen bg-gray-50 flex items-center justify-center p-6">
         <div className="max-w-2xl w-full bg-white rounded-lg shadow-lg p-8">
@@ -834,17 +968,52 @@ export default function SalesTerminal() {
           </div>
 
           <div className="space-y-4 mb-6">
+            {/* Primary Info Grid */}
             <div className="grid grid-cols-2 gap-4 p-4 bg-gray-50 rounded">
               <div>
-                <div className="text-sm text-gray-600">Total Amount</div>
-                <div className="text-2xl font-bold">{formatTablePrice(receipt.total || 0)}</div>
+                <div className="text-sm text-gray-600">Subtotal</div>
+                <div className="text-lg font-bold">{formatTablePrice(receipt.subtotal || 0)}</div>
               </div>
               <div>
-                <div className="text-sm text-gray-600">Status</div>
-                <div className="text-xl font-semibold text-green-600">{receipt.paymentStatus || 'Pending'}</div>
+                <div className="text-sm text-gray-600">Payment Status</div>
+                <div className={`text-lg font-semibold ${paymentStatusColor} px-2 py-1 rounded`}>
+                  {receipt.paymentStatus ? receipt.paymentStatus.toUpperCase() : 'PENDING'}
+                </div>
               </div>
             </div>
 
+            {/* Discount and Tax Summary */}
+            {(receipt.discountTotal || receipt.tax) && (
+              <div className="p-4 bg-blue-50 border border-blue-200 rounded">
+                <h3 className="font-semibold mb-3 text-blue-900">Pricing Summary</h3>
+                <div className="space-y-2 text-sm">
+                  {receipt.discountTotal > 0 && (
+                    <>
+                      <div className="flex justify-between">
+                        <span>Subtotal:</span>
+                        <span className="font-medium">{formatTablePrice(receipt.subtotal || 0)}</span>
+                      </div>
+                      <div className="flex justify-between text-green-700 font-medium">
+                        <span>Discount Applied:</span>
+                        <span>-{formatTablePrice(receipt.discountTotal)}</span>
+                      </div>
+                    </>
+                  )}
+                  {receipt.tax > 0 && (
+                    <div className="flex justify-between">
+                      <span>Tax:</span>
+                      <span>{formatTablePrice(receipt.tax)}</span>
+                    </div>
+                  )}
+                  <div className="flex justify-between font-bold text-lg border-t pt-2 text-blue-600">
+                    <span>Total Amount:</span>
+                    <span>{formatTablePrice(receipt.total || 0)}</span>
+                  </div>
+                </div>
+              </div>
+            )}
+
+            {/* Items */}
             <div className="p-4 bg-blue-50 border border-blue-200 rounded">
               <h3 className="font-semibold mb-3">Items</h3>
               <div className="space-y-2">
@@ -866,7 +1035,10 @@ export default function SalesTerminal() {
                     <div key={i} className="flex items-center justify-between p-3 bg-white rounded border border-indigo-100">
                       <div className="flex-1">
                         <div className="font-medium text-sm">{allocation.sectionName || allocation.sectionCode || 'Section'}</div>
-                        <div className="text-xs text-gray-600">Order Total: {formatTablePrice(allocation.lineTotal)}</div>
+                        <div className="text-xs text-gray-600">
+                          Order: {formatTablePrice(allocation.lineTotal)}
+                          {allocation.discountAllocated > 0 && ` → After discount: ${formatTablePrice(allocation.finalAmount)}`}
+                        </div>
                       </div>
                       <div className="text-right">
                         <div className="font-semibold text-indigo-600">{formatTablePrice(allocation.paymentAllocated)}</div>
@@ -882,6 +1054,16 @@ export default function SalesTerminal() {
                       </div>
                     </div>
                   ))}
+                </div>
+              </div>
+            )}
+
+            {/* Payment Method Details */}
+            {receipt.paymentMethod && (
+              <div className="p-4 bg-purple-50 border border-purple-200 rounded">
+                <div className="text-sm">
+                  <span className="text-gray-600">Payment Method:</span>
+                  <span className="font-medium ml-2">{receipt.paymentMethod.toUpperCase()}</span>
                 </div>
               </div>
             )}
@@ -1063,6 +1245,14 @@ export default function SalesTerminal() {
               <span>Total:</span>
               <span className="text-blue-600">{formatTablePrice(estimatedTotal)}</span>
             </div>
+
+            {/* Employee Selected for Charge Status */}
+            {selectedEmployee?.id && (
+              <div className="mt-2 p-2 bg-orange-50 border border-orange-200 rounded text-sm text-orange-700">
+                <span className="font-medium">💳 Employee Charge Selected</span>
+                <p className="text-xs mt-1">Amount will be charged to employee account during payment</p>
+              </div>
+            )}
           </div>
 
           {/* Discount Dropdown */}
@@ -1075,11 +1265,14 @@ export default function SalesTerminal() {
                 subtotal={subtotal}
                 appliedDiscounts={appliedDiscountIds}
                 onAddDiscount={(id, discount) => {
-                  console.log(`[SalesTerminal] Adding discount ID: ${id}`)
+                  console.log(`[SalesTerminal] Adding discount ID: ${id}`, discount)
                   setAppliedDiscountIds((s) => [...s, id])
                   if (discount) {
                     setDiscountMap((map) => new Map(map).set(id, discount))
                   }
+                  // Show employee targeting immediately when ANY discount is applied
+                  console.log(`[SalesTerminal] Discount applied, showing employee targeting for charge option`)
+                  setShowEmployeeTargeting(true)
                 }}
                 onRemoveDiscount={(id) => {
                   console.log(`[SalesTerminal] Removing discount ID: ${id}`)
@@ -1097,22 +1290,40 @@ export default function SalesTerminal() {
           )}
 
           {/* Checkout Button or Payment UI */}
-          {showPayment && receipt ? (
+          {showPayment ? (
             <div className="mt-4">
               <POSPayment
-                total={receipt.total || estimatedTotal}
+                total={estimatedTotal}
                 onComplete={handlePaymentComplete}
                 onCancel={() => setShowPayment(false)}
               />
             </div>
           ) : (
-            <button
-              onClick={handleCheckout}
-              disabled={cart.length === 0 || isCheckingOut || isProcessingPayment}
-              className="w-full mt-4 px-4 py-3 bg-green-600 text-white rounded-lg font-bold hover:bg-green-700 disabled:bg-gray-400 disabled:cursor-not-allowed text-lg"
-            >
-              {isCheckingOut ? 'Processing...' : addToOrderId ? 'Add Items' : 'Checkout'}
-            </button>
+            <div className="mt-4 space-y-2">
+              {/* Show Proceed to Payment button if employee is selected for charge */}
+              {selectedEmployee?.id ? (
+                <>
+                  <button
+                    onClick={() => setShowPayment(true)}
+                    disabled={isCheckingOut || isProcessingPayment}
+                    className="w-full px-4 py-3 bg-blue-600 text-white rounded-lg font-bold hover:bg-blue-700 disabled:bg-gray-400 disabled:cursor-not-allowed text-lg"
+                  >
+                    {isProcessingPayment ? 'Processing Payment...' : 'Proceed to Payment'}
+                  </button>
+                  <p className="text-xs text-gray-600 text-center py-2">
+                    You can still add items. Click Checkout again or proceed to payment.
+                  </p>
+                </>
+              ) : (
+                <button
+                  onClick={handleCheckout}
+                  disabled={cart.length === 0 || isCheckingOut || isProcessingPayment}
+                  className="w-full px-4 py-3 bg-green-600 text-white rounded-lg font-bold hover:bg-green-700 disabled:bg-gray-400 disabled:cursor-not-allowed text-lg"
+                >
+                  {isCheckingOut ? 'Processing...' : addToOrderId ? 'Add Items' : 'Checkout'}
+                </button>
+              )}
+            </div>
           )}
         </div>
       </div>
@@ -1122,7 +1333,7 @@ export default function SalesTerminal() {
         <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
           <div className="bg-white rounded-lg shadow-lg max-w-md w-full max-h-[90vh] overflow-y-auto">
             <EmployeeTargeting
-              orderTotal={receipt ? receipt.total / 100 : estimatedTotal / 100}
+              orderTotal={estimatedTotal / 100}
               onEmployeeSelected={(emp) => {
                 console.log('[SalesTerminal] Employee selected:', emp)
                 setSelectedEmployee(emp)
@@ -1134,81 +1345,18 @@ export default function SalesTerminal() {
               }}
               onChargeToEmployee={async (employeeId, chargeAmountDollars) => {
                 try {
-                  setIsChargingEmployee(true)
+                  console.log('[SalesTerminal] Employee selected for charge:', employeeId, 'amount:', chargeAmountDollars)
                   
-                  const chargeAmount = receipt?.total || estimatedTotal
-                  console.log('[SalesTerminal] EMPLOYEE CHARGE FLOW: Creating charge for employee:', employeeId, 'amount cents:', chargeAmount, 'dollars:', chargeAmountDollars)
-                  
-                  // Step 1: Create employee charge
-                  const chargeRes = await fetch(`/api/employees/${employeeId}/charges`, {
-                    method: 'POST',
-                    credentials: 'include',
-                    headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({
-                      chargeType: 'order_discount',
-                      amount: chargeAmountDollars,
-                      description: `Order ${receipt?.id} - Employee Discount Charge`,
-                      reason: 'Employee discount auto-charge from Sales Terminal',
-                      date: new Date().toISOString(),
-                    }),
-                  })
-                  
-                  const chargeJson = await chargeRes.json()
-                  console.log('[SalesTerminal] Charge response:', { status: chargeRes.status, body: chargeJson })
-                  
-                  if (!chargeRes.ok || !chargeJson?.success) {
-                    throw new Error((chargeJson?.error?.message) || 'Failed to charge employee')
-                  }
-                  
-                  const chargeData = chargeJson.data
-                  if (!chargeData) {
-                    console.error('[SalesTerminal] chargeData is null:', chargeJson)
-                    throw new Error('Invalid charge response structure - missing data')
-                  }
-                  
-                  console.log('[SalesTerminal] Employee charge created:', chargeData.id)
-                  
-                  // Step 2: Settle the order payment as charged
-                  const settleRes = await fetch('/api/orders/settle', {
-                    method: 'POST',
-                    credentials: 'include',
-                    headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({
-                      orderId: receipt?.id,
-                      paymentMethod: 'employee',
-                      employeeId: employeeId,
-                      amount: chargeAmount,
-                      isDeferred: false,
-                    }),
-                  })
-                  
-                  const settleJson = await settleRes.json()
-                  console.log('[SalesTerminal] Order settle response:', { status: settleRes.status, body: settleJson })
-                  
-                  if (!settleRes.ok || !settleJson?.success) {
-                    // If settle fails, we should try to reverse the charge
-                    console.error('[SalesTerminal] Order settle failed, may need to reverse charge')
-                    throw new Error((settleJson?.error?.message) || 'Failed to settle order')
-                  }
-                  
-                  // Success! Handle payment complete
-                  await handlePaymentComplete({
-                    method: 'employee',
-                    isDeferred: false,
-                    employeeId: employeeId,
-                  })
+                  // Just persist the employee selection - actual charge creation happens during payment
+                  setSelectedEmployee({ id: employeeId })
+                  setShowEmployeeTargeting(false)
+                  setCheckoutError(null)
+                  console.log('[SalesTerminal] Employee selected, closing modal and returning to cart')
                 } catch (err: any) {
                   const msg = err?.message || 'Unknown error'
-                  console.error('[SalesTerminal] Employee charge failed:', err)
-                  setCheckoutError(`Employee charge failed: ${msg}`)
-                } finally {
-                  setIsChargingEmployee(false)
+                  console.error('[SalesTerminal] Error selecting employee:', err)
+                  setCheckoutError(`Error: ${msg}`)
                 }
-              }}
-              onProceedToPayment={async () => {
-                console.log('[SalesTerminal] Employee targeting completed, proceeding to payment')
-                setShowEmployeeTargeting(false)
-                setShowPayment(true)
               }}
             />
           </div>

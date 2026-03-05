@@ -92,12 +92,29 @@ export class OrderService extends BaseService<IOrderHeader> {
         subtotal += item.quantity * normalizedUnit;
         departments.add(item.departmentCode);
 
-        // Check inventory availability using StockService (unified source of truth)
+        // Check inventory availability against section stocks (not global inventory)
         const deptId = deptMap[item.departmentCode];
-        if (deptId && ['RESTAURANT', 'BAR_CLUB', 'food', 'drink'].some(t => 
+        if (deptId && item.departmentSectionId) {
+          // Check section-specific inventory
+          const sectionInv = await prisma.departmentInventory.findFirst({
+            where: {
+              departmentId: deptId,
+              sectionId: item.departmentSectionId,
+              inventoryItemId: item.productId
+            }
+          });
+          
+          const sectionQty = sectionInv?.quantity || 0;
+          if (sectionQty < item.quantity) {
+            return errorResponse(
+              ErrorCodes.VALIDATION_ERROR,
+              `Insufficient stock for ${item.productName}: have ${sectionQty}, need ${item.quantity}`
+            );
+          }
+        } else if (deptId && ['RESTAURANT', 'BAR_CLUB', 'food', 'drink'].some(t => 
           item.departmentCode.toUpperCase().includes(t.toUpperCase()) || 
           item.productType === t)) {
-          
+          // Fallback: check global inventory if section not specified
           const availability = await stockService.checkAvailability(
             item.productType || 'inventoryItem',
             item.productId,

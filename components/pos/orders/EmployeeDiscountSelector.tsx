@@ -125,11 +125,6 @@ export function EmployeeTargeting({
     onProceedToPayment?.();
   };
 
-  const handleSkipAndProceed = () => {
-    // Skip employee, go straight to payment
-    onProceedToPayment?.();
-  };
-
   // Show the charge mode selection if employee is selected
   if (chargeMode) {
     return (
@@ -217,7 +212,7 @@ export function EmployeeTargeting({
       {/* Header */}
       <div className="flex items-center gap-2">
         <User className="h-5 w-5 text-blue-600" />
-        <h3 className="font-semibold text-lg">Select Employee (Optional)</h3>
+        <h3 className="font-semibold text-lg">Select Employee to Charge</h3>
       </div>
 
       {/* Order Summary */}
@@ -239,13 +234,13 @@ export function EmployeeTargeting({
       {/* Info Message */}
       <div className="bg-blue-50 border border-blue-200 rounded-lg p-4">
         <p className="text-sm text-blue-700">
-          <strong>Optional:</strong> Select an employee to target this order. You can apply any available discount and choose to charge their account or proceed to normal payment.
+          <strong>Discount Applied:</strong> Select an employee from your team to charge this discount to their account, or cancel to return to the cart.
         </p>
       </div>
 
       {/* Employee Selection */}
       <div className="space-y-2">
-        <label className="block text-sm font-medium">Select Employee</label>
+        <label className="block text-sm font-medium">Choose Employee</label>
 
         {loading ? (
           <div className="flex items-center justify-center py-8">
@@ -258,7 +253,7 @@ export function EmployeeTargeting({
         ) : (
           <Select value={selectedEmployee} onValueChange={setSelectedEmployee}>
             <SelectTrigger className="w-full">
-              <SelectValue placeholder="Choose an employee or skip..." />
+              <SelectValue placeholder="Select an employee..." />
             </SelectTrigger>
             <SelectContent>
               {employees.map((emp) => (
@@ -317,20 +312,12 @@ export function EmployeeTargeting({
             </button>
           </>
         ) : (
-          <>
-            <button
-              onClick={handleSkipAndProceed}
-              className="flex-1 p-2 bg-green-600 hover:bg-green-700 text-white rounded font-medium transition-colors"
-            >
-              Skip & Proceed to Payment
-            </button>
-            <button
-              onClick={onCancel}
-              className="flex-1 p-2 border border-gray-300 rounded hover:bg-gray-50 transition-colors"
-            >
-              Cancel
-            </button>
-          </>
+          <button
+            onClick={onCancel}
+            className="w-full p-2 border border-gray-300 rounded hover:bg-gray-50 transition-colors"
+          >
+            Cancel
+          </button>
         )}
       </div>
     </div>

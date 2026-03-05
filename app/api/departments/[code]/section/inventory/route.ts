@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server'
+import { prisma } from '@/lib/auth/prisma'
 import { sectionInventoryService } from '@/services/section-inventory.service'
 import { successResponse, errorResponse, ErrorCodes, getStatusCode } from '@/lib/api-response'
 
@@ -50,6 +51,46 @@ export async function GET(
       return NextResponse.json(successResponse({ data: result.data, message: 'Section stock summary retrieved' }))
     }
 
+    // Check for single product lookup: GET /api/departments/[code]/section/inventory?productId=X&sectionId=Y
+    const productId = searchParams.get('productId')
+    const sectionId = searchParams.get('sectionId')
+    
+    if (productId && sectionId) {
+      // Single product quantity check for a section
+      // Get the department from the code
+      const dept = await prisma.department.findUnique({
+        where: { code: sectionCode }
+      })
+      
+      if (!dept) {
+        return NextResponse.json(
+          errorResponse(ErrorCodes.NOT_FOUND, 'Department not found'),
+          { status: getStatusCode(ErrorCodes.NOT_FOUND) }
+        )
+      }
+      
+      const inv = await prisma.departmentInventory.findFirst({
+        where: {
+          departmentId: dept.id,
+          sectionId: sectionId,
+          inventoryItemId: productId
+        }
+      })
+      
+      const quantity = inv?.quantity || 0
+      return NextResponse.json(
+        successResponse({ 
+          data: { 
+            productId, 
+            sectionId, 
+            quantity,
+            available: quantity
+          }, 
+          message: 'Product inventory retrieved' 
+        })
+      )
+    }
+
     // Default: get full inventory
     const result = await sectionInventoryService.getSectionInventory(sectionCode)
 
@@ -59,6 +100,8 @@ export async function GET(
         { status: getStatusCode(ErrorCodes.NOT_FOUND) }
       )
     }
+
+    return NextResponse.json(successResponse({ data: result.data, message: 'Section inventory retrieved' }))
   } catch (error) {
     console.error('GET /api/departments/[code]/section/inventory error:', error)
     return NextResponse.json(

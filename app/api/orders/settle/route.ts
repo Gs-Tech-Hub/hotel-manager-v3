@@ -7,6 +7,7 @@
 
 import { NextRequest, NextResponse } from 'next/server';
 import { extractUserContext, loadUserWithRoles, hasAnyRole } from '@/lib/user-context';
+import { checkPermission, type PermissionContext } from '@/lib/auth/rbac';
 import { successResponse, errorResponse, ErrorCodes, getStatusCode } from '@/lib/api-response';
 import { prisma } from '@/lib/auth/prisma';
 import { paymentService } from '@/services/payment.service';
@@ -44,13 +45,22 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    // Check permission to process payments
-    const hasPaymentPermission = hasAnyRole(userWithRoles, ['admin', 'manager', 'cashier']);
-    if (!hasPaymentPermission) {
-      return NextResponse.json(
-        errorResponse(ErrorCodes.FORBIDDEN, 'Insufficient permissions to settle payments'),
-        { status: getStatusCode(ErrorCodes.FORBIDDEN) }
-      );
+    // Check permission to process payments via RBAC
+    const permCtx: PermissionContext = {
+      userId: ctx.userId,
+      userType: userWithRoles.isAdmin ? 'admin' : hasAnyRole(userWithRoles, ['admin', 'manager', 'staff']) ? 'employee' : 'other',
+    };
+
+    const canSettle = await checkPermission(permCtx, 'orders.settle', 'orders');
+    if (!canSettle) {
+      // Fallback to legacy role check for backward compatibility
+      const hasPaymentPermission = hasAnyRole(userWithRoles, ['admin', 'manager', 'cashier', 'staff']);
+      if (!hasPaymentPermission) {
+        return NextResponse.json(
+          errorResponse(ErrorCodes.FORBIDDEN, 'Insufficient permissions to settle payments'),
+          { status: getStatusCode(ErrorCodes.FORBIDDEN) }
+        );
+      }
     }
 
     // Parse request body
