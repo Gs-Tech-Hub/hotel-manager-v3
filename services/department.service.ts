@@ -315,9 +315,7 @@ export class DepartmentService extends BaseService<IDepartment> {
         include: {
           payments: true,
           extras: true,
-          lines: {
-            where: sectionId ? { departmentSectionId: sectionId } : undefined
-          }
+          lines: true  // Get ALL lines (not filtered) to calculate section proportion
         }
       });
 
@@ -355,48 +353,69 @@ export class DepartmentService extends BaseService<IDepartment> {
       let aggregatedTotalAmount = 0;
 
       for (const order of orders) {
-        const totalPaid = order.payments.reduce((sum: number, p: any) => sum + p.amount, 0);
-        const isPaid = totalPaid >= order.total;
-        const isUnpaid = totalPaid === 0;
-        const isPartial = !isPaid && !isUnpaid; // 0 < paid < total
-        const sectionLines = order.lines || [];
-        const totalUnits = sectionLines.reduce((sum: number, line: any) => sum + line.quantity, 0);
-        const fulfilledUnits = sectionLines.filter((line: any) => line.status === 'fulfilled')
-          .reduce((sum: number, line: any) => sum + line.quantity, 0);
+        // Calculate section's proportion based on line items (if filtering by sectionId)
+        const allLines = order.lines || [];
+        const sectionLines = sectionId 
+          ? (order.lines || []).filter((line: any) => line.departmentSectionId === sectionId)
+          : allLines;
         
-        const extrasTotal = order.extras?.reduce((sum: number, e: any) => sum + (e.lineTotal || 0), 0) || 0;
+        // If filtering by section and no lines, skip
+        if (sectionId && sectionLines.length === 0) continue;
+        
+        // Calculate line totals
+        const allLineTotal = allLines.reduce((sum: number, line: any) => sum + ((line.unitPrice || 0) * (line.quantity || 0)), 0);
+        const sectionLineTotal = sectionLines.reduce((sum: number, line: any) => sum + ((line.unitPrice || 0) * (line.quantity || 0)), 0);
+        
+        // If no lines in section (shouldn't happen after continue check, but be safe)
+        if (sectionLineTotal === 0) continue;
+        
+        // OPTION B: Calculate section's proportion and allocate payment by proportion
+        const sectionProportion = allLineTotal > 0 ? sectionLineTotal / allLineTotal : 1;
+        
+        // Total paid for this order
+        const totalPaid = order.payments.reduce((sum: number, p: any) => sum + (p.amount || 0), 0);
+        
+        // Section's payment share = proportion × total paid (NO TAX included)
+        const sectionPaidAmount = Math.round(sectionProportion * totalPaid);
+        
+        // Section's line subtotal (for fulfillment/unit tracking)
+        const sectionOwedAmount = Math.max(0, sectionLineTotal - sectionPaidAmount);
+        
+        const isPaid = sectionPaidAmount >= sectionLineTotal;
+        const isUnpaid = sectionPaidAmount === 0;
+        const isPartial = !isPaid && !isUnpaid;
+        
+        const totalUnits = sectionLines.reduce((sum: number, line: any) => sum + (line.quantity || 0), 0);
+        const fulfilledUnits = sectionLines.filter((line: any) => line.status === 'fulfilled')
+          .reduce((sum: number, line: any) => sum + (line.quantity || 0), 0);
 
-        // Calculate cash and card amounts from payment method
-        const cashPayments = order.payments.filter((p: any) => p.paymentMethod === 'cash').reduce((sum: number, p: any) => sum + p.amount, 0);
-        const cardPayments = order.payments.filter((p: any) => p.paymentMethod === 'card').reduce((sum: number, p: any) => sum + p.amount, 0);
+        // Calculate cash and card amounts
+        const sectionCashAmount = Math.round(sectionProportion * order.payments
+          .filter((p: any) => p.paymentMethod === 'cash')
+          .reduce((sum: number, p: any) => sum + (p.amount || 0), 0));
+        const sectionCardAmount = Math.round(sectionProportion * order.payments
+          .filter((p: any) => p.paymentMethod === 'card')
+          .reduce((sum: number, p: any) => sum + (p.amount || 0), 0));
 
-        console.log(`  [Order ${order.id}] total=${order.total}, paid=${totalPaid}, status=${order.status}, isPaid=${isPaid}, isUnpaid=${isUnpaid}, isPartial=${isPartial}, units=${totalUnits}, cash=${cashPayments}, card=${cardPayments}, extras=${order.extras?.length || 0} (totalExtras=${extrasTotal})`);
+        console.log(`  [Order ${order.id}] lineTotal=${sectionLineTotal}, proportion=${sectionProportion.toFixed(2)}, paid=${sectionPaidAmount}, status=${order.status}, isPaid=${isPaid}, isUnpaid=${isUnpaid}, isPartial=${isPartial}, units=${totalUnits}, cash=${sectionCashAmount}, card=${sectionCardAmount}`);
 
         if (isPartial) {
-          // Split partial payment: paid portion to paidStats, owed portion to unpaidStats
-          const paidAmount = totalPaid;
-          const owedAmount = order.total - totalPaid;
-          console.log(`    → PARTIAL: +${paidAmount} to PAID, +${owedAmount} to UNPAID (split from total ${order.total})`);
+          // Split partial payment
+          console.log(`    → PARTIAL: +${sectionPaidAmount} to PAID, +${sectionOwedAmount} to UNPAID (split from total ${sectionLineTotal})`);
           
-          // Add paid portion to paid stats
-          paidStats.totalAmount += paidAmount;
-          paidStats.cashAmount += cashPayments;
-          paidStats.cardAmount += cardPayments;
-          if (order.status === 'fulfilled') paidStats.amountFulfilled += paidAmount;
+          paidStats.totalAmount += sectionPaidAmount;
+          paidStats.cashAmount += sectionCashAmount;
+          paidStats.cardAmount += sectionCardAmount;
+          if (order.status === 'fulfilled') paidStats.amountFulfilled += sectionPaidAmount;
           
-          // Add owed portion to unpaid stats
-          unpaidStats.totalAmount += owedAmount;
+          unpaidStats.totalAmount += sectionOwedAmount;
           
-          // For order counts: count the order in both paid and unpaid (since it's split)
           paidStats.totalOrders += 1;
           unpaidStats.totalOrders += 1;
           
-          // For fulfillment: distribute units based on payment portion (or could assign all to unpaid if preferred)
-          // Here we assign all to unpaid since it's the remaining work
           unpaidStats.totalUnits += totalUnits;
           unpaidStats.fulfilledUnits += fulfilledUnits;
           
-          // Status tracking: count in both
           if (order.status === 'pending') {
             paidStats.pendingOrders += 1;
             unpaidStats.pendingOrders += 1;
@@ -410,31 +429,30 @@ export class DepartmentService extends BaseService<IDepartment> {
             unpaidStats.fulfilledOrders += 1;
           }
         } else if (isUnpaid) {
-          // Completely unpaid: full order total goes to unpaid
-          console.log(`    → Adding to UNPAID: +${order.total} (completely unpaid)`);
+          console.log(`    → Adding to UNPAID: +${sectionLineTotal} (completely unpaid)`);
           unpaidStats.totalOrders += 1;
-          unpaidStats.totalAmount += order.total;
+          unpaidStats.totalAmount += sectionLineTotal;
           unpaidStats.totalUnits += totalUnits;
           unpaidStats.fulfilledUnits += fulfilledUnits;
           if (order.status === 'pending') unpaidStats.pendingOrders += 1;
           if (order.status === 'processing') unpaidStats.processingOrders += 1;
           if (order.status === 'fulfilled') unpaidStats.fulfilledOrders += 1;
         } else if (isPaid) {
-          console.log(`    → Adding to PAID: +${order.total} (base + extras breakdown: ${order.total - extrasTotal} + ${extrasTotal})`);
+          console.log(`    → Adding to PAID: +${sectionLineTotal} (fully paid)`);
           paidStats.totalOrders += 1;
-          paidStats.totalAmount += order.total;
-          paidStats.cashAmount += cashPayments;
-          paidStats.cardAmount += cardPayments;
+          paidStats.totalAmount += sectionLineTotal;
+          paidStats.cashAmount += sectionCashAmount;
+          paidStats.cardAmount += sectionCardAmount;
           paidStats.totalUnits += totalUnits;
           paidStats.fulfilledUnits += fulfilledUnits;
-          if (order.status === 'fulfilled') paidStats.amountFulfilled += order.total;
+          if (order.status === 'fulfilled') paidStats.amountFulfilled += sectionLineTotal;
           if (order.status === 'pending') paidStats.pendingOrders += 1;
           if (order.status === 'processing') paidStats.processingOrders += 1;
           if (order.status === 'fulfilled') paidStats.fulfilledOrders += 1;
         }
 
-        // Always add full order total to aggregated (regardless of payment status)
-        aggregatedTotalAmount += order.total;
+        // Always add section line total to aggregated (regardless of payment status)
+        aggregatedTotalAmount += sectionLineTotal;
       }
 
       // Calculate fulfillment rates

@@ -157,7 +157,7 @@ export async function GET(
     }
 
     // Compute order stats for section from department metadata
-    // Always apply date filters if provided, even if cached stats exist
+    // ALWAYS use date filters - default to TODAY if not provided
     let stats = {
       totalOrders: 0,
       pendingOrders: 0,
@@ -169,14 +169,19 @@ export async function GET(
       amountPaid: 0,
     }
 
-    // If date filters are provided, always compute fresh stats
-    // Otherwise use cached stats from department metadata if available
-    if (fromDate || toDate) {
-      // Compute stats on the fly when date filters are active
-      try {
-        if (sectionRow && sectionRow.id) {
-          // Section: find orders via orderLine.departmentSectionId (section ID field)
-          const dateFilter = buildDateFilter(fromDate, toDate)
+    // Import getTodayDate for default date handling
+    const { getTodayDate } = await import('@/lib/date-filter');
+    const today = getTodayDate();
+    const effectiveFromDate = fromDate || today;
+    const effectiveToDate = toDate || today;
+    
+    // Always compute fresh stats with date filter (default to TODAY)
+    try {
+      console.log(`[SECTION/STATS] DATE FILTER PATH - Computing stats for section: ${sectionRow?.id}, dept: ${dept.id}, dates: ${effectiveFromDate} to ${effectiveToDate}`)
+      
+      if (sectionRow && sectionRow.id) {
+        // Section: find orders via orderLine.departmentSectionId (section ID field)
+        const dateFilter = buildDateFilter(effectiveFromDate, effectiveToDate)
           
           // Get distinct order header IDs for this section (use departmentSectionId, not departmentCode)
           const sectionLines = await (prisma as any).orderLine.findMany({
@@ -193,6 +198,7 @@ export async function GET(
           })
           
           const orderHeaderIds = sectionLines.map((l: any) => l.orderHeaderId)
+          console.log(`[SECTION/STATS] DATE FILTER - Found ${orderHeaderIds.length} orders with section lines`)
           
           // Build where clause for headers with date filter
           const headerWhere: any = {
@@ -202,128 +208,98 @@ export async function GET(
             status: { notIn: ['cancelled', 'refunded'] }
           }
           
-          // Count orders by status
-          const [
-            pendingOrders,
-            fulfilledOrders,
-            totalOrders,
-            amountSoldRes,
-          ] = await Promise.all([
-            (prisma as any).orderHeader.count({
-              where: {
-                ...headerWhere,
-                status: 'pending',
+          // Fetch all orders with ALL their lines (not filtered) to calculate section proportion
+          const ordersForSection = await (prisma as any).orderHeader.findMany({
+            where: headerWhere,
+            include: {
+              lines: true, // All lines for proportion calculation
+              payments: true
+            }
+          })
+          
+          console.log(`[SECTION/STATS] DATE FILTER - Fetched ${ordersForSection.length} complete orders`)
+          
+          // Calculate section-proportional stats
+          let totalPaid = 0
+          let totalUnpaid = 0
+          let pendingOrderCount = 0
+          let fulfilledOrderCount = 0
+          let paidFulfilledOrderCount = 0
+          
+          for (const order of ordersForSection) {
+            // Find section lines in this order
+            const sectionLines = order.lines.filter((l: any) => l.departmentSectionId === sectionRow.id)
+            if (sectionLines.length === 0) continue
+            
+            // Calculate section's proportion
+            const allLineTotal = order.lines.reduce((sum: number, l: any) => sum + (l.unitPrice * l.quantity), 0)
+            const sectionLineTotal = sectionLines.reduce((sum: number, l: any) => sum + (l.unitPrice * l.quantity), 0)
+            const sectionProportion = allLineTotal > 0 ? sectionLineTotal / allLineTotal : 0
+            
+            // Distribute order amounts proportionally
+            const sectionDiscount = Math.round(sectionProportion * (order.discount || 0))
+            const sectionTax = Math.round(sectionProportion * (order.tax || 0))
+            // TAX NOT INCLUDED IN PAYMENT CALCULATION - tracked separately
+            const sectionFinalAmount = Math.max(0, sectionLineTotal - sectionDiscount)
+            
+            // DEBUG: Log tax information
+            console.log(`[SECTION/STATS] DATE FILTER - Order ${order.id} TAX: orderTax=${order.tax || 0}, sectionTax=${sectionTax}, discount=${sectionDiscount}`)
+            
+            // DEBUG: Log payment fields to see what's available
+            if (order.payments && order.payments.length > 0) {
+              console.log(`[SECTION/STATS] DATE FILTER - Order ${order.id} payments:`, JSON.stringify(order.payments[0], null, 2))
+            } else {
+              console.log(`[SECTION/STATS] DATE FILTER - Order ${order.id}: NO PAYMENTS FOUND`)
+            }
+            
+            // Calculate section's payment share based on line proportion
+            const totalOrderPaid = order.payments?.reduce((sum: any, p: any) => {
+              const amt = p.amountPaid || p.amount || p.paymentAmount || 0
+              return sum + amt
+            }, 0) || 0
+            
+            // OPTION B: Simple proportional allocation
+            const sectionPaymentAllocated = Math.round(sectionProportion * totalOrderPaid)
+            
+            console.log(`[SECTION/STATS] DATE FILTER - Order ${order.id}: section proportion=${sectionProportion.toFixed(2)}, lineTotal=${sectionLineTotal}, discount=${sectionDiscount}, tax=${sectionTax}, totalOrderPaid=${totalOrderPaid}, sectionPaymentAllocated=${sectionPaymentAllocated}, final=${sectionFinalAmount}`)
+            
+            // Track paid and unpaid amounts
+            const sectionOwedAmount = Math.max(0, sectionFinalAmount - sectionPaymentAllocated)
+            totalPaid += sectionPaymentAllocated
+            totalUnpaid += sectionOwedAmount
+            
+            // Track order statuses
+            if (order.status === 'pending') {
+              pendingOrderCount++
+            } else if (order.status === 'fulfilled') {
+              fulfilledOrderCount++
+              // Count as paid-fulfilled only if fully paid
+              if (sectionPaymentAllocated >= sectionFinalAmount) {
+                paidFulfilledOrderCount++
               }
-            }),
-            (prisma as any).orderHeader.count({
-              where: {
-                ...headerWhere,
-                status: 'fulfilled',
-              }
-            }),
-            (prisma as any).orderHeader.count({
-              where: headerWhere
-            }),
-            (prisma as any).orderHeader.aggregate({
-              where: {
-                ...headerWhere,
-                status: 'fulfilled',
-              },
-              _sum: { total: true }
-            })
-          ]);
-
+            }
+          }
+          
           stats = {
-            totalOrders,
-            pendingOrders,
+            totalOrders: ordersForSection.length,
+            pendingOrders: pendingOrderCount,
             processingOrders: 0,
-            fulfilledOrders,
+            fulfilledOrders: fulfilledOrderCount,
             totalUnits: 0,
             fulfilledUnits: 0,
-            amountFulfilled: 0,
-            amountPaid: amountSoldRes._sum?.total || 0,
-          };
+            amountFulfilled: totalPaid,  // Paid portion of fulfilled orders (matches service logic)
+            amountPaid: totalPaid,
+          }
+          
+          console.log(`[SECTION/STATS] DATE FILTER - FINAL STATS: totalPaid=${totalPaid}, totalUnpaid=${totalUnpaid}, fulfilled=${fulfilledOrderCount}, pending=${pendingOrderCount}, orders=${ordersForSection.length}`)
         }
       } catch (e) {
         console.error('Failed to compute order stats with date filter:', e)
       }
-    } else if (dept.metadata?.sectionStats) {
-      // Use cached stats from department metadata if no date filters
-      stats = dept.metadata.sectionStats;
-    } else {
-      // Fallback: compute stats on the fly by querying through OrderLine (no date filter)
-      try {
-        if (sectionRow && sectionRow.id) {
-          // Section: find orders via orderLine.departmentSectionId (section ID field)
-          
-          // Get distinct order header IDs for this section (use departmentSectionId, not departmentCode)
-          const sectionLines = await (prisma as any).orderLine.findMany({
-            where: {
-              departmentSectionId: sectionRow.id,
-              // Exclude cancelled and refunded orders
-              orderHeader: {
-                status: { notIn: ['cancelled', 'refunded'] }
-              }
-            },
-            distinct: ['orderHeaderId'],
-            select: { orderHeaderId: true },
-          })
-          
-          const orderHeaderIds = sectionLines.map((l: any) => l.orderHeaderId)
-          
-          // Build where clause for headers without date filter
-          const headerWhere: any = {
-            id: { in: orderHeaderIds },
-          }
-          
-          // Count orders by status
-          const [
-            pendingOrders,
-            fulfilledOrders,
-            totalOrders,
-            amountSoldRes,
-          ] = await Promise.all([
-            (prisma as any).orderHeader.count({
-              where: {
-                ...headerWhere,
-                status: 'pending',
-              }
-            }),
-            (prisma as any).orderHeader.count({
-              where: {
-                ...headerWhere,
-                status: 'fulfilled',
-              }
-            }),
-            (prisma as any).orderHeader.count({
-              where: headerWhere
-            }),
-            (prisma as any).orderHeader.aggregate({
-              where: {
-                ...headerWhere,
-                status: 'fulfilled',
-              },
-              _sum: { total: true }
-            })
-          ]);
-
-          stats = {
-            totalOrders,
-            pendingOrders,
-            processingOrders: 0,
-            fulfilledOrders,
-            totalUnits: 0,
-            fulfilledUnits: 0,
-            amountFulfilled: 0,
-            amountPaid: amountSoldRes._sum?.total || 0,
-          };
-        }
-      } catch (e) {
-        console.error('Failed to compute order stats fallback:', e)
-      }
-    }
 
     // Prepare response with only needed data
+    console.log(`[SECTION/STATS] RESPONSE - Returning stats: amountPaid=${stats.amountPaid}, amountFulfilled=${stats.amountFulfilled}, pendingOrders=${stats.pendingOrders}`)
+    
     const response = {
       department: {
         id: dept.id,

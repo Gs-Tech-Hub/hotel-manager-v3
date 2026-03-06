@@ -90,6 +90,7 @@ export async function GET(
 
     // Build date filter if provided
     const dateFilter = buildDateFilter(fromDate, toDate)
+    console.log(`[DEDICATED SECTION/STATS] Section: ${section.id} (${section.name}), dept: ${deptCode}, dates: ${fromDate} to ${toDate}`)
 
     // Get all orders with lines in this section to recalculate if needed
     const sectionOrders = await (prisma as any).orderHeader.findMany({
@@ -101,12 +102,12 @@ export async function GET(
       },
       include: {
         payments: true,
-        extras: true, // Include extras so we can verify total calculation
-        lines: { where: { departmentSectionId: section.id } }
+        extras: true,
+        lines: true // Get ALL lines to calculate proportions
       }
     })
 
-    // Calculate CURRENT stats from actual order data (this is the source of truth)
+    // Calculate SECTION-SPECIFIC stats (not full order totals)
     let totalPaidAmount = 0
     let totalUnpaidAmount = 0
     let paidOrderCount = 0
@@ -122,45 +123,85 @@ export async function GET(
     let paidFulfilledUnits = 0
     let unpaidFulfilledUnits = 0
 
-    for (const order of sectionOrders) {
-      // Use persisted order.total (should include extras if properly updated)
-      const orderTotal = order.total || 0
-      
-      // Calculate paid/owed for this order using persisted total
-      const orderPaid = order.payments.reduce((sum: number, p: any) => sum + p.amount, 0)
-      const orderOwed = Math.max(0, orderTotal - orderPaid)
-      
-      // Determine payment status based on actual paid amount
-      const isPaid = orderPaid >= orderTotal && orderTotal > 0
-      const isUnpaid = orderPaid === 0
+    console.log(`[DEDICATED SECTION/STATS] Processing ${sectionOrders.length} orders`)
 
-      // Count units in order lines for this section
-      const orderUnits = order.lines.reduce((sum: any, line: any) => sum + line.quantity, 0)
+    for (const order of sectionOrders) {
+      // Calculate section's portion of the order
+      const sectionLines = order.lines?.filter((l: any) => l.departmentSectionId === section.id) || []
+      const allLines = order.lines || []
+      
+      // Section's line subtotal (before discount/tax)
+      const sectionLineTotal = sectionLines.reduce((sum: number, l: any) => sum + (l.lineTotal || 0), 0)
+      const allLineTotal = allLines.reduce((sum: number, l: any) => sum + (l.lineTotal || 0), 0)
+      
+      // If section has no lines in this order, skip it
+      if (sectionLineTotal === 0 || allLineTotal === 0) {
+        console.log(`[DEDICATED SECTION/STATS] Order ${order.id}: skipped (sectionLineTotal=${sectionLineTotal}, allLineTotal=${allLineTotal})`)
+        continue
+      }
+      
+      // Calculate section's proportion of discount and tax
+      const sectionProportion = sectionLineTotal / allLineTotal
+      const sectionDiscount = Math.round((order.discountTotal || 0) * sectionProportion)
+      const sectionTax = Math.round((order.tax || 0) * sectionProportion)
+      
+      // Section's final amount = line items - discount (TAX NOT INCLUDED IN PAYMENT CALCULATION - tracked separately)
+      const sectionFinalAmount = Math.max(0, sectionLineTotal - sectionDiscount)
+      
+      // DEBUG: Log payment fields to find the correct amount field
+      if (order.payments && order.payments.length > 0) {
+        console.log(`[DEDICATED SECTION/STATS] Order ${order.id} payments:`, JSON.stringify(order.payments[0], null, 2))
+      } else {
+        console.log(`[DEDICATED SECTION/STATS] Order ${order.id}: NO PAYMENTS FOUND`)
+      }
+      
+      // Calculate section's proportion of payment collected - OPTION B: Simple proportional allocation
+      const totalOrderPaid = order.payments.reduce((sum: number, p: any) => {
+        const amt = p.amountPaid || p.amount || p.paymentAmount || 0
+        return sum + amt
+      }, 0)
+      
+      const sectionPaymentAllocated = Math.round(sectionProportion * totalOrderPaid)
+      
+      const sectionOwedAmount = Math.max(0, sectionFinalAmount - sectionPaymentAllocated)
+      
+      console.log(`[DEDICATED SECTION/STATS] Order ${order.id}: proportion=${sectionProportion.toFixed(2)}, lineTotal=${sectionLineTotal}, discount=${sectionDiscount}, tax=${sectionTax}, final=${sectionFinalAmount}, totalOrderPaid=${totalOrderPaid}, paid=${sectionPaymentAllocated}, owed=${sectionOwedAmount}`)
+
+      // Determine payment status based on section's amount
+      const isPaid = sectionPaymentAllocated >= sectionFinalAmount && sectionFinalAmount > 0
+      const isUnpaid = sectionPaymentAllocated === 0
+      
+      // Count units in this section only
+      const sectionUnits = sectionLines.reduce((sum: number, l: any) => sum + (l.quantity || 0), 0)
+      const sectionFulfilledUnits = sectionLines.filter((l: any) => l.status === 'fulfilled')
+        .reduce((sum: number, l: any) => sum + (l.quantity || 0), 0)
 
       if (isPaid) {
-        totalPaidAmount += order.total
+        totalPaidAmount += sectionFinalAmount
         paidOrderCount += 1
         
         if (order.status === 'pending') paidPendingOrders += 1
         if (order.status === 'processing') paidProcessingOrders += 1
         if (order.status === 'fulfilled') paidFulfilledOrders += 1
         
-        paidTotalUnits += orderUnits
-        if (order.status === 'fulfilled') paidFulfilledUnits += orderUnits
+        paidTotalUnits += sectionUnits
+        if (order.status === 'fulfilled') paidFulfilledUnits += sectionFulfilledUnits
       }
 
       if (isUnpaid) {
-        totalUnpaidAmount += order.total
+        totalUnpaidAmount += sectionFinalAmount
         unpaidOrderCount += 1
         
         if (order.status === 'pending') unpaidPendingOrders += 1
         if (order.status === 'processing') unpaidProcessingOrders += 1
         if (order.status === 'fulfilled') unpaidFulfilledOrders += 1
         
-        unpaidTotalUnits += orderUnits
-        if (order.status === 'fulfilled') unpaidFulfilledUnits += orderUnits
+        unpaidTotalUnits += sectionUnits
+        if (order.status === 'fulfilled') unpaidFulfilledUnits += sectionFulfilledUnits
       }
     }
+    
+    console.log(`[DEDICATED SECTION/STATS] FINAL TOTALS: paid=${totalPaidAmount}, unpaid=${totalUnpaidAmount}, paidOrders=${paidOrderCount}, unpaidOrders=${unpaidOrderCount}`)
 
     // Return stats matching the structure we store in sectionStats
     const stats = {
@@ -183,15 +224,37 @@ export async function GET(
         totalUnits: paidTotalUnits,
         amountFulfilled: sectionOrders
           .filter((o: any) => {
-            const paid = o.payments.reduce((s: number, p: any) => s + p.amount, 0)
-            return paid >= o.total && o.status === 'fulfilled'
+            const sectionLines = o.lines?.filter((l: any) => l.departmentSectionId === section.id) || []
+            const allLines = o.lines || []
+            const sectionLineTotal = sectionLines.reduce((sum: number, l: any) => sum + (l.lineTotal || 0), 0)
+            const allLineTotal = allLines.reduce((sum: number, l: any) => sum + (l.lineTotal || 0), 0)
+            if (sectionLineTotal === 0 || allLineTotal === 0) return false
+            
+            const sectionProportion = sectionLineTotal / allLineTotal
+            const sectionFinalAmount = Math.max(0, sectionLineTotal - Math.round((o.discountTotal || 0) * sectionProportion) + Math.round((o.tax || 0) * sectionProportion))
+            const totalOrderPaid = o.payments.reduce((s: number, p: any) => s + p.amount, 0)
+            const sectionPaymentAllocated = o.total > 0 
+              ? Math.round((sectionFinalAmount / o.total) * totalOrderPaid)
+              : 0
+            
+            return sectionPaymentAllocated >= sectionFinalAmount && o.status === 'fulfilled'
           })
-          .reduce((sum: number, o: any) => sum + o.total, 0),
+          .reduce((sum: number, o: any) => {
+            const sectionLines = o.lines?.filter((l: any) => l.departmentSectionId === section.id) || []
+            const allLines = o.lines || []
+            const sectionLineTotal = sectionLines.reduce((s: number, l: any) => s + (l.lineTotal || 0), 0)
+            const allLineTotal = allLines.reduce((s: number, l: any) => s + (l.lineTotal || 0), 0)
+            if (sectionLineTotal === 0 || allLineTotal === 0) return sum
+            
+            const sectionProportion = sectionLineTotal / allLineTotal
+            const sectionFinalAmount = Math.max(0, sectionLineTotal - Math.round((o.discountTotal || 0) * sectionProportion) + Math.round((o.tax || 0) * sectionProportion))
+            return sum + sectionFinalAmount
+          }, 0),
         fulfillmentRate: paidTotalUnits > 0 ? Math.round((paidFulfilledUnits / paidTotalUnits) * 100) : 0,
         updatedAt: new Date()
       },
       aggregated: {
-        totalOrders: unpaidOrderCount + paidOrderCount,
+        totalOrders: sectionOrders.length,  // Total UNIQUE orders (not paid + unpaid count)
         totalPending: unpaidPendingOrders + paidPendingOrders,
         totalProcessing: unpaidProcessingOrders + paidProcessingOrders,
         totalFulfilled: unpaidFulfilledOrders + paidFulfilledOrders,

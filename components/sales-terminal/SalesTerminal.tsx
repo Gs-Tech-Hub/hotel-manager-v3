@@ -5,6 +5,7 @@ import { useRouter, useSearchParams } from 'next/navigation'
 import { formatTablePrice, formatOrderTotal } from '@/lib/formatters'
 import { normalizeToCents } from '@/lib/price'
 import { POSPayment } from '@/components/admin/pos/pos-payment'
+import { POSReceipt } from '@/components/admin/pos/pos-receipt'
 import { DiscountDropdown } from '@/components/pos/orders/DiscountDropdown'
 import { EmployeeTargeting } from '@/components/pos/orders/EmployeeDiscountSelector'
 
@@ -724,22 +725,34 @@ export default function SalesTerminal() {
         }
       }
 
-      // Clear state and show receipt
+      // Clear state and show receipt (via modal, not page change)
       setShowPayment(false)
       setShowEmployeeTargeting(false)
       setSelectedEmployee(null) // Reset after charge is created
-      setCart([])
-      setAppliedDiscountIds([])
-      setValidatedDiscounts([])
-      setSelectedSections(new Set())
-      setReceipt(finalReceipt)
-      setView('receipt')
       
-      // Auto-reset after 5 seconds
-      setTimeout(() => {
-        setView('terminal-select')
-        setSelectedTerminal(null)
-      }, 5000)
+      // Format receipt data for POSReceipt component
+      const formattedReceipt = {
+        ...finalReceipt,
+        items: (finalReceipt.lines || []).map((line: any) => ({
+          lineId: line.id,
+          productName: line.productName,
+          quantity: line.quantity,
+          unitPrice: line.unitPrice,
+        })),
+        discounts: (finalReceipt.discounts || []).map((d: any) => ({
+          code: d.discountCode || d.code,
+          type: d.discountType || d.type,
+          value: d.discountRule?.value || d.value,
+          description: d.discountRule?.description || d.description,
+          discountAmount: d.discountAmount,
+          minorUnit: d.discountRule?.minorUnit || 100,
+        })),
+        taxAmount: estimatedTax, // Add calculated tax to receipt
+      }
+      
+      setReceipt(formattedReceipt)
+      // Keep user in terminal view with receipt modal open
+      // DO NOT change view or auto-reset - let user close receipt manually
     } catch (error) {
       setCheckoutError(error instanceof Error ? error.message : 'Payment failed')
     } finally {
@@ -953,136 +966,8 @@ export default function SalesTerminal() {
     )
   }
 
-  // Terminal view
-  if (view === 'receipt' && receipt) {
-    const paymentStatusColor = receipt.paymentStatus === 'paid' ? 'text-green-600 bg-green-50' :
-                                receipt.paymentStatus === 'partial' ? 'text-yellow-600 bg-yellow-50' :
-                                'text-gray-600 bg-gray-50';
-    
-    return (
-      <div className="min-h-screen bg-gray-50 flex items-center justify-center p-6">
-        <div className="max-w-2xl w-full bg-white rounded-lg shadow-lg p-8">
-          <div className="text-center mb-6">
-            <h1 className="text-3xl font-bold text-green-600">✓ Order Complete</h1>
-            <p className="text-gray-600 mt-2">Order #{receipt.orderNumber}</p>
-          </div>
-
-          <div className="space-y-4 mb-6">
-            {/* Primary Info Grid */}
-            <div className="grid grid-cols-2 gap-4 p-4 bg-gray-50 rounded">
-              <div>
-                <div className="text-sm text-gray-600">Subtotal</div>
-                <div className="text-lg font-bold">{formatTablePrice(receipt.subtotal || 0)}</div>
-              </div>
-              <div>
-                <div className="text-sm text-gray-600">Payment Status</div>
-                <div className={`text-lg font-semibold ${paymentStatusColor} px-2 py-1 rounded`}>
-                  {receipt.paymentStatus ? receipt.paymentStatus.toUpperCase() : 'PENDING'}
-                </div>
-              </div>
-            </div>
-
-            {/* Discount and Tax Summary */}
-            {(receipt.discountTotal || receipt.tax) && (
-              <div className="p-4 bg-blue-50 border border-blue-200 rounded">
-                <h3 className="font-semibold mb-3 text-blue-900">Pricing Summary</h3>
-                <div className="space-y-2 text-sm">
-                  {receipt.discountTotal > 0 && (
-                    <>
-                      <div className="flex justify-between">
-                        <span>Subtotal:</span>
-                        <span className="font-medium">{formatTablePrice(receipt.subtotal || 0)}</span>
-                      </div>
-                      <div className="flex justify-between text-green-700 font-medium">
-                        <span>Discount Applied:</span>
-                        <span>-{formatTablePrice(receipt.discountTotal)}</span>
-                      </div>
-                    </>
-                  )}
-                  {receipt.tax > 0 && (
-                    <div className="flex justify-between">
-                      <span>Tax:</span>
-                      <span>{formatTablePrice(receipt.tax)}</span>
-                    </div>
-                  )}
-                  <div className="flex justify-between font-bold text-lg border-t pt-2 text-blue-600">
-                    <span>Total Amount:</span>
-                    <span>{formatTablePrice(receipt.total || 0)}</span>
-                  </div>
-                </div>
-              </div>
-            )}
-
-            {/* Items */}
-            <div className="p-4 bg-blue-50 border border-blue-200 rounded">
-              <h3 className="font-semibold mb-3">Items</h3>
-              <div className="space-y-2">
-                {(receipt.lines || []).map((line: any, i: number) => (
-                  <div key={i} className="flex justify-between text-sm">
-                    <span>{line.productName} x{line.quantity}</span>
-                    <span>{formatTablePrice(line.lineTotal || 0)}</span>
-                  </div>
-                ))}
-              </div>
-            </div>
-
-            {/* Section Payment Breakdown */}
-            {receipt.sectionAllocations && receipt.sectionAllocations.length > 0 && (
-              <div className="p-4 bg-indigo-50 border border-indigo-200 rounded">
-                <h3 className="font-semibold mb-3 text-indigo-900">Payment Allocation by Section</h3>
-                <div className="space-y-2">
-                  {receipt.sectionAllocations.map((allocation: any, i: number) => (
-                    <div key={i} className="flex items-center justify-between p-3 bg-white rounded border border-indigo-100">
-                      <div className="flex-1">
-                        <div className="font-medium text-sm">{allocation.sectionName || allocation.sectionCode || 'Section'}</div>
-                        <div className="text-xs text-gray-600">
-                          Order: {formatTablePrice(allocation.lineTotal)}
-                          {allocation.discountAllocated > 0 && ` → After discount: ${formatTablePrice(allocation.finalAmount)}`}
-                        </div>
-                      </div>
-                      <div className="text-right">
-                        <div className="font-semibold text-indigo-600">{formatTablePrice(allocation.paymentAllocated)}</div>
-                        <div className={`text-xs font-medium ${
-                          allocation.paymentStatus === 'paid' ? 'text-green-600' :
-                          allocation.paymentStatus === 'partial' ? 'text-yellow-600' :
-                          'text-gray-600'
-                        }`}>
-                          {allocation.paymentStatus === 'paid' && '✓ Paid'}
-                          {allocation.paymentStatus === 'partial' && '⚠ Partial'}
-                          {allocation.paymentStatus === 'unpaid' && '○ Unpaid'}
-                        </div>
-                      </div>
-                    </div>
-                  ))}
-                </div>
-              </div>
-            )}
-
-            {/* Payment Method Details */}
-            {receipt.paymentMethod && (
-              <div className="p-4 bg-purple-50 border border-purple-200 rounded">
-                <div className="text-sm">
-                  <span className="text-gray-600">Payment Method:</span>
-                  <span className="font-medium ml-2">{receipt.paymentMethod.toUpperCase()}</span>
-                </div>
-              </div>
-            )}
-          </div>
-
-          <button
-            onClick={() => {
-              setView('terminal-select')
-              setSelectedTerminal(null)
-              setReceipt(null)
-            }}
-            className="w-full px-6 py-3 bg-blue-600 text-white rounded-lg font-semibold hover:bg-blue-700"
-          >
-            New Order
-          </button>
-        </div>
-      </div>
-    )
-  }
+  // Receipt modal is displayed as overlay while remaining in terminal view
+  // This allows user to continue shopping after viewing receipt
 
   // Terminal view
   if (view === 'terminal') {
@@ -1296,6 +1181,7 @@ export default function SalesTerminal() {
                 total={estimatedTotal}
                 onComplete={handlePaymentComplete}
                 onCancel={() => setShowPayment(false)}
+                isProcessing={isProcessingPayment}
               />
             </div>
           ) : (
@@ -1361,6 +1247,21 @@ export default function SalesTerminal() {
             />
           </div>
         </div>
+      )}
+
+      {/* Receipt Modal - displayed while in terminal view */}
+      {receipt && (
+        <POSReceipt
+          receipt={receipt}
+          onClose={() => {
+            setReceipt(null)
+            // Clear cart when receipt is closed
+            setCart([])
+            setAppliedDiscountIds([])
+            setValidatedDiscounts([])
+            setSelectedSections(new Set())
+          }}
+        />
       )}
     </div>
   )

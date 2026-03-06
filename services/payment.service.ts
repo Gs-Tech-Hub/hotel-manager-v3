@@ -219,11 +219,17 @@ export class PaymentService extends BaseService<IPayment> {
       // ==================== ASYNC SECTION METADATA UPDATE ====================
       console.log(`[Payment] Starting async section updates for ${affectedSectionIds.size} sections`);
       if (affectedSectionIds.size > 0) {
-        // Fire-and-forget: Start all section updates concurrently
+        // Fire-and-forget: Start all section updates concurrently with allocation data
         Promise.all(
-          Array.from(affectedSectionIds).map((sectionId) =>
-            this.updateSectionMetadataAsync(sectionId, paymentRequest.paymentMethod)
-          )
+          Array.from(affectedSectionIds).map((sectionId) => {
+            const sectionAllocation = sectionAllocations.find(sa => sa.sectionId === sectionId);
+            return this.updateSectionMetadataAsync(
+              sectionId,
+              paymentRequest.paymentMethod,
+              sectionAllocation,
+              order
+            );
+          })
         ).catch((err) => {
           console.error('Error in concurrent section metadata updates:', err);
         });
@@ -391,11 +397,17 @@ export class PaymentService extends BaseService<IPayment> {
       // ==================== ASYNC SECTION METADATA UPDATE ====================
       console.log(`[Deferred Payment] Starting async section updates for ${affectedSectionIds.size} sections`);
       if (affectedSectionIds.size > 0) {
-        // Fire-and-forget: Start all section updates concurrently
+        // Fire-and-forget: Start all section updates concurrently with allocation data
         Promise.all(
-          Array.from(affectedSectionIds).map((sectionId) =>
-            this.updateSectionMetadataAsync(sectionId, paymentRequest.paymentMethod)
-          )
+          Array.from(affectedSectionIds).map((sectionId) => {
+            const sectionAllocation = sectionAllocations.find(sa => sa.sectionId === sectionId);
+            return this.updateSectionMetadataAsync(
+              sectionId,
+              paymentRequest.paymentMethod,
+              sectionAllocation,
+              order
+            );
+          })
         ).catch((err) => {
           console.error('Error in concurrent section metadata updates:', err);
         });
@@ -566,7 +578,9 @@ export class PaymentService extends BaseService<IPayment> {
    */
   private async updateSectionMetadataAsync(
     sectionId: string,
-    paymentMethod: string
+    paymentMethod: string,
+    sectionAllocation?: any,
+    order?: any
   ): Promise<void> {
     try {
       const section = await prisma.departmentSection.findUnique({
@@ -575,7 +589,7 @@ export class PaymentService extends BaseService<IPayment> {
 
       if (!section) return;
 
-      // Get ALL orders that have lines in this section
+      // Get ALL orders that have lines in this section (fresh data)
       const sectionOrders = await prisma.orderHeader.findMany({
         where: {
           lines: {
@@ -584,23 +598,96 @@ export class PaymentService extends BaseService<IPayment> {
         },
         include: {
           payments: true,
+          discounts: true,
           lines: { where: { departmentSectionId: sectionId } }
         }
       });
 
-      // Calculate section-wide totals (including all extras)
+      // Calculate section-wide totals WITH itemized breakdown
+      let sectionItemCount = 0;
+      let sectionSubtotalBeforeDiscount = 0;
+      let sectionDiscountAmount = 0;
+      let sectionTaxAmount = 0;
       let sectionTotalAmount = 0;
       let sectionPaidAmount = 0;
       let sectionOwedAmount = 0;
 
-      for (const order of sectionOrders) {
-        sectionTotalAmount += order.total;
-        const orderPaid = order.payments.reduce((sum: number, p: any) => sum + p.amount, 0);
-        sectionPaidAmount += orderPaid;
-        sectionOwedAmount += Math.max(0, order.total - orderPaid);
+      for (const orderData of sectionOrders) {
+        // Count items in section
+        const linesInSection = orderData.lines || [];
+        sectionItemCount += linesInSection.reduce((sum: number, line: any) => sum + (line.quantity || 0), 0);
+        
+        // Calculate section's line total BEFORE discount
+        const sectionLineTotal = linesInSection.reduce((sum: number, line: any) => sum + (line.lineTotal || 0), 0);
+        sectionSubtotalBeforeDiscount += sectionLineTotal;
+        
+        // Calculate order's total line amount across ALL lines (not just this section)
+        const orderTotalLineAmount = orderData.lines?.reduce((sum: number, l: any) => sum + (l.lineTotal || 0), 0) || 0;
+        
+        // Allocate order's discount PROPORTIONALLY to this section's items
+        let sectionDiscountShare = 0;
+        if (orderTotalLineAmount > 0 && orderData.discountTotal) {
+          sectionDiscountShare = Math.round(
+            (sectionLineTotal / orderTotalLineAmount) * orderData.discountTotal
+          );
+          sectionDiscountAmount += sectionDiscountShare;
+        }
+        
+        // Allocate order's tax PROPORTIONALLY to this section's items
+        let sectionTaxShare = 0;
+        if (orderTotalLineAmount > 0 && orderData.tax) {
+          sectionTaxShare = Math.round(
+            (sectionLineTotal / orderTotalLineAmount) * orderData.tax
+          );
+          sectionTaxAmount += sectionTaxShare;
+        }
+        
+        // Calculate section's FINAL total: lineTotal - discount + tax (NOT using full order.total)
+        const sectionFinalTotal = Math.max(0, sectionLineTotal - sectionDiscountShare + sectionTaxShare);
+        sectionTotalAmount += sectionFinalTotal;
+        
+        // Allocate payment PROPORTIONALLY based on section's portion of the order
+        const orderPaidTotal = orderData.payments.reduce((sum: number, p: any) => sum + p.amount, 0);
+        let sectionPaidShare = 0;
+        
+        if (orderTotalLineAmount > 0) {
+          // Payment allocation: proportional to section's final (discounted, taxed) amount
+          sectionPaidShare = Math.round(
+            (sectionFinalTotal / orderData.total) * orderPaidTotal
+          );
+        }
+        sectionPaidAmount += sectionPaidShare;
+        
+        // Owed amount = section total - section paid
+        const sectionOwedShare = Math.max(0, sectionFinalTotal - sectionPaidShare);
+        sectionOwedAmount += sectionOwedShare;
       }
 
       const existingMeta = (section.metadata as any) || {};
+      const existingStats = existingMeta.sectionStats || {};
+      const existingPaymentHistory = existingStats.paymentHistory || [];
+
+      // Add current transaction to payment history (if allocation provided)
+      let updatedPaymentHistory = [...existingPaymentHistory];
+      if (sectionAllocation && order) {
+        updatedPaymentHistory.push({
+          orderId: order.id,
+          orderNumber: order.orderNumber,
+          itemsInSection: sectionAllocation.lineTotal > 0 ? (order.lines || []).filter((l: any) => l.departmentSectionId === sectionId).reduce((s: number, l: any) => s + (l.quantity || 0), 0) : 0,
+          lineTotal: sectionAllocation.lineTotal,
+          discountAllocated: sectionAllocation.discountAllocated,
+          taxAllocated: sectionAllocation.taxAllocated || 0,
+          finalAmount: sectionAllocation.finalAmount,
+          paymentAllocated: sectionAllocation.paymentAllocated,
+          paymentStatus: sectionAllocation.paymentStatus,
+          paymentMethod,
+          timestamp: new Date(),
+        });
+        // Keep last 100 transactions
+        if (updatedPaymentHistory.length > 100) {
+          updatedPaymentHistory = updatedPaymentHistory.slice(-100);
+        }
+      }
 
       await prisma.departmentSection.update({
         where: { id: sectionId },
@@ -608,6 +695,10 @@ export class PaymentService extends BaseService<IPayment> {
           metadata: {
             ...existingMeta,
             sectionStats: {
+              itemCount: sectionItemCount,
+              subtotalBeforeDiscount: sectionSubtotalBeforeDiscount,
+              discountTotal: sectionDiscountAmount,
+              taxTotal: sectionTaxAmount,
               paid: {
                 totalAmount: sectionPaidAmount,
                 updatedAt: new Date(),
@@ -616,12 +707,22 @@ export class PaymentService extends BaseService<IPayment> {
                 totalAmount: sectionOwedAmount,
                 updatedAt: new Date(),
               },
+              paymentHistory: updatedPaymentHistory,
               updatedAt: new Date(),
             },
             lastPaymentAt: new Date(),
             lastPaymentMethod: paymentMethod,
           },
         },
+      });
+
+      console.log(`[Section Metadata] Updated section ${sectionId}:`, {
+        itemCount: sectionItemCount,
+        subtotal: sectionSubtotalBeforeDiscount,
+        discount: sectionDiscountAmount,
+        tax: sectionTaxAmount,
+        paid: sectionPaidAmount,
+        owed: sectionOwedAmount,
       });
     } catch (err) {
       console.error(`Error updating metadata for section ${sectionId}:`, err);
@@ -633,6 +734,9 @@ export class PaymentService extends BaseService<IPayment> {
    * Calculate how a payment is allocated across sections
    * For orders with items from multiple sections, this breaks down
    * how much of the payment belongs to each section (proportional to their line totals)
+   * 
+   * IMPORTANT: Tax is allocated to sections proportionally to their discounted line totals
+   * so that section stats properly reflect the collected amounts including tax
    */
   private calculateSectionPaymentAllocations(order: any, paymentAmount: number) {
     const sectionAllocations: {
@@ -641,6 +745,7 @@ export class PaymentService extends BaseService<IPayment> {
       sectionName?: string;
       lineTotal: number;
       discountAllocated: number;
+      taxAllocated: number;
       finalAmount: number;
       paymentAllocated: number;
       paymentStatus: string;
@@ -666,37 +771,59 @@ export class PaymentService extends BaseService<IPayment> {
       st.lineTotal += lineTotal;
     }
 
-    // Calculate discount allocation per section (proportional to each section's line total)
-    // This ensures equal application of discounts across departments
+    // Calculate discount and tax allocation per section (proportional to each section's line total)
+    // This ensures equal distribution of discounts and tax across departments based on their contribution
     const totalDiscount = order.discountTotal || 0;
+    const totalTax = order.tax || 0;
     let discountAllocatedSoFar = 0;
+    let taxAllocatedSoFar = 0;
     let paymentAllocatedSoFar = 0;
     let sectionIndex = 0;
     const sectionIds = Array.from(sectionTotals.keys());
+
+    // Pre-calculate total final amount (including tax) for payment allocation
+    let totalFinalAmount = 0;
+    const sectionDiscounts = new Map<string, number>();
+    const sectionTaxes = new Map<string, number>();
+    
+    for (const sectionId of sectionIds) {
+      const st = sectionTotals.get(sectionId)!;
+      const sectionDiscount = totalOrderLineAmount > 0
+        ? Math.round((st.lineTotal / totalOrderLineAmount) * totalDiscount)
+        : 0;
+      sectionDiscounts.set(sectionId, sectionDiscount);
+      
+      // Allocate tax proportionally to pre-discount amount
+      const sectionTax = totalOrderLineAmount > 0
+        ? Math.round((st.lineTotal / totalOrderLineAmount) * totalTax)
+        : 0;
+      sectionTaxes.set(sectionId, sectionTax);
+      
+      totalFinalAmount += Math.max(0, st.lineTotal - sectionDiscount + sectionTax);
+    }
 
     for (const sectionId of sectionIds) {
       const st = sectionTotals.get(sectionId)!;
       const isLastSection = sectionIndex === sectionIds.length - 1;
 
-      // Calculate this section's proportion of discount (equal treatment)
-      let sectionDiscount = 0;
-      if (isLastSection && totalOrderLineAmount > 0) {
-        // Last section gets remainder to avoid rounding errors
+      // Get pre-calculated discount and tax for this section
+      let sectionDiscount = sectionDiscounts.get(sectionId) || 0;
+      let sectionTax = sectionTaxes.get(sectionId) || 0;
+      
+      // Adjust last section to account for rounding errors
+      if (isLastSection) {
         sectionDiscount = totalDiscount - discountAllocatedSoFar;
-      } else if (totalOrderLineAmount > 0) {
-        sectionDiscount = Math.round(
-          (st.lineTotal / totalOrderLineAmount) * totalDiscount
-        );
+        sectionTax = totalTax - taxAllocatedSoFar;
       }
       
       discountAllocatedSoFar += sectionDiscount;
+      taxAllocatedSoFar += sectionTax;
 
-      // Calculate final amount for this section (after discount applied)
-      const finalAmount = Math.max(0, st.lineTotal - sectionDiscount);
+      // Calculate final amount for this section (after discount, plus tax)
+      const finalAmount = Math.max(0, st.lineTotal - sectionDiscount + sectionTax);
 
-      // Allocate payment proportionally to final (discounted) amounts
+      // Allocate payment proportionally to final (discounted + tax) amounts
       let sectionAllocation = 0;
-      const totalFinalAmount = order.total; // Order total after all discounts applied
       
       if (isLastSection) {
         // Last section gets remainder to avoid rounding errors
@@ -709,7 +836,7 @@ export class PaymentService extends BaseService<IPayment> {
       
       paymentAllocatedSoFar += sectionAllocation;
 
-      // Determine payment status for this section (compare against final discounted amount)
+      // Determine payment status for this section (compare against final amount including tax)
       let paymentStatus = 'unpaid';
       if (sectionAllocation >= finalAmount) {
         paymentStatus = 'paid';
@@ -723,6 +850,7 @@ export class PaymentService extends BaseService<IPayment> {
         sectionName: st.sectionName,
         lineTotal: st.lineTotal,
         discountAllocated: sectionDiscount,
+        taxAllocated: sectionTax,
         finalAmount,
         paymentAllocated: sectionAllocation,
         paymentStatus,

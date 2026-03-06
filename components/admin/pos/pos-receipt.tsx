@@ -58,12 +58,13 @@ export function POSReceipt({ receipt, onClose }: { receipt: any; onClose?: () =>
     w.print()
   }
 
-  // Calculate discounts from receipt data
+  // Calculate discounts and taxes from receipt data
   const discounts = receipt?.discounts || []
   const subtotal = (receipt?.items ?? []).reduce((sum: number, it: any) => {
     return sum + (it.unitPrice * it.quantity)
   }, 0)
   const totalDiscount = discounts.reduce((sum: number, d: any) => sum + (d.discountAmount || 0), 0)
+  const taxAmount = receipt?.taxAmount || 0
 
   return (
     <div className="fixed inset-0 bg-black bg-opacity-40 flex items-center justify-center z-50">
@@ -136,6 +137,14 @@ export function POSReceipt({ receipt, onClose }: { receipt: any; onClose?: () =>
             <span>Subtotal</span>
             <span><Price amount={subtotal} isMinor={true} /></span>
           </div>
+
+          {/* Taxes if applied */}
+          {taxAmount > 0 && (
+            <div className="mt-1 flex justify-between text-xs text-blue-600">
+              <span>Tax</span>
+              <span><Price amount={taxAmount} isMinor={true} /></span>
+            </div>
+          )}
 
           {/* Discounts if applied */}
           {discounts.length > 0 && (
