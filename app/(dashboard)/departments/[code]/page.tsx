@@ -40,6 +40,7 @@ export default function DepartmentDetail() {
   const [loadingTransfers, setLoadingTransfers] = useState(false)
   const [activeTab, setActiveTab] = useState<string>('overview')
   const [sectionJustCreated, setSectionJustCreated] = useState(false)
+  const [deletingSection, setDeletingSection] = useState<string | null>(null)
 
   const {
     menu,
@@ -79,6 +80,36 @@ export default function DepartmentDetail() {
       await (refreshDepartment as any)?.(decodedCode)
     } catch (e) {
       /* ignore */
+    }
+  }
+
+  // Handle delete section
+  const handleDeleteSection = async (sectionCode: string) => {
+    if (!confirm(`Are you sure you want to delete this section? This action cannot be undone.`)) {
+      return
+    }
+
+    setDeletingSection(sectionCode)
+    try {
+      const res = await fetch(`/api/departments/${encodeURIComponent(sectionCode)}/section`, {
+        method: 'DELETE',
+        headers: { 'Content-Type': 'application/json' },
+      })
+      const j = await res.json()
+      if (!res.ok || !j?.success) {
+        throw new Error(j?.error || 'Failed to delete section')
+      }
+
+      // Refresh department data to update sections list
+      try {
+        await (refreshDepartment as any)?.(decodedCode)
+      } catch (e) {
+        /* ignore */
+      }
+    } catch (error: any) {
+      alert(error.message || 'Failed to delete section')
+    } finally {
+      setDeletingSection(null)
     }
   }
 
@@ -225,6 +256,9 @@ export default function DepartmentDetail() {
               loading={loading}
               canCreateSection={hasPermission('department_sections.create') && !sectionJustCreated}
               onCreateSection={() => setShowCreateSection(true)}
+              canDeleteSection={hasPermission('department_sections.delete')}
+              onDeleteSection={handleDeleteSection}
+              deletingSection={deletingSection}
             >
               {children}
             </ParentDepartmentView>

@@ -2,6 +2,7 @@
 
 import { useRouter } from 'next/navigation'
 import { ReactNode } from 'react'
+import { Trash2 } from 'lucide-react'
 
 type ParentDepartmentViewProps = {
   children: any[]
@@ -9,6 +10,9 @@ type ParentDepartmentViewProps = {
   onCreateSection?: () => void
   canCreateSection?: boolean
   createSectionLoading?: boolean
+  onDeleteSection?: (sectionCode: string) => void
+  canDeleteSection?: boolean
+  deletingSection?: string | null
 }
 
 export default function ParentDepartmentView({
@@ -17,6 +21,9 @@ export default function ParentDepartmentView({
   onCreateSection,
   canCreateSection = false,
   createSectionLoading = false,
+  onDeleteSection,
+  canDeleteSection = false,
+  deletingSection = null,
 }: ParentDepartmentViewProps) {
   const router = useRouter()
 
@@ -46,11 +53,13 @@ export default function ParentDepartmentView({
           {children.map((c: any) => (
             <div
               key={c.code}
-              className="border rounded p-4 bg-white hover:shadow-md transition-shadow cursor-pointer"
-              onClick={() => router.push(`/departments/${encodeURIComponent(c.code)}`)}
+              className="border rounded p-4 bg-white hover:shadow-md transition-shadow"
             >
-              <div className="flex items-start justify-between">
-                <div className="flex-1">
+              <div className="flex items-start justify-between gap-2">
+                <div 
+                  className="flex-1 cursor-pointer"
+                  onClick={() => router.push(`/departments/${encodeURIComponent(c.code)}`)}
+                >
                   <h3 className="font-semibold text-lg">{c.name}</h3>
                   {c.description && (
                     <p className="text-sm text-muted-foreground mt-1">{c.description}</p>
@@ -59,7 +68,7 @@ export default function ParentDepartmentView({
                     Code: <span className="font-mono">{c.code}</span>
                   </div>
                 </div>
-                <div className="text-right ml-4">
+                <div className="text-right ml-4 flex flex-col gap-2">
                   <div className="text-sm">
                     <div>
                       <span className="font-medium">{c.totalOrders ?? 0}</span> orders
@@ -68,6 +77,19 @@ export default function ParentDepartmentView({
                       {c.pendingOrders ?? 0} pending
                     </div>
                   </div>
+                  {canDeleteSection && onDeleteSection && (
+                    <button
+                      onClick={(e) => {
+                        e.stopPropagation()
+                        onDeleteSection(c.code)
+                      }}
+                      disabled={deletingSection === c.code}
+                      className="p-1.5 text-red-600 hover:bg-red-50 rounded transition-colors disabled:opacity-60 disabled:cursor-not-allowed"
+                      title="Delete section"
+                    >
+                      <Trash2 className="h-4 w-4" />
+                    </button>
+                  )}
                 </div>
               </div>
             </div>

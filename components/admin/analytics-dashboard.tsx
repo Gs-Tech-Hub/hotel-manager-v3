@@ -61,11 +61,21 @@ export function AnalyticsDashboard() {
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
   const [startDate, setStartDate] = useState(() => {
+    // Default to today only (consistent with section filtering - 24 hours = today)
     const date = new Date()
-    date.setMonth(date.getMonth() - 1)
-    return date.toISOString().split("T")[0]
+    const year = date.getFullYear()
+    const month = String(date.getMonth() + 1).padStart(2, '0')
+    const day = String(date.getDate()).padStart(2, '0')
+    return `${year}-${month}-${day}`
   })
-  const [endDate, setEndDate] = useState(new Date().toISOString().split("T")[0])
+  const [endDate, setEndDate] = useState(() => {
+    // Use local timezone, not UTC
+    const date = new Date()
+    const year = date.getFullYear()
+    const month = String(date.getMonth() + 1).padStart(2, '0')
+    const day = String(date.getDate()).padStart(2, '0')
+    return `${year}-${month}-${day}`
+  })
   const { user } = useAuth()
 
   const fetchMetrics = async () => {

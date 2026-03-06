@@ -10,7 +10,7 @@ import { prisma } from '@/lib/auth/prisma';
 import { extractUserContext, loadUserWithRoles, hasAnyRole } from '@/lib/user-context';
 import { checkPermission, type PermissionContext } from '@/lib/auth/rbac';
 import { successResponse, errorResponse, ErrorCodes, getStatusCode } from '@/lib/api-response';
-import { buildDateFilter, buildBookingCheckinFilter } from '@/lib/date-filter';
+import { buildDateFilter, buildBookingCheckinFilter, getTodayDate } from '@/lib/date-filter';
 
 interface DashboardMetrics {
   salesData: {
@@ -63,13 +63,31 @@ export async function GET(request: NextRequest) {
 
     // Parse query parameters
     const searchParams = request.nextUrl.searchParams;
-    const startDate = searchParams.get('startDate');
-    const endDate = searchParams.get('endDate');
+    let startDate = searchParams.get('startDate');
+    let endDate = searchParams.get('endDate');
     const timezone = searchParams.get('timezone') || 'UTC';
+
+    // Default to today's date if no dates provided (consistent with section filtering)
+    // 24 hours = today
+    const today = getTodayDate();
+    if (!startDate && !endDate) {
+      startDate = today;
+      endDate = today;
+    } else if (startDate && !endDate) {
+      // If only start date provided, default end date to today
+      endDate = today;
+    } else if (!startDate && endDate) {
+      // If only end date provided, default start date to today
+      startDate = today;
+    }
+
+    console.log(`[DASHBOARD] Date filtering - startDate=${startDate}, endDate=${endDate}, timezone=${timezone}, today=${today}`);
 
     // Build date filters - use createdAt for orders, checkin for bookings
     const dateFilter = buildDateFilter(startDate, endDate);
     const bookingDateFilter = buildBookingCheckinFilter(startDate, endDate);
+    
+    console.log(`[DASHBOARD] Built dateFilter:`, JSON.stringify(dateFilter, null, 2));
 
     // Fetch all data in parallel
     const [orderHeaders, orderPayments, employees, discounts, bookings] = await Promise.all([ (prisma as any).orderHeader.findMany({
@@ -115,9 +133,13 @@ export async function GET(request: NextRequest) {
     let totalPaidOrders = 0;
     let totalFulfilledOrders = 0;
 
+    console.log(`[DASHBOARD] Processing ${orderHeaders.length} orders with status fulfilled/completed`);
+
     for (const order of orderHeaders) {
       const totalPaid = (order.payments || []).reduce((sum: number, p: any) => sum + (p.amount ?? 0), 0);
       const isPaid = totalPaid >= order.total && order.total > 0;
+      
+      console.log(`[DASHBOARD] Order ${order.id}: status=${order.status}, total=${order.total}, totalPaid=${totalPaid}, isPaid=${isPaid}, createdAt=${order.createdAt}`);
       
       if (isPaid) {
         totalPaidOrders += 1;
@@ -128,6 +150,8 @@ export async function GET(request: NextRequest) {
         totalFulfilledOrders += 1;
       }
     }
+    
+    console.log(`[DASHBOARD] Sales Data - totalPaidOrders=${totalPaidOrders}, totalRevenue=${totalRevenue}`);
 
     // Calculate booking data
     const totalReservations = bookings.length;

@@ -4,6 +4,7 @@ import { sectionService } from '@/services/section.service'
 import { extractUserContext, loadUserWithRoles } from '@/lib/user-context'
 import { successResponse, errorResponse, ErrorCodes, getStatusCode } from '@/lib/api-response'
 import { buildDateFilter } from '@/lib/date-filter'
+import { checkPermission, type PermissionContext } from '@/lib/auth/rbac'
 
 /**
  * GET /api/departments/[code]/section
@@ -332,6 +333,146 @@ export async function GET(
     console.error('GET /api/departments/[code]/section error:', error)
     return NextResponse.json(
       errorResponse(ErrorCodes.INTERNAL_ERROR, 'Failed to fetch section data'),
+      { status: getStatusCode(ErrorCodes.INTERNAL_ERROR) }
+    )
+  }
+}
+
+/**
+ * DELETE /api/departments/[code]/section
+ * Delete (soft delete) a department section
+ * 
+ * Params:
+ *   - code: department or section code (e.g., "RESTAURANT:bar")
+ * 
+ * Requires: department_sections.delete permission
+ */
+export async function DELETE(
+  request: NextRequest,
+  { params }: { params: Promise<{ code: string }> }
+) {
+  try {
+    const ctx = await extractUserContext(request)
+    if (!ctx.userId) {
+      return NextResponse.json(
+        errorResponse(ErrorCodes.UNAUTHORIZED, 'Not authenticated'),
+        { status: getStatusCode(ErrorCodes.UNAUTHORIZED) }
+      )
+    }
+
+    // Load full user with roles to check permissions
+    const userWithRoles = await loadUserWithRoles(ctx.userId)
+    if (!userWithRoles) {
+      return NextResponse.json(
+        errorResponse(ErrorCodes.FORBIDDEN, 'User not found'),
+        { status: getStatusCode(ErrorCodes.FORBIDDEN) }
+      )
+    }
+
+    // Check delete permission
+    const permCtx: PermissionContext = {
+      userId: ctx.userId,
+      userType: (userWithRoles.userType as 'admin' | 'employee' | 'other') || 'employee',
+    }
+
+    // Admins can always delete, otherwise check permission
+    const canDelete = userWithRoles.isAdmin || (await checkPermission(permCtx, 'department_sections.delete', 'department_sections'))
+    if (!canDelete) {
+      return NextResponse.json(
+        errorResponse(ErrorCodes.FORBIDDEN, 'Insufficient permissions to delete sections'),
+        { status: getStatusCode(ErrorCodes.FORBIDDEN) }
+      )
+    }
+
+    const { code } = await params
+    
+    // Normalize the code to lowercase
+    let lookupCode = code.toLowerCase()
+    try {
+      for (let i = 0; i < 3; i++) {
+        const decoded = decodeURIComponent(lookupCode)
+        if (decoded === lookupCode) break
+        lookupCode = decoded.toLowerCase()
+      }
+    } catch (e) {
+      lookupCode = code.toLowerCase()
+    }
+
+    // Try to resolve as a section (format: parentCode:sectionId)
+    let sectionId: string | null = null
+    let sectionRow: any = null
+
+    try {
+      const parts = (lookupCode || '').toString().split(':')
+      if (parts.length >= 2) {
+        const parentCode = parts[0]
+        const slugOrId = parts.slice(1).join(':')
+        const parent = await (prisma as any).department.findUnique({
+          where: { code: parentCode }
+        })
+        
+        if (parent) {
+          sectionRow = await (prisma as any).departmentSection.findFirst({
+            where: {
+              departmentId: parent.id,
+              OR: [
+                { slug: slugOrId },
+                { id: slugOrId }
+              ]
+            }
+          })
+
+          if (sectionRow) {
+            sectionId = sectionRow.id
+          }
+        }
+      }
+    } catch (err) {
+      // ignored
+    }
+
+    if (!sectionId || !sectionRow) {
+      return NextResponse.json(
+        errorResponse(ErrorCodes.NOT_FOUND, 'Section not found'),
+        { status: getStatusCode(ErrorCodes.NOT_FOUND) }
+      )
+    }
+
+    // Soft delete: set isActive to false
+    const deletedSection = await (prisma as any).departmentSection.update({
+      where: { id: sectionId },
+      data: { isActive: false }
+    })
+
+    // Log audit entry
+    try {
+      await (prisma as any).adminAuditLog.create({
+        data: {
+          actorId: ctx.userId || null,
+          actorType: userWithRoles.userType || 'unknown',
+          action: 'delete',
+          subject: 'department_sections',
+          subjectId: sectionId,
+          details: {
+            message: 'soft-deleted (isActive: false)',
+            name: sectionRow.name,
+            departmentId: sectionRow.departmentId
+          }
+        }
+      })
+    } catch (auditErr) {
+      console.error('Failed to log delete audit entry:', auditErr)
+      // Continue even if audit fails
+    }
+
+    return NextResponse.json(
+      successResponse({ data: deletedSection }),
+      { status: 200 }
+    )
+  } catch (error) {
+    console.error('DELETE /api/departments/[code]/section error:', error)
+    return NextResponse.json(
+      errorResponse(ErrorCodes.INTERNAL_ERROR, 'Failed to delete section'),
       { status: getStatusCode(ErrorCodes.INTERNAL_ERROR) }
     )
   }

@@ -141,12 +141,17 @@ export default function DashboardPage() {
 		const fetchAnalytics = async () => {
 			try {
 				setLoading(true);
-				// Fetch 24-hour data for dashboard
-				const oneDayAgo = new Date(Date.now() - 24 * 60 * 60 * 1000).toISOString().split('T')[0];
-				const today = new Date().toISOString().split('T')[0];
+				// Fetch today's data only (consistent with section filtering - 24 hours = today)
+				// Use local timezone, not UTC
+				const today = new Date();
+				const year = today.getFullYear();
+				const month = String(today.getMonth() + 1).padStart(2, '0');
+				const day = String(today.getDate()).padStart(2, '0');
+				const todayStr = `${year}-${month}-${day}`;
+				
 				const params = new URLSearchParams({
-					startDate: oneDayAgo,
-					endDate: today,
+					startDate: todayStr,
+					endDate: todayStr,
 				});
 				const response = await fetch(`/api/analytics/dashboard?${params}`);
 				if (response.ok) {
@@ -312,13 +317,13 @@ export default function DashboardPage() {
 										<span className="text-sm font-medium">Tax Report</span>
 									</button>
 								</Link>
-								<Link href="/dashboard/employees">
+								<Link href="/analytics">
 									<button
 										type="button"
 										className="w-full flex flex-col items-center justify-center gap-2 p-6 rounded-lg border hover:bg-muted transition-colors"
 									>
-										<Users className="h-6 w-6" />
-										<span className="text-sm font-medium">New Employee</span>
+										<Activity className="h-6 w-6" />
+										<span className="text-sm font-medium">Analytics</span>
 									</button>
 								</Link>
 							</div>

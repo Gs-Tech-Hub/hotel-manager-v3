@@ -35,12 +35,15 @@ export function getEndOfLocalDay(dateStr: string): Date {
 }
 
 /**
- * Get today's date in YYYY-MM-DD format
- * @returns Today's date as string in format YYYY-MM-DD
+ * Get today's date in YYYY-MM-DD format (local timezone)
+ * @returns Today's date as string in format YYYY-MM-DD using local timezone
  */
 export function getTodayDate(): string {
   const today = new Date();
-  return today.toISOString().split('T')[0];
+  const year = today.getFullYear();
+  const month = String(today.getMonth() + 1).padStart(2, '0');
+  const day = String(today.getDate()).padStart(2, '0');
+  return `${year}-${month}-${day}`;
 }
 
 /**
