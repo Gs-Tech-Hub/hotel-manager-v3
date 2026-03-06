@@ -72,18 +72,9 @@ export async function GET(request: NextRequest) {
       whereFilters.isActive = isActive === 'true';
     }
 
+    // Fetch terminals without sections first (to separate consolidated vs section-type)
     const terminals = await prisma.terminal.findMany({
       where: whereFilters,
-      include: {
-        sections: {
-          select: {
-            id: true,
-            name: true,
-            slug: true,
-            isActive: true,
-          },
-        },
-      },
       take: limit,
       skip: offset,
       orderBy: { createdAt: 'desc' },
@@ -91,8 +82,46 @@ export async function GET(request: NextRequest) {
 
     const total = await prisma.terminal.count({ where: whereFilters });
 
+    // Enrich each terminal with its sections based on type
+    const enrichedTerminals = await Promise.all(terminals.map(async (terminal: any) => {
+      let sectionsData: any[] = [];
+
+      if (terminal.type === 'consolidated') {
+        // For consolidated terminals, dynamically fetch all ACTIVE sections
+        // This ensures new sections are automatically included without updating allowedSectionIds
+        sectionsData = await prisma.departmentSection.findMany({
+          where: { isActive: true },
+          select: {
+            id: true,
+            name: true,
+            slug: true,
+            isActive: true,
+            departmentId: true,
+          },
+          orderBy: [{ department: { name: 'asc' } }, { name: 'asc' }],
+        });
+      } else {
+        // For section-specific terminals, fetch sections linked via terminalId
+        sectionsData = await prisma.departmentSection.findMany({
+          where: { terminalId: terminal.id },
+          select: {
+            id: true,
+            name: true,
+            slug: true,
+            isActive: true,
+            departmentId: true,
+          },
+        });
+      }
+
+      return {
+        ...terminal,
+        sections: sectionsData,
+      };
+    }));
+
     const response = {
-      terminals,
+      terminals: enrichedTerminals,
       total,
       limit,
       offset,

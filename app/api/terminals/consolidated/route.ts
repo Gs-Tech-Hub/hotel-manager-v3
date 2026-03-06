@@ -50,16 +50,6 @@ export async function GET(request: NextRequest) {
       where: {
         type: 'consolidated',
       } as any,
-      include: {
-        sections: {
-          select: {
-            id: true,
-            name: true,
-            slug: true,
-            isActive: true,
-          },
-        },
-      },
     });
 
     if (!terminal) {
@@ -69,13 +59,25 @@ export async function GET(request: NextRequest) {
       );
     }
 
-    // Parse allowed section IDs
-    const allowedSectionIds = JSON.parse((terminal as any).allowedSectionIds || '[]');
+    // Dynamically fetch all active sections (not relying on stored allowedSectionIds)
+    const activeSections = await prisma.departmentSection.findMany({
+      where: { isActive: true },
+      select: {
+        id: true,
+        name: true,
+        slug: true,
+        isActive: true,
+      },
+      orderBy: [{ department: { name: 'asc' } }, { name: 'asc' }],
+    });
+
+    const allowedSectionIds = activeSections.map(s => s.id);
 
     return NextResponse.json(
       successResponse({
         data: {
           ...terminal,
+          sections: activeSections,
           allowedSectionIds,
         },
       }),
@@ -131,27 +133,23 @@ export async function POST(request: NextRequest) {
       where: {
         type: 'consolidated',
       } as any,
-      include: {
-        sections: {
-          select: {
-            id: true,
-            name: true,
-            slug: true,
-            isActive: true,
-          },
-        },
-      },
     });
+
+    // Get all active sections
+    const activeSections = await prisma.departmentSection.findMany({
+      where: { isActive: true },
+      select: {
+        id: true,
+        name: true,
+        slug: true,
+        isActive: true,
+      },
+      orderBy: [{ department: { name: 'asc' } }, { name: 'asc' }],
+    });
+    const allSectionIds = activeSections.map(s => s.id);
 
     // If not found, create it
     if (!terminal) {
-      // Get all active sections for allowedSectionIds
-      const activeSections = await prisma.departmentSection.findMany({
-        where: { isActive: true },
-        select: { id: true },
-      });
-      const allSectionIds = activeSections.map(s => s.id);
-
       terminal = await (prisma.terminal as any).create({
         data: {
           name: 'Central Sales Terminal',
@@ -167,26 +165,29 @@ export async function POST(request: NextRequest) {
             purpose: 'default-consolidated-terminal',
           },
         },
-        include: {
-          sections: {
-            select: {
-              id: true,
-              name: true,
-              slug: true,
-              isActive: true,
-            },
-          },
-        },
       });
+    } else {
+      // Update allowedSectionIds to match current active sections
+      // (in case new sections were added dynamically)
+      const currentIds = JSON.parse((terminal as any).allowedSectionIds || '[]');
+      const newIds = allSectionIds;
+      
+      if (JSON.stringify(currentIds.sort()) !== JSON.stringify(newIds.sort())) {
+        terminal = await prisma.terminal.update({
+          where: { id: terminal.id },
+          data: {
+            allowedSectionIds: JSON.stringify(newIds),
+          } as any,
+        });
+      }
     }
-
-    const allowedSectionIds = JSON.parse((terminal as any).allowedSectionIds || '[]');
 
     return NextResponse.json(
       successResponse({
         data: {
           ...terminal,
-          allowedSectionIds,
+          sections: activeSections,
+          allowedSectionIds: allSectionIds,
         },
       }),
       { status: 201 }

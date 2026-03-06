@@ -870,29 +870,85 @@ export class DepartmentService extends BaseService<IDepartment> {
       // Handle section codes (format: PARENT:section) by extracting parent code
       const lookupCode = departmentCode.includes(':') ? departmentCode.split(':')[0] : departmentCode;
       
-      // Resolve department to get its logical type
-      let category: string | null = null
-      try {
-        const dept = await (prisma as any).department.findUnique({ where: { code: lookupCode } })
-        if (dept) {
-          // Prefer department.type values (e.g., 'restaurants', 'bars')
-          const t = (dept.type || '').toString().toLowerCase()
-          if (t.includes('restaurant') || t.includes('restaurants')) category = 'food'
-          else if (t.includes('bar') || t.includes('bars')) category = 'drink'
-        }
-      } catch (e) {
-        // ignore, we'll fallback to direct string mapping
+      // Resolve department to get its logical type and actual department
+      const dept = await (prisma as any).department.findUnique({ where: { code: lookupCode } })
+      if (!dept) {
+        return errorResponse(ErrorCodes.NOT_FOUND, 'Department not found')
       }
+
+      const deptType = (dept.type || '').toString().toLowerCase()
+      
+      // Try to return services for this department first (services can be for ANY department type)
+      // If this is a section code, get services assigned to that section
+      if (departmentCode.includes(':')) {
+        const parts = departmentCode.split(':');
+        const parentCode = parts[0];
+        const sectionSlugOrId = parts.slice(1).join(':');
+        
+        const section = await (prisma as any).departmentSection.findFirst({
+          where: {
+            departmentId: dept.id,
+            isActive: true,
+            OR: [
+              { slug: sectionSlugOrId },
+              { id: sectionSlugOrId }
+            ]
+          }
+        });
+        
+        if (!section) {
+          return errorResponse(ErrorCodes.NOT_FOUND, `Section '${sectionSlugOrId}' not found or is inactive`);
+        }
+
+        // Get services for this section
+        const services = await (prisma as any).serviceInventory.findMany({
+          where: { sectionId: section.id },
+          orderBy: { name: 'asc' }
+        })
+
+        if (services.length > 0) {
+          return services.map((s: any) => ({
+            id: s.id,
+            name: s.name,
+            price: s.pricingModel === 'per_count' ? Math.round(Number(s.pricePerCount || 0) * 100) : Math.round(Number(s.pricePerMinute || 0) * 100),
+            type: 'service',
+            available: true,
+            pricingModel: s.pricingModel,
+          }))
+        }
+      } else {
+        // For parent department, check for department-level services
+        const services = await (prisma as any).serviceInventory.findMany({
+          where: { departmentId: dept.id, sectionId: null },
+          orderBy: { name: 'asc' }
+        })
+
+        if (services.length > 0) {
+          return services.map((s: any) => ({
+            id: s.id,
+            name: s.name,
+            price: s.pricingModel === 'per_count' ? Math.round(Number(s.pricePerCount || 0) * 100) : Math.round(Number(s.pricePerMinute || 0) * 100),
+            type: 'service',
+            available: true,
+            pricingModel: s.pricingModel,
+          }))
+        }
+      }
+
+      // Fallback to category-based menu (food/drinks) if no services found
+      let category: string | null = null
+      if (deptType.includes('restaurant') || deptType.includes('restaurants')) category = 'food'
+      else if (deptType.includes('bar') || deptType.includes('bars')) category = 'drink'
 
       // Fallback mapping for legacy department codes
       if (!category) {
-        const up = (lookupCode || '').toString().toUpperCase()
+        const up = lookupCode.toUpperCase()
         if (up === 'RESTAURANT' || up === 'RESTAURANT_DEPT') category = 'food'
         else if (up === 'BAR_CLUB' || up === 'BAR' || up === 'BAR_AND_CLUBS') category = 'drink'
       }
 
       if (!category) {
-        return errorResponse(ErrorCodes.VALIDATION_ERROR, 'Department does not expose a menu')
+        return errorResponse(ErrorCodes.VALIDATION_ERROR, 'Department does not expose a menu or services')
       }
 
       // If this is a section code, validate the section exists before trying to fetch menu

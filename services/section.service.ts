@@ -499,6 +499,97 @@ export class SectionService {
       return { items: mapped, total, page, pageSize }
     }
 
+    // Services/Games - for games departments or when explicitly requested
+    // Services can be section-scoped or department-wide
+    if (type === 'service' || dept.type === 'games') {
+      // For sections, only get services that have been assigned to that section
+      if (resolvedSectionId) {
+        // Get services assigned to this section
+        const services = await prisma.serviceInventory.findMany({
+          where: {
+            sectionId: resolvedSectionId,
+            ...(search ? { name: { contains: search, mode: 'insensitive' } } : {}),
+          },
+          skip,
+          take: pageSize,
+          orderBy: { name: 'asc' },
+        })
+
+        const total = await prisma.serviceInventory.count({
+          where: {
+            sectionId: resolvedSectionId,
+            ...(search ? { name: { contains: search, mode: 'insensitive' } } : {}),
+          },
+        })
+
+        // Map services to product format
+        const mapped = services.map((service: any) => {
+          let unitPrice = 0
+          if (service.pricingModel === 'per_count' && service.pricePerCount) {
+            unitPrice = Math.round(Number(service.pricePerCount) * 100)
+          } else if (service.pricingModel === 'per_time' && service.pricePerMinute) {
+            unitPrice = Math.round(Number(service.pricePerMinute) * 100)
+          }
+
+          return {
+            id: service.id,
+            name: service.name,
+            type: 'service',
+            available: 1, // Services are typically available if assigned to section
+            unitPrice,
+            pricingModel: service.pricingModel,
+            serviceType: service.serviceType,
+            description: service.description,
+          }
+        })
+
+        return { items: mapped, total, page, pageSize }
+      }
+
+      // For parent departments, get all department-level services (sectionId is null)
+      const services = await prisma.serviceInventory.findMany({
+        where: {
+          departmentId: dept.id,
+          sectionId: null, // Only department-level services
+          ...(search ? { name: { contains: search, mode: 'insensitive' } } : {}),
+        },
+        skip,
+        take: pageSize,
+        orderBy: { name: 'asc' },
+      })
+
+      const total = await prisma.serviceInventory.count({
+        where: {
+          departmentId: dept.id,
+          sectionId: null,
+          ...(search ? { name: { contains: search, mode: 'insensitive' } } : {}),
+        },
+      })
+
+      // Map services to product format
+      const mapped = services.map((service: any) => {
+        let unitPrice = 0
+        if (service.pricingModel === 'per_count' && service.pricePerCount) {
+          unitPrice = Math.round(Number(service.pricePerCount) * 100)
+        } else if (service.pricingModel === 'per_time' && service.pricePerMinute) {
+          unitPrice = Math.round(Number(service.pricePerMinute) * 100)
+        }
+
+        return {
+          id: service.id,
+          name: service.name,
+          type: 'service',
+          available: 1,
+          unitPrice,
+          pricingModel: service.pricingModel,
+          serviceType: service.serviceType,
+          description: service.description,
+        }
+      })
+
+      return { items: mapped, total, page, pageSize }
+    }
+
     // Generic inventory fallback
     {
       const where: any = {}

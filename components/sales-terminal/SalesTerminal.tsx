@@ -30,8 +30,10 @@ type Terminal = {
 type Section = {
   id: string
   name: string
-  slug?: string
+  slug?: string | null
   departmentId: string
+  departmentName?: string
+  sectionCode?: string
   hasTerminal: boolean
   isActive: boolean
 }
@@ -73,8 +75,6 @@ export default function SalesTerminal() {
   const addToOrderId = searchParams.get('addToOrder')
   
   // State
-  const [terminals, setTerminals] = useState<Terminal[]>([])
-  const [selectedTerminal, setSelectedTerminal] = useState<Terminal | null>(null)
   const [sections, setSections] = useState<Section[]>([])
   const [departments, setDepartments] = useState<Department[]>([])
   const [selectedSections, setSelectedSections] = useState<Set<string>>(new Set())
@@ -82,7 +82,7 @@ export default function SalesTerminal() {
   const [cart, setCart] = useState<CartItem[]>([])
   const [loading, setLoading] = useState(true)
   const [searchQuery, setSearchQuery] = useState('')
-  const [view, setView] = useState<'terminal-select' | 'scope-select' | 'terminal' | 'receipt'>('terminal-select')
+  const [view, setView] = useState<'terminal-select' | 'terminal' | 'receipt'>('terminal-select')
   const [taxEnabled, setTaxEnabled] = useState(true)
   const [taxRate, setTaxRate] = useState(10)
   const [appliedDiscountIds, setAppliedDiscountIds] = useState<string[]>([])
@@ -198,31 +198,30 @@ export default function SalesTerminal() {
     }
   }, [appliedDiscountIds, subtotal, discountMap])
 
-  // Load terminals, departments, and sections
+  // Load sections using same approach as POS Terminal
   useEffect(() => {
     const fetchData = async () => {
       try {
         setLoading(true)
         
-        // Ensure consolidated terminal exists
-        try {
-          await fetch('/api/terminals/consolidated', { method: 'POST' })
-        } catch (e) {
-          console.warn('Could not ensure consolidated terminal:', e)
-        }
-        
-        // Fetch terminals
-        const terminalRes = await fetch('/api/terminals')
-        if (terminalRes.ok) {
-          const terminalData = await terminalRes.json()
-          const allTerminals = terminalData.data?.terminals || []
-          setTerminals(allTerminals)
-
-          // Set default consolidated terminal
-          const consolidated = allTerminals.find((t: Terminal) => t.type === 'consolidated' && t.isDefault)
-          if (consolidated) {
-            setSelectedTerminal(consolidated)
-          }
+        // Use same endpoint as POS Terminal - /api/pos/terminals returns all available sections
+        const sectionsRes = await fetch('/api/pos/terminals?limit=200')
+        if (sectionsRes.ok) {
+          const sectionsData = await sectionsRes.json()
+          const allPOSTerminals = sectionsData.data || []
+          
+          // Map POS terminals (which are sections) to our sections format
+          const mappedSections = allPOSTerminals.map((section: any) => ({
+            id: section.id,
+            name: section.name,
+            slug: section.slug,
+            departmentId: section.departmentCode,
+            departmentName: section.departmentName,
+            sectionCode: section.sectionCode,
+            hasTerminal: true,
+            isActive: true,
+          }))
+          setSections(mappedSections)
         }
 
         // Fetch all departments
@@ -230,14 +229,6 @@ export default function SalesTerminal() {
         if (deptRes.ok) {
           const deptData = await deptRes.json()
           setDepartments(deptData.data || [])
-        }
-
-        // Fetch all sections
-        const secRes = await fetch('/api/departments/sections?limit=200')
-        if (secRes.ok) {
-          const secData = await secRes.json()
-          const filteredSections = (secData.data || []).filter((s: Section) => s.hasTerminal && s.isActive)
-          setSections(filteredSections)
         }
       } catch (e) {
         console.error('Failed to fetch data:', e)
@@ -249,76 +240,65 @@ export default function SalesTerminal() {
     fetchData()
   }, [])
 
-  // Load products based on selected sections
+  // Load products and services based on selected sections
+  // Includes: regular products, transferred inventory items, and transferred services
   useEffect(() => {
     const loadProducts = async () => {
       try {
         const allProducts: Product[] = []
 
-        if (selectedTerminal?.type === 'consolidated') {
-          // Consolidated mode: load from selected sections
-          for (const sectionId of selectedSections) {
-            const section = sections.find(s => s.id === sectionId)
-            if (!section) continue
+        // Load products and services from each selected section
+        for (const sectionId of selectedSections) {
+          const section = sections.find(s => s.id === sectionId)
+          if (!section) continue
 
-            const dept = departments.find(d => d.id === section.departmentId)
-            if (!dept) continue
+          const dept = departments.find(d => d.code === section.departmentId)
+          if (!dept) continue
 
-            try {
-              // Construct section code as parent:slug format for API
-              const sectionCode = section.slug ? `${dept.code}:${section.slug}` : `${dept.code}:${section.id}`
-              const res = await fetch(
-                `/api/departments/${encodeURIComponent(dept.code)}/products?section=${encodeURIComponent(sectionCode)}&pageSize=200`
-              )
-              if (res.ok) {
-                const data = await res.json()
-                const items = data.data?.items || data.data || []
-                const sectionProducts = items.map((p: any) => ({
-                  id: p.id,
-                  name: p.name,
-                  price: Math.round(Number(p.unitPrice) || 0),
-                  quantity: Number(p.quantity || p.available || 0),
-                  sectionId: section.id,
-                  sectionName: section.name,
-                  departmentCode: dept.code,
-                }))
-                allProducts.push(...sectionProducts)
-              }
-            } catch (e) {
-              console.error(`Failed to fetch products for section ${sectionId}:`, e)
+          try {
+            // Construct section code as parent:slug format for API
+            const sectionCode = section.slug ? `${dept.code}:${section.slug}` : `${dept.code}:${section.id}`
+            
+            // Load regular products for the section (inventoryItems, drinks, food, extras)
+            const productsRes = await fetch(
+              `/api/departments/${encodeURIComponent(dept.code)}/products?section=${encodeURIComponent(sectionCode)}&pageSize=200`
+            )
+            if (productsRes.ok) {
+              const data = await productsRes.json()
+              const items = data.data?.items || data.data || []
+              const sectionProducts = items.map((p: any) => ({
+                id: p.id,
+                name: p.name,
+                price: Math.round(Number(p.unitPrice) || 0),
+                quantity: Number(p.available || 0), // Use available from stock query
+                sectionId: section.id,
+                sectionName: section.name,
+                departmentCode: dept.code,
+              }))
+              allProducts.push(...sectionProducts)
             }
-          }
-        } else if (selectedTerminal?.type === 'section') {
-          // Section-based mode: load from the terminal's associated sections
-          const terminalSections = selectedTerminal.sections || []
-          
-          for (const section of terminalSections) {
-            const dept = departments.find(d => d.id === section.departmentId)
-            if (!dept) continue
 
-            try {
-              // Construct section code as parent:slug format for API
-              const sectionCode = section.slug ? `${dept.code}:${section.slug}` : `${dept.code}:${section.id}`
-              const res = await fetch(
-                `/api/departments/${encodeURIComponent(dept.code)}/products?section=${encodeURIComponent(sectionCode)}&pageSize=200`
-              )
-              if (res.ok) {
-                const data = await res.json()
-                const items = data.data?.items || data.data || []
-                const sectionProducts = items.map((p: any) => ({
-                  id: p.id,
-                  name: p.name,
-                  price: Math.round(Number(p.unitPrice) || 0),
-                  quantity: Number(p.quantity || p.available || 0),
-                  sectionId: section.id,
-                  sectionName: section.name,
-                  departmentCode: dept.code,
-                }))
-                allProducts.push(...sectionProducts)
-              }
-            } catch (e) {
-              console.error(`Failed to fetch products for section ${section.id}:`, e)
+            // Load services for the section (services transferred to this section)
+            // Services include games, activities, and other service offerings
+            const servicesRes = await fetch(
+              `/api/departments/${encodeURIComponent(dept.code)}/products?type=service&section=${encodeURIComponent(sectionCode)}&pageSize=200`
+            )
+            if (servicesRes.ok) {
+              const data = await servicesRes.json()
+              const items = data.data?.items || data.data || []
+              const sectionServices = items.map((s: any) => ({
+                id: s.id,
+                name: s.name,
+                price: Math.round(Number(s.unitPrice) || 0),
+                quantity: Number(s.available || 999), // Services typically unlimited availability
+                sectionId: section.id,
+                sectionName: section.name,
+                departmentCode: dept.code,
+              }))
+              allProducts.push(...sectionServices)
             }
+          } catch (e) {
+            console.error(`Failed to fetch products/services for section ${sectionId}:`, e)
           }
         }
 
@@ -328,10 +308,14 @@ export default function SalesTerminal() {
       }
     }
 
-    if (selectedTerminal && (selectedSections.size > 0 || selectedTerminal.type === 'section')) {
+    // Only load products when sections are selected
+    if (selectedSections.size > 0) {
       loadProducts()
+    } else {
+      // Ensure no products/services load when no sections selected
+      setProducts([])
     }
-  }, [selectedTerminal, selectedSections, sections, departments])
+  }, [selectedSections, sections, departments])
 
   const handleToggleSection = (sectionId: string) => {
     const newSelected = new Set(selectedSections)
@@ -341,21 +325,6 @@ export default function SalesTerminal() {
       newSelected.add(sectionId)
     }
     setSelectedSections(newSelected)
-  }
-
-  const handleSelectAllSections = () => {
-    const availableSections = selectedTerminal?.type === 'consolidated' 
-      ? sections.filter(s => 
-          (selectedTerminal.allowedSectionIds?.length === 0) || 
-          selectedTerminal.allowedSectionIds?.includes(s.id)
-        )
-      : []
-
-    if (selectedSections.size === availableSections.length) {
-      setSelectedSections(new Set())
-    } else {
-      setSelectedSections(new Set(availableSections.map(s => s.id)))
-    }
   }
 
   const handleAddToCart = (product: Product) => {
@@ -621,7 +590,7 @@ export default function SalesTerminal() {
       const payload = {
         items,
         discounts: appliedDiscountIds,
-        notes: `Sales Terminal Order (${selectedTerminal?.name || 'Terminal'})`,
+        notes: 'Sales Terminal Order',
       }
 
       console.log('[SalesTerminal] Creating order with payload:', payload)
@@ -770,101 +739,81 @@ export default function SalesTerminal() {
     p.sectionName.toLowerCase().includes(searchQuery.toLowerCase())
   )
 
-  // Terminal selection view
+  // Terminal selection view - show available sections from POS terminals
   if (view === 'terminal-select') {
-    const consolidatedTerminal = terminals.find(t => t.type === 'consolidated' && t.isDefault)
-    const sectionTerminals = terminals.filter(t => t.type === 'section' && t.isActive)
-
     return (
       <div className="min-h-screen bg-gray-50 p-6">
-        <div className="max-w-4xl mx-auto">
+        <div className="max-w-6xl mx-auto">
           <div className="mb-8">
             <h1 className="text-3xl font-bold">Sales Terminal</h1>
-            <p className="text-sm text-gray-600 mt-2">Choose Consolidated Terminal for multi-section sales, or a specific section terminal</p>
+            <p className="text-sm text-gray-600 mt-2">Select sections to make sales from</p>
           </div>
 
           {loading ? (
             <div className="text-center py-12">
-              <p className="text-gray-600">Loading terminals...</p>
+              <p className="text-gray-600">Loading sections...</p>
             </div>
-          ) : (
-            <div className="space-y-6">
-              {/* Consolidated Terminal */}
-              {consolidatedTerminal && (
-                <div className="bg-white rounded-lg p-6 border-2 border-blue-500">
-                  <div className="flex items-start justify-between">
-                    <div>
-                      <h2 className="text-2xl font-bold text-blue-700">{consolidatedTerminal.name}</h2>
-                      <p className="text-gray-600 mt-2">Make sales across multiple sections simultaneously. Select which sections to sell from.</p>
-                      <p className="text-sm text-green-600 font-medium mt-2">✓ Default Terminal - Consolidated Multi-Section Sales</p>
-                    </div>
-                    <button
+          ) : sections.length > 0 ? (
+            <>
+              <div className="mb-4 flex items-center justify-between">
+                <button
+                  onClick={() => {
+                    if (selectedSections.size === sections.length) {
+                      setSelectedSections(new Set())
+                    } else {
+                      setSelectedSections(new Set(sections.map(s => s.id)))
+                    }
+                  }}
+                  className="px-4 py-2 bg-blue-100 text-blue-700 rounded hover:bg-blue-200 font-medium text-sm"
+                >
+                  {selectedSections.size === sections.length ? 'Deselect All' : `Select All (${sections.length})`}
+                </button>
+                <button
+                  onClick={() => {
+                    if (selectedSections.size > 0) {
+                      setView('terminal')
+                    }
+                  }}
+                  disabled={selectedSections.size === 0}
+                  className="px-6 py-2 bg-green-600 text-white rounded font-medium hover:bg-green-700 disabled:opacity-50 disabled:cursor-not-allowed"
+                >
+                  Start Sales ({selectedSections.size} selected)
+                </button>
+              </div>
+              <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+                {sections.map(section => {
+                  const isSelected = selectedSections.has(section.id)
+                  return (
+                    <div
+                      key={section.id}
                       onClick={() => {
-                        setSelectedTerminal(consolidatedTerminal)
-                        setView('scope-select')
+                        const newSelected = new Set(selectedSections)
+                        if (newSelected.has(section.id)) {
+                          newSelected.delete(section.id)
+                        } else {
+                          newSelected.add(section.id)
+                        }
+                        setSelectedSections(newSelected)
                       }}
-                      className="px-6 py-3 bg-blue-600 text-white rounded-lg font-semibold hover:bg-blue-700"
+                      className={`p-4 rounded-lg border-2 cursor-pointer transition-all ${
+                        isSelected
+                          ? 'border-blue-500 bg-blue-50'
+                          : 'border-gray-200 bg-white hover:border-gray-400'
+                      }`}
                     >
-                      Use This Terminal
-                    </button>
-                  </div>
-                </div>
-              )}
-
-              {/* Section Terminals */}
-              {sectionTerminals.length > 0 && (
-                <div>
-                  <h3 className="text-lg font-semibold mb-3">Section Terminals</h3>
-                  <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                    {sectionTerminals.map(terminal => {
-                      // For section terminals, get sections from the terminal's sections relation
-                      const terminalSections = terminal.sections || []
-                      const terminalDept = terminalSections.length > 0 
-                        ? departments.find(d => d.id === terminalSections[0].departmentId) 
-                        : null
-                      
-                      return (
-                        <div
-                          key={terminal.id}
-                          className="bg-white rounded-lg p-4 border border-gray-200 hover:border-gray-400 hover:shadow-md transition-all"
-                        >
-                          <div className="flex items-start justify-between">
-                            <div>
-                              <h3 className="font-semibold">{terminal.name}</h3>
-                              <p className="text-sm text-gray-600 mt-1">
-                                {terminalDept?.name || (terminalSections.length > 0 ? terminalSections.map(s => s.name).join(', ') : 'No sections')}
-                              </p>
-                              {terminal.description && (
-                                <p className="text-xs text-gray-500 mt-2">{terminal.description}</p>
-                              )}
-                              {terminalSections.length > 0 && (
-                                <p className="text-xs text-blue-600 mt-2">
-                                  {terminalSections.map(s => s.name).join(', ')}
-                                </p>
-                              )}
-                            </div>
-                            <button
-                              onClick={() => {
-                                setSelectedTerminal(terminal)
-                                setView('scope-select')
-                              }}
-                              className="px-4 py-2 bg-green-600 text-white rounded font-medium hover:bg-green-700"
-                            >
-                              Use
-                            </button>
-                          </div>
-                        </div>
-                      )
-                    })}
-                  </div>
-                </div>
-              )}
-
-              {!consolidatedTerminal && sectionTerminals.length === 0 && (
-                <div className="bg-white rounded-lg p-8 text-center">
-                  <p className="text-gray-600">No terminals available</p>
-                </div>
-              )}
+                      <h3 className="font-semibold">{section.name}</h3>
+                      <p className="text-sm text-gray-600 mt-1">{section.departmentName}</p>
+                      {isSelected && (
+                        <p className="text-xs text-blue-600 font-medium mt-2">✓ Selected</p>
+                      )}
+                    </div>
+                  )
+                })}
+              </div>
+            </>
+          ) : (
+            <div className="bg-white rounded-lg p-8 text-center">
+              <p className="text-gray-600">No sections available</p>
             </div>
           )}
         </div>
@@ -872,128 +821,38 @@ export default function SalesTerminal() {
     )
   }
 
-  // Scope selection view (section selection for consolidated, or auto-proceed for section-based)
-  if (view === 'scope-select') {
-    if (!selectedTerminal) {
-      return <div className="min-h-screen bg-gray-50 p-6"><p>Loading...</p></div>
-    }
 
-    if (selectedTerminal.type === 'section') {
-      // Auto-proceed for section-based terminals
-      setView('terminal')
-      return <div className="min-h-screen bg-gray-50 p-6"><p>Loading...</p></div>
-    }
-
-    // Consolidated terminal: show section selection
-    const availableSections = selectedTerminal.allowedSectionIds && selectedTerminal.allowedSectionIds.length > 0
-      ? sections.filter(s => selectedTerminal.allowedSectionIds?.includes(s.id))
-      : sections
-
-    return (
-      <div className="min-h-screen bg-gray-50 p-6">
-        <div className="max-w-6xl mx-auto">
-          <div className="mb-8 flex items-center justify-between">
-            <div>
-              <h1 className="text-3xl font-bold">{selectedTerminal.name}</h1>
-              <p className="text-sm text-gray-600 mt-2">Select sections to sell from</p>
-            </div>
-            <button
-              onClick={() => setView('terminal-select')}
-              className="px-4 py-2 bg-gray-200 text-gray-700 rounded hover:bg-gray-300 font-medium"
-            >
-              Change Terminal
-            </button>
-          </div>
-
-          <div className="mb-4 flex items-center justify-between">
-            <button
-              onClick={handleSelectAllSections}
-              className="px-4 py-2 bg-blue-100 text-blue-700 rounded hover:bg-blue-200 font-medium text-sm"
-            >
-              {selectedSections.size === availableSections.length
-                ? 'Deselect All'
-                : `Select All (${availableSections.length})`}
-            </button>
-            <span className="text-sm font-medium">
-              Selected: {selectedSections.size} / {availableSections.length}
-            </span>
-          </div>
-
-          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4 mb-6">
-            {availableSections.map(section => {
-              const isSelected = selectedSections.has(section.id)
-              const dept = departments.find(d => d.id === section.departmentId)
-              return (
-                <div
-                  key={section.id}
-                  onClick={() => handleToggleSection(section.id)}
-                  className={`p-4 rounded-lg border-2 cursor-pointer transition-all ${
-                    isSelected
-                      ? 'border-blue-500 bg-blue-50'
-                      : 'border-gray-200 bg-white hover:border-gray-300'
-                  }`}
-                >
-                  <div className="flex items-start gap-3">
-                    <input
-                      type="checkbox"
-                      checked={isSelected}
-                      onChange={() => {}}
-                      className="w-5 h-5 mt-1"
-                    />
-                    <div className="flex-1">
-                      <h3 className="font-semibold">{section.name}</h3>
-                      <p className="text-sm text-gray-600 mt-1">{dept?.name}</p>
-                      {section.slug && <p className="text-xs text-gray-500 mt-1">{section.slug}</p>}
-                      <p className={`text-xs mt-2 ${section.isActive ? 'text-green-600' : 'text-red-600'}`}>
-                        {section.isActive ? '✓ Active' : '✕ Inactive'}
-                      </p>
-                    </div>
-                  </div>
-                </div>
-              )
-            })}
-          </div>
-
-          <button
-            onClick={() => selectedSections.size > 0 && setView('terminal')}
-            disabled={selectedSections.size === 0}
-            className="w-full px-6 py-3 bg-green-600 text-white rounded-lg font-semibold hover:bg-green-700 disabled:bg-gray-400 disabled:cursor-not-allowed"
-          >
-            Start Terminal ({selectedSections.size} selected)
-          </button>
-        </div>
-      </div>
-    )
-  }
 
   // Receipt modal is displayed as overlay while remaining in terminal view
   // This allows user to continue shopping after viewing receipt
 
   // Terminal view
   if (view === 'terminal') {
+    const selectedSectionNames = Array.from(selectedSections)
+      .map(id => sections.find(s => s.id === id)?.name)
+      .filter(Boolean)
+      .join(', ')
+    
     return (
       <div className="min-h-screen bg-gray-50 flex flex-col">
       {/* Header */}
       <div className="bg-white border-b sticky top-0 z-10">
         <div className="max-w-7xl mx-auto px-6 py-4 flex items-center justify-between">
           <div>
-            <h1 className="text-2xl font-bold">{selectedTerminal?.name}</h1>
+            <h1 className="text-2xl font-bold">Sales Terminal</h1>
             <p className="text-sm text-gray-600">
-              {selectedTerminal?.type === 'consolidated'
-                ? `${selectedSections.size} section${selectedSections.size !== 1 ? 's' : ''} selected`
-                : 'Section Terminal'}
+              {selectedSectionNames || 'No sections selected'}
             </p>
           </div>
           <button
             onClick={() => {
               setView('terminal-select')
-              setSelectedTerminal(null)
               setSelectedSections(new Set())
               setCart([])
             }}
             className="px-4 py-2 bg-gray-200 text-gray-700 rounded hover:bg-gray-300 font-medium"
           >
-            Change Terminal
+            Change Sections
           </button>
         </div>
       </div>
