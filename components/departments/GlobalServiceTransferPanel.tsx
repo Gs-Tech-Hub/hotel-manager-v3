@@ -13,48 +13,64 @@ type Service = {
   pricingModel: 'per_count' | 'per_time'
   pricePerCount?: number
   pricePerMinute?: number
-  sectionId?: string | null
+  departmentId?: string | null
 }
 
-type Section = {
+type Department = {
   id: string
   name: string
+  code: string
 }
 
-interface ServiceTransferPanelProps {
-  departmentCode: string
-  sections: Section[]
+interface GlobalServiceTransferPanelProps {
   onTransferComplete?: () => void
+  targetDepartment?: Department // If specified, only show transfer to this department
 }
 
-export function ServiceTransferPanel({ departmentCode, sections, onTransferComplete }: ServiceTransferPanelProps) {
-  const [departmentServices, setDepartmentServices] = useState<Service[]>([])
+/**
+ * Global Service Transfer Component
+ * Allows transferring services between departments and sections
+ * Supports:
+ * - Transferring from any source (global, department, section) to any destination
+ * - Auto-discovery of source location if not specified
+ * - Direct transfers between departments
+ */
+export function GlobalServiceTransferPanel({ onTransferComplete, targetDepartment }: GlobalServiceTransferPanelProps) {
+  const [services, setServices] = useState<Service[]>([])
+  const [departments, setDepartments] = useState<Department[]>([])
   const [loading, setLoading] = useState(false)
   const [transferring, setTransferring] = useState(false)
   const [selectedService, setSelectedService] = useState<string>('')
-  const [selectedSection, setSelectedSection] = useState<string>('')
+  const [selectedDepartment, setSelectedDepartment] = useState<string>(targetDepartment?.id || '')
   const { toast } = useToast()
 
-  // Load all global services (unscoped)
+  // Load available services and departments
   useEffect(() => {
-    fetchAllServices()
+    loadData()
   }, [])
 
-  const fetchAllServices = async () => {
+  const loadData = async () => {
     setLoading(true)
     try {
-      // Fetch all global services (not department or section scoped)
-      const response = await fetch('/api/services/list?scope=global')
-      if (!response.ok) throw new Error('Failed to fetch services')
-      
-      const data = await response.json()
-      // Global services have no departmentId or sectionId
-      setDepartmentServices(data.data?.services || [])
+      const [servicesRes, deptsRes] = await Promise.all([
+        fetch('/api/services/list'),
+        fetch('/api/departments')
+      ])
+
+      if (servicesRes.ok) {
+        const data = await servicesRes.json()
+        setServices(data.data?.services || [])
+      }
+
+      if (deptsRes.ok) {
+        const data = await deptsRes.json()
+        setDepartments(data.data?.departments || [])
+      }
     } catch (error) {
-      console.error('Failed to load services:', error)
+      console.error('Failed to load data:', error)
       toast({ 
         title: 'Error', 
-        description: 'Failed to load services', 
+        description: 'Failed to load services or departments', 
         variant: 'destructive' 
       })
     } finally {
@@ -63,10 +79,10 @@ export function ServiceTransferPanel({ departmentCode, sections, onTransferCompl
   }
 
   const handleTransfer = async () => {
-    if (!selectedService || !selectedSection) {
+    if (!selectedService || !selectedDepartment) {
       toast({ 
         title: 'Error', 
-        description: 'Please select both a service and a destination section', 
+        description: 'Please select both a service and a destination department', 
         variant: 'destructive' 
       })
       return
@@ -74,44 +90,39 @@ export function ServiceTransferPanel({ departmentCode, sections, onTransferCompl
 
     setTransferring(true)
     try {
-      // Use unified transfer endpoint with service type
-      const response = await fetch(`/api/departments/${encodeURIComponent(departmentCode)}/transfer`, {
+      const response = await fetch('/api/services/transfer', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          items: [
-            {
-              id: selectedService,
-              type: 'service',
-              quantity: 1, // Services use presence-based transfer
-            }
-          ],
-          toDepartmentCode: `${departmentCode}:${selectedSection}`,
+          serviceId: selectedService,
+          toDepartmentId: selectedDepartment,
+          toSectionId: null // Transfer to department level
         }),
       })
 
       if (!response.ok) {
         const error = await response.json()
-        throw new Error(error.error?.message || 'Failed to assign service')
+        throw new Error(error.error?.message || 'Failed to transfer service')
       }
 
+      const result = await response.json()
+      
       toast({ 
         title: 'Success', 
-        description: 'Service assigned to section successfully' 
+        description: `Service transferred: ${result.data?.transfer?.from} → ${result.data?.transfer?.to}` 
       })
 
-      // Reset selections
+      // Reset selection
       setSelectedService('')
-      setSelectedSection('')
       
-      // Refresh services
-      await fetchAllServices()
+      // Refresh data
+      await loadData()
       onTransferComplete?.()
     } catch (error: any) {
       console.error('Transfer error:', error)
       toast({ 
         title: 'Error', 
-        description: error.message || 'Failed to assign service', 
+        description: error.message || 'Failed to transfer service', 
         variant: 'destructive' 
       })
     } finally {
@@ -119,19 +130,24 @@ export function ServiceTransferPanel({ departmentCode, sections, onTransferCompl
     }
   }
 
-  const selectedServiceData = departmentServices.find(s => s.id === selectedService)
+  // Filter departments if target is specified
+  const availableDepartments = targetDepartment 
+    ? departments.filter(d => d.id === targetDepartment.id)
+    : departments
+
+  const selectedServiceData = services.find(s => s.id === selectedService)
 
   return (
     <Card>
       <CardHeader>
-        <CardTitle>Assign Services to Sections</CardTitle>
+        <CardTitle>Transfer Services Between Departments</CardTitle>
       </CardHeader>
       <CardContent className="space-y-4">
-        {departmentServices.length === 0 ? (
+        {services.length === 0 ? (
           <div className="flex items-start gap-3 p-4 bg-blue-50 border border-blue-200 rounded">
             <AlertCircle className="w-5 h-5 text-blue-600 mt-0.5 flex-shrink-0" />
             <p className="text-sm text-blue-700">
-              No global services available. Create services first to assign them to sections.
+              No services available. Create services first via the service management interface.
             </p>
           </div>
         ) : (
@@ -139,7 +155,7 @@ export function ServiceTransferPanel({ departmentCode, sections, onTransferCompl
             <div className="space-y-3">
               {/* Service Selection */}
               <div>
-                <label className="text-sm font-medium">Select Service to Assign</label>
+                <label className="text-sm font-medium">Select Service</label>
                 <select
                   value={selectedService}
                   onChange={(e) => setSelectedService(e.target.value)}
@@ -147,7 +163,7 @@ export function ServiceTransferPanel({ departmentCode, sections, onTransferCompl
                   disabled={loading}
                 >
                   <option value="">Choose a service...</option>
-                  {departmentServices.map((service) => (
+                  {services.map((service) => (
                     <option key={service.id} value={service.id}>
                       {service.name} ({service.serviceType})
                     </option>
@@ -170,43 +186,40 @@ export function ServiceTransferPanel({ departmentCode, sections, onTransferCompl
                 </div>
               )}
 
-              {/* Section Selection */}
-              <div>
-                <label className="text-sm font-medium">Select Target Section</label>
-                <select
-                  value={selectedSection}
-                  onChange={(e) => setSelectedSection(e.target.value)}
-                  className="w-full p-2 border rounded mt-1"
-                  disabled={loading || !selectedService}
-                >
-                  <option value="">Choose a section...</option>
-                  {sections.map((section) => (
-                    <option key={section.id} value={section.id}>
-                      {section.name}
-                    </option>
-                  ))}
-                </select>
-              </div>
+              {/* Department Selection */}
+              {!targetDepartment && (
+                <div>
+                  <label className="text-sm font-medium">Destination Department</label>
+                  <select
+                    value={selectedDepartment}
+                    onChange={(e) => setSelectedDepartment(e.target.value)}
+                    className="w-full p-2 border rounded mt-1"
+                    disabled={loading || !selectedService}
+                  >
+                    <option value="">Choose a department...</option>
+                    {availableDepartments.map((dept) => (
+                      <option key={dept.id} value={dept.id}>
+                        {dept.name} ({dept.code})
+                      </option>
+                    ))}
+                  </select>
+                </div>
+              )}
 
               {/* Transfer Button */}
               <div className="flex items-center gap-2">
                 <Button
                   onClick={handleTransfer}
-                  disabled={!selectedService || !selectedSection || transferring || loading}
+                  disabled={!selectedService || !selectedDepartment || transferring || loading}
                   className="flex-1"
                 >
-                  {transferring ? 'Assigning...' : (
+                  {transferring ? 'Transferring...' : (
                     <>
                       <ArrowRight className="w-4 h-4 mr-2" />
-                      Assign to Section
+                      Transfer Service
                     </>
                   )}
                 </Button>
-              </div>
-
-              {/* Info */}
-              <div className="text-xs text-gray-600 p-3 bg-amber-50 border border-amber-200 rounded">
-                <p>💡 Once transferred, the service will be available only in the selected section and can be used when starting games in that section.</p>
               </div>
             </div>
           </>

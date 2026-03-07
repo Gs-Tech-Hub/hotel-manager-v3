@@ -58,16 +58,25 @@ export async function GET(
 
     const searchParam = request.nextUrl.searchParams.get('search');
 
-    const where = searchParam
-      ? {
-          OR: [
-            { firstName: { contains: searchParam, mode: 'insensitive' as const } },
-            { lastName: { contains: searchParam, mode: 'insensitive' as const } },
-            { phone: { contains: searchParam, mode: 'insensitive' as const } },
-            { email: { contains: searchParam, mode: 'insensitive' as const } },
-          ],
-        }
-      : {};
+    const where = {
+      // Exclude auto-created guest customers
+      NOT: {
+        AND: [
+          { firstName: 'Guest' },
+          { lastName: 'Customer' },
+        ],
+      },
+      ...(searchParam
+        ? {
+            OR: [
+              { firstName: { contains: searchParam, mode: 'insensitive' as const } },
+              { lastName: { contains: searchParam, mode: 'insensitive' as const } },
+              { phone: { contains: searchParam, mode: 'insensitive' as const } },
+              { email: { contains: searchParam, mode: 'insensitive' as const } },
+            ],
+          }
+        : {}),
+    };
 
     const customers = await prisma.customer.findMany({
       where,

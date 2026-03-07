@@ -92,6 +92,11 @@ export class OrderService extends BaseService<IOrderHeader> {
         subtotal += item.quantity * normalizedUnit;
         departments.add(item.departmentCode);
 
+        // SKIP inventory validation for services - they don't have stock
+        if (item.productType === 'service') {
+          continue;
+        }
+
         // Check inventory availability against section stocks (not global inventory)
         const deptId = deptMap[item.departmentCode];
         if (deptId && item.departmentSectionId) {
@@ -242,6 +247,11 @@ export class OrderService extends BaseService<IOrderHeader> {
         // Use per-item departmentSectionId if provided, otherwise use the dept code mapping
         const sectionId = item.departmentSectionId || deptCodeToSectionId[parentCode] || null;
         
+        // Services are automatically fulfilled when ordered (no manual fulfillment needed)
+        // Inventory items (food, drink, supplies) require manual fulfillment
+        const isService = item.productType === 'service';
+        const initialStatus = isService ? 'fulfilled' : 'pending';
+        
         return {
           lineNumber: idx + 1,
           orderHeaderId: header.id,
@@ -254,7 +264,7 @@ export class OrderService extends BaseService<IOrderHeader> {
           unitPrice: unitPriceCents,
           unitDiscount: 0,
           lineTotal: lineTotalCents,
-          status: 'pending',
+          status: initialStatus,
         };
       });
 
@@ -262,7 +272,8 @@ export class OrderService extends BaseService<IOrderHeader> {
         .filter((it: any) => {
           const deptCode = it.departmentCode || '';
           const parentCode = deptCode.includes(':') ? deptCode.split(':')[0] : deptCode;
-          return ['RESTAURANT', 'BAR_CLUB'].includes(parentCode);
+          // Only create reservations for inventory items in RESTAURANT/BAR_CLUB, NOT for services
+          return ['RESTAURANT', 'BAR_CLUB'].includes(parentCode) && it.productType !== 'service';
         })
         .map((it: any) => ({
           inventoryItemId: it.productId,
@@ -283,6 +294,41 @@ export class OrderService extends BaseService<IOrderHeader> {
       const lineBatches = chunk(linesData, 100)
       for (const b of lineBatches) {
         if (b.length) await prisma.orderLine.createMany({ data: b })
+      }
+
+      // Create fulfillment records for services (automatically fulfilled on order creation)
+      const serviceLines = linesData.filter((line: any) => line.productType === 'service')
+      if (serviceLines.length > 0) {
+        const serviceFulfillments = serviceLines.map((line: any) => ({
+          orderHeaderId: header.id,
+          orderLineId: '', // Will be set after lines are retrieved
+          fulfilledQuantity: line.quantity,
+          status: 'fulfilled' as const,
+          fulfilledAt: new Date(),
+        }))
+        
+        // Fetch the created service lines to get their IDs
+        const createdServiceLines = await prisma.orderLine.findMany({
+          where: {
+            orderHeaderId: header.id,
+            productType: 'service',
+          },
+        })
+        
+        // Create fulfillment records for each service line
+        const fulfillmentBatches = chunk(
+          createdServiceLines.map((line: any) => ({
+            orderHeaderId: header.id,
+            orderLineId: line.id,
+            fulfilledQuantity: line.quantity,
+            status: 'fulfilled' as const,
+            fulfilledAt: new Date(),
+          })),
+          100
+        )
+        for (const b of fulfillmentBatches) {
+          if (b.length) await (prisma as any).orderFulfillment.createMany({ data: b })
+        }
       }
 
       const resBatches = chunk(reservationRows, 100)
@@ -606,6 +652,10 @@ export class OrderService extends BaseService<IOrderHeader> {
   const maxLineNumber = Math.max(...order.lines.map((l: any) => l.lineNumber), 0);
       const lineNumber = maxLineNumber + 1;
 
+      // Services are automatically fulfilled when added (no manual fulfillment needed)
+      const isService = item.productType === 'service';
+      const initialStatus = isService ? 'fulfilled' : 'pending';
+
   const lineItem = await prisma.$transaction(async (tx: any) => {
         // Create line item
         const line = await tx.orderLine.create({
@@ -619,9 +669,22 @@ export class OrderService extends BaseService<IOrderHeader> {
             quantity: item.quantity,
             unitPrice: item.unitPrice,
             lineTotal: item.quantity * item.unitPrice,
-            status: 'pending',
+            status: initialStatus,
           },
         });
+
+        // Create fulfillment record for services
+        if (isService) {
+          await tx.orderFulfillment.create({
+            data: {
+              orderHeaderId: orderId,
+              orderLineId: line.id,
+              fulfilledQuantity: item.quantity,
+              status: 'fulfilled',
+              fulfilledAt: new Date(),
+            },
+          });
+        }
 
         // Reserve inventory if applicable
         if (['RESTAURANT', 'BAR_CLUB'].includes(item.departmentCode)) {

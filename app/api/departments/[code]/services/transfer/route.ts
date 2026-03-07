@@ -1,14 +1,14 @@
 /**
  * POST /api/departments/[code]/services/transfer
  * Transfer service inventory between sections within the same department
- * Follows the same pattern as inventory and extras transfers
+ * Supports two patterns:
  * 
- * Body:
- * {
- *   "serviceId": "string",
- *   "sourceSectionId": "string | null" (null = department level),
- *   "destinationSectionId": "string"
- * }
+ * 1. Direct Transfer (for section-to-section moves):
+ *    Body: { serviceId, sourceSectionId, destinationSectionId }
+ * 
+ * 2. Received Flow (for receiving services from other departments):
+ *    Body: { serviceId, destinationSectionId } (only - auto-discovers source)
+ *    Used when auto-discovering where service currently exists
  */
 
 import { NextRequest, NextResponse } from 'next/server';
@@ -54,7 +54,7 @@ export async function POST(
     // Get department
     const dept = await prisma.department.findFirst({
       where: { code: departmentCode },
-      select: { id: true },
+      select: { id: true, name: true, code: true },
     });
 
     if (!dept) {
@@ -84,9 +84,12 @@ export async function POST(
       );
     }
 
-    // Get source section if specified
+    // Get source section if specified (direct transfer mode)
     let sourceSection: any = null;
+    let sourceLocation = 'Unknown';
+    
     if (sourceSectionId) {
+      // Direct transfer within same department
       sourceSection = await prisma.departmentSection.findUnique({
         where: { id: sourceSectionId },
         select: { id: true, name: true, departmentId: true },
@@ -105,22 +108,55 @@ export async function POST(
           { status: 400 }
         );
       }
+
+      sourceLocation = sourceSection.name;
+    } else {
+      // Received flow: auto-discover where service currently exists
+      // Service can be at global level or in any other department
+      const service = await prisma.serviceInventory.findUnique({
+        where: { id: serviceId },
+        select: {
+          id: true,
+          departmentId: true,
+          sectionId: true,
+          department: { select: { name: true } },
+          section: { select: { name: true } }
+        }
+      });
+
+      if (!service) {
+        return NextResponse.json(
+          errorResponse(ErrorCodes.NOT_FOUND, 'Service not found'),
+          { status: 404 }
+        );
+      }
+
+      if (service.departmentId === null) {
+        sourceLocation = 'Global';
+      } else if (service.sectionId) {
+        sourceLocation = `Section: ${service.section?.name} (${service.department?.name})`;
+      } else {
+        sourceLocation = `Department: ${service.department?.name}`;
+      }
     }
 
-    // Get service from source (department level if sourceSectionId is null)
-    const service = await prisma.serviceInventory.findFirst({
-      where: {
-        id: serviceId,
-        departmentId: dept.id,
-        sectionId: sourceSectionId || null,
-      },
-      select: { id: true, name: true, sectionId: true },
+    // Get the service
+    const service = await prisma.serviceInventory.findUnique({
+      where: { id: serviceId },
+      select: { id: true, name: true, sectionId: true, departmentId: true },
     });
 
     if (!service) {
-      const location = sourceSectionId ? `section ${sourceSectionId}` : 'department level';
       return NextResponse.json(
-        errorResponse(ErrorCodes.NOT_FOUND, `Service not found at ${location}`),
+        errorResponse(ErrorCodes.NOT_FOUND, 'Service not found'),
+        { status: 404 }
+      );
+    }
+
+    // For direct transfer, verify service exists in source location
+    if (sourceSectionId && service.sectionId !== sourceSectionId) {
+      return NextResponse.json(
+        errorResponse(ErrorCodes.NOT_FOUND, 'Service not found at specified source location'),
         { status: 404 }
       );
     }
@@ -143,7 +179,10 @@ export async function POST(
     // Transfer service in transaction
     const updated = await prisma.serviceInventory.update({
       where: { id: serviceId },
-      data: { sectionId: destinationSectionId },
+      data: { 
+        departmentId: dept.id,
+        sectionId: destinationSectionId 
+      },
       select: { id: true, name: true, sectionId: true, serviceType: true },
     });
 
@@ -151,12 +190,14 @@ export async function POST(
       successResponse({
         data: {
           message: 'Service transferred successfully',
-          service: {
-            id: updated.id,
-            name: updated.name,
+          transfer: {
+            serviceId: updated.id,
+            serviceName: updated.name,
             serviceType: updated.serviceType,
-            fromSection: sourceSection?.name || 'Department Level',
-            toSection: destSection.name,
+            from: sourceLocation,
+            to: destSection.name,
+            receivedAt: new Date().toISOString(),
+            type: 'received'
           },
         },
       }),

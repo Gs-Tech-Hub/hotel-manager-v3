@@ -149,7 +149,7 @@ export class TransferService {
 
         // Validate availability outside the transaction to fail fast for obvious errors.
         // Use stockService for all balance checks - this ensures consistency between display and validation
-        // For extras, validate directly from DepartmentExtras table
+        // For extras and services, validate existence directly without checking quantities
         let validationError: string | null = null
         for (const it of transfer.items) {
           if (it.productType === 'extra') {
@@ -170,6 +170,20 @@ export class TransferService {
             const availableQty = deptExtra.extra.trackInventory ? deptExtra.quantity : 1
             if (availableQty < it.quantity) {
               validationError = `Insufficient quantity for extra "${deptExtra.extra.name}": have ${availableQty}, need ${it.quantity}`
+              break
+            }
+          } else if (it.productType === 'service') {
+            // For services, just verify the service exists - no quantity tracking
+            const service = await prisma.serviceInventory.findUnique({
+              where: { id: it.productId },
+            })
+            if (!service) {
+              validationError = `Service not found: ${it.productId}`
+              break
+            }
+            // Verify service belongs to source department or is global
+            if (service.departmentId && service.departmentId !== transfer.fromDepartmentId) {
+              validationError = `Service does not belong to source department`
               break
             }
           } else {
@@ -194,11 +208,21 @@ export class TransferService {
         const destIncrements: Array<{ departmentId: string; sectionId?: string | null; inventoryItemId: string; amount: number }> = []
         const movementRows: Array<any> = []
 
-        // Prepare payloads for drinks, inventory items, and extras
+        // Prepare payloads for drinks, inventory items, extras, and services
         const extrasToTransfer: Array<{ departmentId: string; extraId: string; sourceSectionId: string | null; destinationSectionId: string | null; quantity: number }> = []
+        const servicesToTransfer: Array<{ serviceId: string; targetDepartmentId: string; targetSectionId: string | null }> = []
 
         for (const it of transfer.items) {
-          if (it.productType === 'extra') {
+          if (it.productType === 'service') {
+            // Services: update departmentId and sectionId to destination
+            const toSectionId = (toDept as any).isSection ? (toDept as any).id : null
+            const targetDeptId = (toDept as any).isSection ? (toDept as any).parentDeptId : toDept.id
+            servicesToTransfer.push({
+              serviceId: it.productId,
+              targetDepartmentId: targetDeptId,
+              targetSectionId: toSectionId,
+            })
+          } else if (it.productType === 'extra') {
             // Queue extras for transfer in the transaction callback
             const toSectionId = (toDept as any).isSection ? (toDept as any).id : null
             extrasToTransfer.push({
@@ -300,10 +324,21 @@ export class TransferService {
               await tx.inventoryMovement.createMany({ data: movementRows })
             }
 
-            // 5) transfer extras (must be outside of transaction since DepartmentExtrasService handles its own DB calls)
+            // 5) update service department/section assignments
+            for (const serviceTransfer of servicesToTransfer) {
+              await tx.serviceInventory.update({
+                where: { id: serviceTransfer.serviceId },
+                data: {
+                  departmentId: serviceTransfer.targetDepartmentId,
+                  sectionId: serviceTransfer.targetSectionId,
+                }
+              })
+            }
+
+            // 6) transfer extras (must be outside of transaction since DepartmentExtrasService handles its own DB calls)
             // We'll do extras after the main transaction completes
 
-            // 6) mark transfer completed
+            // 7) mark transfer completed
             await tx.departmentTransfer.update({ where: { id: transferId }, data: { status: 'completed', updatedAt: new Date() } })
           }, { timeout: 15000 })
 
@@ -321,6 +356,24 @@ export class TransferService {
             } catch (e: any) {
               // Log the error but continue - we don't want one extra failure to block the whole transfer
               console.warn(`Failed to transfer extra ${extra.extraId}: ${e?.message}`)
+            }
+          }
+
+          // Transfer services to destination department/section
+          const toSectionId = (toDept as any).isSection ? (toDept as any).id : null
+          for (const it of transfer.items) {
+            if (it.productType === 'service') {
+              try {
+                await prisma.serviceInventory.update({
+                  where: { id: it.productId },
+                  data: {
+                    departmentId: transfer.toDepartmentId,
+                    sectionId: toSectionId || null
+                  }
+                })
+              } catch (e: any) {
+                console.warn(`Failed to transfer service ${it.productId}: ${e?.message}`)
+              }
             }
           }
 

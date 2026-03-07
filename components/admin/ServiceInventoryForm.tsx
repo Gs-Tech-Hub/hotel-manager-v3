@@ -41,11 +41,6 @@ export function ServiceInventoryForm({ departmentId, departments = [], sections 
       return
     }
 
-    if (!formData.departmentId) {
-      toast({ title: 'Error', description: 'Please select a department', variant: 'destructive' })
-      return
-    }
-
     if (formData.pricingModel === 'per_count' && !formData.pricePerCount) {
       toast({ title: 'Error', description: 'Price per count is required', variant: 'destructive' })
       return
@@ -67,8 +62,7 @@ export function ServiceInventoryForm({ departmentId, departments = [], sections 
           pricingModel: formData.pricingModel,
           pricePerCount: formData.pricingModel === 'per_count' ? parseFloat(formData.pricePerCount) : null,
           pricePerMinute: formData.pricingModel === 'per_time' ? parseFloat(formData.pricePerMinute) : null,
-          departmentId: formData.departmentId,
-          sectionId: formData.sectionId || null,
+          // Create globally (no departmentId or sectionId)
           description: formData.description || null,
         })
       })
@@ -114,27 +108,6 @@ export function ServiceInventoryForm({ departmentId, departments = [], sections 
       </CardHeader>
       <CardContent>
         <form onSubmit={handleSubmit} className="space-y-4">
-          {/* Department Selection */}
-          {departments.length > 0 && (
-            <div>
-              <label className="text-sm font-medium">Department *</label>
-              <select
-                name="departmentId"
-                value={formData.departmentId}
-                onChange={handleChange}
-                className="w-full p-2 border rounded"
-                required
-              >
-                <option value="">Select a department...</option>
-                {departments
-                  .filter((d) => !String(d.code).includes(':')) // only top-level departments
-                  .map((d) => (
-                    <option key={d.id} value={d.id}>{d.name}</option>
-                  ))}
-              </select>
-            </div>
-          )}
-
           {/* Service Name */}
           <div>
             <label className="text-sm font-medium">Service Name *</label>
@@ -207,24 +180,6 @@ export function ServiceInventoryForm({ departmentId, departments = [], sections 
                 onChange={handleChange}
                 required
               />
-            </div>
-          )}
-
-          {/* Section (Optional) */}
-          {sections.length > 0 && (
-            <div>
-              <label className="text-sm font-medium">Assign to Section (Optional)</label>
-              <select
-                name="sectionId"
-                value={formData.sectionId}
-                onChange={handleChange}
-                className="w-full p-2 border rounded"
-              >
-                <option value="">Department-wide (available in all sections)</option>
-                {sections.map(s => (
-                  <option key={s.id} value={s.id}>{s.name}</option>
-                ))}
-              </select>
             </div>
           )}
 

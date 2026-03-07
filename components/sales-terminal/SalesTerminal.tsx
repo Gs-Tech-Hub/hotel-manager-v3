@@ -53,6 +53,8 @@ type Product = {
   sectionId: string
   sectionName: string
   departmentCode: string
+  isService?: boolean // true for services, false/undefined for regular items
+  pricingModel?: 'per_count' | 'per_time' // service pricing model
 }
 
 type CartItem = {
@@ -65,6 +67,7 @@ type CartItem = {
   sectionId: string
   sectionName: string
   departmentCode: string
+  isService?: boolean
 }
 
 export default function SalesTerminal() {
@@ -246,6 +249,7 @@ export default function SalesTerminal() {
     const loadProducts = async () => {
       try {
         const allProducts: Product[] = []
+        const productIds = new Set<string>() // Track product IDs to prevent duplicates
 
         // Load products and services from each selected section
         for (const sectionId of selectedSections) {
@@ -260,6 +264,7 @@ export default function SalesTerminal() {
             const sectionCode = section.slug ? `${dept.code}:${section.slug}` : `${dept.code}:${section.id}`
             
             // Load regular products for the section (inventoryItems, drinks, food, extras)
+            // NOTE: This may also return services if section has no items
             const productsRes = await fetch(
               `/api/departments/${encodeURIComponent(dept.code)}/products?section=${encodeURIComponent(sectionCode)}&pageSize=200`
             )
@@ -270,32 +275,50 @@ export default function SalesTerminal() {
                 id: p.id,
                 name: p.name,
                 price: Math.round(Number(p.unitPrice) || 0),
-                quantity: Number(p.available || 0), // Use available from stock query
+                quantity: p.isService ? 999 : Number(p.available || 0), // Services have unlimited availability
                 sectionId: section.id,
                 sectionName: section.name,
                 departmentCode: dept.code,
+                isService: p.type === 'service' || p.isService || false, // Mark services from first fetch
+                pricingModel: p.pricingModel || undefined,
               }))
-              allProducts.push(...sectionProducts)
+              
+              // Add products and track their IDs
+              for (const product of sectionProducts) {
+                if (!productIds.has(product.id)) {
+                  productIds.add(product.id)
+                  allProducts.push(product)
+                }
+              }
             }
 
             // Load services for the section (services transferred to this section)
             // Services include games, activities, and other service offerings
+            // Skip if no services were returned in the first fetch
             const servicesRes = await fetch(
               `/api/departments/${encodeURIComponent(dept.code)}/products?type=service&section=${encodeURIComponent(sectionCode)}&pageSize=200`
             )
             if (servicesRes.ok) {
               const data = await servicesRes.json()
               const items = data.data?.items || data.data || []
-              const sectionServices = items.map((s: any) => ({
-                id: s.id,
-                name: s.name,
-                price: Math.round(Number(s.unitPrice) || 0),
-                quantity: Number(s.available || 999), // Services typically unlimited availability
-                sectionId: section.id,
-                sectionName: section.name,
-                departmentCode: dept.code,
-              }))
-              allProducts.push(...sectionServices)
+              
+              // Only add services that weren't already added (avoid duplicates)
+              for (const s of items) {
+                if (!productIds.has(s.id)) {
+                  productIds.add(s.id)
+                  allProducts.push({
+                    id: s.id,
+                    name: s.name,
+                    price: Math.round(Number(s.unitPrice) || 0),
+                    quantity: 999, // Services have unlimited availability
+                    sectionId: section.id,
+                    sectionName: section.name,
+                    departmentCode: dept.code,
+                    isService: true, // Flag as service
+                    pricingModel: s.pricingModel, // 'per_count' or 'per_time'
+                  })
+                }
+              }
             }
           } catch (e) {
             console.error(`Failed to fetch products/services for section ${sectionId}:`, e)
@@ -317,6 +340,11 @@ export default function SalesTerminal() {
     }
   }, [selectedSections, sections, departments])
 
+  // Helper to check if a product is a service
+  const isProductService = (productId: string): boolean => {
+    return products.find(p => p.id === productId)?.isService ?? false
+  }
+
   const handleToggleSection = (sectionId: string) => {
     const newSelected = new Set(selectedSections)
     if (newSelected.has(sectionId)) {
@@ -328,6 +356,42 @@ export default function SalesTerminal() {
   }
 
   const handleAddToCart = (product: Product) => {
+    // Services have unlimited availability and don't need inventory checks
+    if (product.isService) {
+      setCheckoutError(null) // Clear any prior errors
+      setCart(prev => {
+        const existing = prev.find(item => item.productId === product.id)
+        if (existing) {
+          return prev.map(item =>
+            item.productId === product.id
+              ? {
+                  ...item,
+                  quantity: item.quantity + 1,
+                  subtotal: (item.quantity + 1) * item.basePrice,
+                }
+              : item
+          )
+        } else {
+          return [
+            ...prev,
+            {
+              id: `${product.id}-${Date.now()}`,
+              productId: product.id,
+              productName: product.name,
+              basePrice: product.price,
+              quantity: 1,
+              subtotal: product.price,
+              sectionId: product.sectionId,
+              sectionName: product.sectionName,
+              departmentCode: product.departmentCode,
+              isService: true, // Mark as service
+            },
+          ]
+        }
+      })
+      return
+    }
+    
     // CRITICAL: Validate stock before adding to cart - prevent adding items we don't have
     const availableQty = product.quantity ?? 0
     const currentInCart = cart.filter(item => item.productId === product.id).reduce((sum, item) => sum + item.quantity, 0)
@@ -381,6 +445,7 @@ export default function SalesTerminal() {
             sectionId: product.sectionId,
             sectionName: product.sectionName,
             departmentCode: product.departmentCode,
+            isService: false, // Regular inventory item
           },
         ]
       }
@@ -394,11 +459,24 @@ export default function SalesTerminal() {
       return
     }
     
-    // CRITICAL: Validate quantity against available stock
+    // Get the cart item and check if it's a service
     const cartItem = cart.find(item => item.id === cartId)
     if (!cartItem) return
     
-    // Find the product to get max available quantity
+    // Services have unlimited quantity - no validation needed
+    if (isProductService(cartItem.productId)) {
+      setCheckoutError(null)
+      setCart(prev =>
+        prev.map(item =>
+          item.id === cartId
+            ? { ...item, quantity, subtotal: quantity * item.basePrice }
+            : item
+        )
+      )
+      return
+    }
+    
+    // CRITICAL: Validate quantity against available stock for regular items
     const product = products.find(p => p.id === cartItem.productId)
     const maxAllowed = product?.quantity ?? 0
     
@@ -424,6 +502,7 @@ export default function SalesTerminal() {
   }
 
   // Pre-checkout inventory validation: verify live stock in section before order creation
+  // NOTE: Services (isService=true) are skipped from inventory checks as they have unlimited availability
   const validateCartInventory = async () => {
     try {
       console.log('[SalesTerminal] Validating live inventory for cart items')
@@ -441,6 +520,12 @@ export default function SalesTerminal() {
       // Check inventory for each department's section
       for (const [deptCode, items] of itemsByDept) {
         for (const item of items) {
+          // SKIP INVENTORY CHECK FOR SERVICES: Services have unlimited availability
+          if (isProductService(item.productId)) {
+            console.log(`[SalesTerminal] Skipping inventory check for service: ${item.productName}`)
+            continue
+          }
+          
           try {
             // Endpoint: GET /api/departments/[code]/section/inventory?productId=X&sectionId=Y
             const url = new URL(`/api/departments/${deptCode}/section/inventory`, window.location.origin)
@@ -579,7 +664,7 @@ export default function SalesTerminal() {
       // Step 1: Create order with items and discounts
       const items = cart.map(item => ({
         productId: item.productId,
-        productType: 'inventory',
+        productType: item.isService ? 'service' : 'inventory',
         productName: item.productName,
         departmentCode: item.departmentCode,
         departmentSectionId: item.sectionId,
@@ -882,11 +967,31 @@ export default function SalesTerminal() {
                 <button
                   key={product.id}
                   onClick={() => handleAddToCart(product)}
-                  className="p-4 bg-white rounded-lg border hover:shadow-md transition-shadow text-left"
+                  className={`p-4 rounded-lg border transition-all text-left hover:shadow-md ${
+                    product.isService
+                      ? 'bg-gradient-to-br from-purple-50 to-pink-50 border-purple-300 hover:border-purple-400'
+                      : 'bg-white border-gray-200 hover:border-gray-300'
+                  }`}
                 >
-                  <div className="font-semibold">{product.name}</div>
-                  <div className="text-sm text-gray-600 mt-1">{product.sectionName}</div>
-                  <div className="text-lg font-bold text-blue-600 mt-2">
+                  <div className="flex items-start justify-between">
+                    <div className="flex-1">
+                      <div className="font-semibold text-gray-900">{product.name}</div>
+                      <div className="text-sm text-gray-600 mt-1">{product.sectionName}</div>
+                      {product.isService && (
+                        <div className="text-xs font-medium text-purple-600 mt-1">
+                          ⭐ Service {product.pricingModel ? `(${product.pricingModel === 'per_count' ? 'per count' : 'per minute'})` : ''}
+                        </div>
+                      )}
+                    </div>
+                    {product.isService && (
+                      <span className="ml-2 px-2 py-1 text-xs font-bold bg-purple-500 text-white rounded">
+                        SVC
+                      </span>
+                    )}
+                  </div>
+                  <div className={`text-lg font-bold mt-2 ${
+                    product.isService ? 'text-purple-600' : 'text-blue-600'
+                  }`}>
                     {formatTablePrice(normalizeToCents(product.price))}
                   </div>
                 </button>

@@ -28,10 +28,11 @@ export async function POST(request: NextRequest) {
       description 
     } = body;
 
-    // Validate required fields
-    if (!name || !pricingModel || !departmentId || !serviceType) {
+    // Validate required fields - NO departmentId or sectionId required initially
+    // Services are created as standalone entities and can be transferred to departments/sections
+    if (!name || !pricingModel || !serviceType) {
       return NextResponse.json(
-        errorResponse(ErrorCodes.BAD_REQUEST, 'Missing required fields: name, pricingModel, departmentId, serviceType'),
+        errorResponse(ErrorCodes.BAD_REQUEST, 'Missing required fields: name, pricingModel, serviceType'),
         { status: 400 }
       );
     }
@@ -59,57 +60,75 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    // Verify department exists
-    const dept = await prisma.department.findUnique({
-      where: { id: departmentId }
-    });
+    // Verify department exists (optional - only if provided)
+    if (departmentId) {
+      const dept = await prisma.department.findUnique({
+        where: { id: departmentId }
+      });
 
-    if (!dept) {
-      return NextResponse.json(
-        errorResponse(ErrorCodes.NOT_FOUND, 'Department not found'),
-        { status: 404 }
-      );
-    }
+      if (!dept) {
+        return NextResponse.json(
+          errorResponse(ErrorCodes.NOT_FOUND, 'Department not found'),
+          { status: 404 }
+        );
+      }
 
-    // If sectionId provided, verify it belongs to the department
-    if (sectionId) {
-      const section = await prisma.departmentSection.findFirst({
+      // If sectionId provided, verify it belongs to the department
+      if (sectionId) {
+        const section = await prisma.departmentSection.findFirst({
+          where: {
+            id: sectionId,
+            departmentId: departmentId
+          }
+        });
+
+        if (!section) {
+          return NextResponse.json(
+            errorResponse(ErrorCodes.NOT_FOUND, 'Section not found in this department'),
+            { status: 404 }
+          );
+        }
+      }
+
+      // Check for duplicate name in same scope
+      const existing = await prisma.serviceInventory.findFirst({
         where: {
-          id: sectionId,
-          departmentId: departmentId
+          name: name,
+          departmentId: departmentId,
+          sectionId: sectionId || null
         }
       });
 
-      if (!section) {
+      if (existing) {
         return NextResponse.json(
-          errorResponse(ErrorCodes.NOT_FOUND, 'Section not found in this department'),
-          { status: 404 }
+          errorResponse(
+            ErrorCodes.CONFLICT,
+            sectionId 
+              ? 'Service already exists in this section'
+              : 'Service already exists in this department'
+          ),
+          { status: 409 }
+        );
+      }
+    } else {
+      // If no department specified, check for duplicate at global level (departmentId = null)
+      const existing = await prisma.serviceInventory.findFirst({
+        where: {
+          name: name,
+          departmentId: null,
+          sectionId: null
+        }
+      });
+
+      if (existing) {
+        return NextResponse.json(
+          errorResponse(ErrorCodes.CONFLICT, 'Service with this name already exists'),
+          { status: 409 }
         );
       }
     }
 
-    // Check for duplicate name in same scope
-    const existing = await prisma.serviceInventory.findFirst({
-      where: {
-        name: name,
-        departmentId: departmentId,
-        sectionId: sectionId || null
-      }
-    });
-
-    if (existing) {
-      return NextResponse.json(
-        errorResponse(
-          ErrorCodes.CONFLICT,
-          sectionId 
-            ? 'Service already exists in this section'
-            : 'Service already exists in this department'
-        ),
-        { status: 409 }
-      );
-    }
-
-    // Create service inventory
+    // Create service inventory - can be global or scoped to department/section
     const service = await prisma.serviceInventory.create({
       data: {
         name,
@@ -117,8 +136,8 @@ export async function POST(request: NextRequest) {
         pricingModel,
         pricePerCount: pricingModel === 'per_count' ? pricePerCount : null,
         pricePerMinute: pricingModel === 'per_time' ? pricePerMinute : null,
-        departmentId,
-        sectionId: sectionId || null,
+        departmentId: departmentId || null,  // Optional
+        sectionId: sectionId || null,        // Optional
         description: description || null
       },
       include: {
@@ -136,7 +155,11 @@ export async function POST(request: NextRequest) {
             pricingModel: service.pricingModel,
             pricePerCount: service.pricePerCount,
             pricePerMinute: service.pricePerMinute,
-            scope: sectionId ? `section: ${service.section?.name}` : `department: ${service.department?.name}`,
+            scope: sectionId 
+              ? `section: ${service.section?.name}` 
+              : departmentId 
+                ? `department: ${service.department?.name}`
+                : 'global',
             createdAt: service.createdAt
           }
         }

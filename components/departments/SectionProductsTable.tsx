@@ -138,29 +138,53 @@ export default function SectionProductsTable({ products: initialProducts, depart
           </tr>
         </thead>
         <tbody>
-          {products.map((p: any) => (
-            <tr key={p.id} className="border-t hover:bg-muted/50">
-              <td className="py-2 px-2">
-                <div className="font-medium">{p.name}</div>
-                {p.sku && <div className="text-xs text-muted-foreground">{p.sku}</div>}
-              </td>
-              <td className="text-right py-2 px-2 text-muted-foreground">
-                {p.unitPrice ? formatTablePrice(p.unitPrice) : '—'}
-              </td>
-              <td className="text-right py-2 px-2 font-medium">
-                {formatQuantityWithUnit(p.available ?? 0, getDisplayUnit(p.category, p.itemType))}
-              </td>
-              <td className="text-right py-2 px-2">{p.unitsSold ?? 0}</td>
-              <td className="text-right py-2 px-2">
-                {p.amountSold ? formatTablePrice(p.amountSold) : formatTablePrice(0)}
-
-              </td>
-              <td className="text-right py-2 px-2">{p.pendingQuantity ?? 0}</td>
-              <td className="text-right py-2 px-2">
-                <Link href={p.posLink || `/inventory/${p.inventoryId || p.id}`} prefetch={false} className="text-sky-600 hover:text-sky-700 text-xs">View</Link>
-              </td>
-            </tr>
-          ))}
+          {products.map((p: any) => {
+            const isService = p.type === 'service'
+            return (
+              <tr 
+                key={p.id} 
+                className={`border-t hover:bg-muted/50 ${
+                  isService ? 'bg-gradient-to-r from-purple-50/50 to-pink-50/50' : ''
+                }`}
+              >
+                <td className="py-2 px-2">
+                  <div className="flex items-center gap-2">
+                    <div className="flex-1">
+                      <div className="font-medium">{p.name}</div>
+                      {p.sku && <div className="text-xs text-muted-foreground">{p.sku}</div>}
+                    </div>
+                    {isService && (
+                      <span className="ml-auto px-2 py-0.5 text-xs font-bold bg-purple-600 text-white rounded">
+                        SERVICE
+                      </span>
+                    )}
+                  </div>
+                </td>
+                <td className="text-right py-2 px-2 text-muted-foreground">
+                  {p.unitPrice ? formatTablePrice(p.unitPrice) : '—'}
+                </td>
+                <td className="text-right py-2 px-2 font-medium">
+                  {isService ? (
+                    <span className="text-purple-600 font-semibold">∞ Unlimited</span>
+                  ) : (
+                    formatQuantityWithUnit(p.available ?? 0, getDisplayUnit(p.category, p.itemType))
+                  )}
+                </td>
+                <td className="text-right py-2 px-2">
+                  {isService ? '—' : (p.unitsSold ?? 0)}
+                </td>
+                <td className="text-right py-2 px-2">
+                  {isService ? '—' : (p.amountSold ? formatTablePrice(p.amountSold) : formatTablePrice(0))}
+                </td>
+                <td className="text-right py-2 px-2">
+                  {isService ? '—' : (p.pendingQuantity ?? 0)}
+                </td>
+                <td className="text-right py-2 px-2">
+                  <Link href={p.posLink || `/inventory/${p.inventoryId || p.id}`} prefetch={false} className="text-sky-600 hover:text-sky-700 text-xs">View</Link>
+                </td>
+              </tr>
+            )
+          })}
         </tbody>
       </table>
       </div>

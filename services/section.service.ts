@@ -590,7 +590,7 @@ export class SectionService {
       return { items: mapped, total, page, pageSize }
     }
 
-    // Generic inventory fallback
+    // Generic inventory fallback - includes services if items are empty
     {
       const where: any = {}
       if (search) where.name = { contains: search, mode: 'insensitive' }
@@ -656,6 +656,14 @@ export class SectionService {
             orderBy: { name: 'asc' },
           })
           total = totalInSection
+        }
+
+        // If section has no items, check for services
+        if (items.length === 0) {
+          const servicesResult = await this.getServicesForSection(dept.id, resolvedSectionId, search, skip, pageSize)
+          if (servicesResult.items.length > 0) {
+            return { items: servicesResult.items, total: servicesResult.total, page, pageSize }
+          }
         }
       } else {
         // For parent departments: get all items in the category
@@ -749,6 +757,100 @@ export class SectionService {
 
       return { items: mapped, total, page, pageSize }
     }
+  }
+
+  /**
+   * Helper to get services for a section or department
+   * Returns combined items with services appended when appropriate
+   */
+  private async getServicesForSection(
+    deptId: string,
+    resolvedSectionId: string | undefined,
+    search: string = '',
+    skip: number = 0,
+    pageSize: number = 20
+  ) {
+    if (!resolvedSectionId) {
+      // For parent department, get department-level services
+      const services = await prisma.serviceInventory.findMany({
+        where: {
+          departmentId: deptId,
+          sectionId: null,
+          ...(search ? { name: { contains: search, mode: 'insensitive' } } : {}),
+        },
+        orderBy: { name: 'asc' },
+      })
+
+      const total = await prisma.serviceInventory.count({
+        where: {
+          departmentId: deptId,
+          sectionId: null,
+          ...(search ? { name: { contains: search, mode: 'insensitive' } } : {}),
+        },
+      })
+
+      const mapped = services.map((service: any) => {
+        let unitPrice = 0
+        if (service.pricingModel === 'per_count' && service.pricePerCount) {
+          unitPrice = Math.round(Number(service.pricePerCount) * 100)
+        } else if (service.pricingModel === 'per_time' && service.pricePerMinute) {
+          unitPrice = Math.round(Number(service.pricePerMinute) * 100)
+        }
+
+        return {
+          id: service.id,
+          name: service.name,
+          type: 'service',
+          available: 1, // Services have unlimited availability
+          unitPrice,
+          pricingModel: service.pricingModel,
+          serviceType: service.serviceType,
+          description: service.description,
+          isService: true, // Flag for special handling
+        }
+      })
+
+      return { items: mapped, total }
+    }
+
+    // For section, get section-specific services
+    const services = await prisma.serviceInventory.findMany({
+      where: {
+        sectionId: resolvedSectionId,
+        ...(search ? { name: { contains: search, mode: 'insensitive' } } : {}),
+      },
+      orderBy: { name: 'asc' },
+    })
+
+    const total = await prisma.serviceInventory.count({
+      where: {
+        sectionId: resolvedSectionId,
+        ...(search ? { name: { contains: search, mode: 'insensitive' } } : {}),
+      },
+    })
+
+    const mapped = services.map((service: any) => {
+      let unitPrice = 0
+      if (service.pricingModel === 'per_count' && service.pricePerCount) {
+        unitPrice = Math.round(Number(service.pricePerCount) * 100)
+      } else if (service.pricingModel === 'per_time' && service.pricePerMinute) {
+        unitPrice = Math.round(Number(service.pricePerMinute) * 100)
+      }
+
+      return {
+        id: service.id,
+        name: service.name,
+        type: 'service',
+        available: 1, // Services have unlimited availability
+        unitPrice,
+        pricingModel: service.pricingModel,
+        serviceType: service.serviceType,
+        description: service.description,
+        isService: true, // Flag for special handling
+      }
+    })
+
+    return { items: mapped, total }
   }
 
   /**

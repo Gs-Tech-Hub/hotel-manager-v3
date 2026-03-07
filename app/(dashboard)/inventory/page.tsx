@@ -246,7 +246,9 @@ export default function InventoryPage() {
       if (!res.ok) throw new Error('Failed to fetch sections')
       const json = await res.json()
       const data = json.data?.sections || json.sections || []
-      setSections(data)
+      // Filter for only active sections
+      const actSections = data.filter((s: any) => s.isActive !== false)
+      setSections(actSections)
     } catch (err) {
       console.warn('Could not load sections for department', err)
       setSections([])
@@ -629,9 +631,6 @@ export default function InventoryPage() {
         <div className="space-y-6">
           {showForm && hasPermission('services.create') && (
             <ServiceInventoryForm
-              departments={departments.filter((d) => !String(d.code).includes(':'))}
-              departmentId={selectedDept}
-              sections={sections}
               onServiceCreated={() => setShowForm(false)}
             />
           )}
@@ -645,13 +644,7 @@ export default function InventoryPage() {
               }}
             />
           )}
-          {selectedDept ? (
-            <ServiceList departmentCode={selectedDept} />
-          ) : (
-            <div className="p-4 bg-blue-50 border border-blue-200 rounded text-sm text-blue-700">
-              Select a department in the form above to create services, or use the filter below to view services for a specific department.
-            </div>
-          )}
+          <ServiceList />
         </div>
       )}
 

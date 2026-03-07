@@ -29,23 +29,15 @@ export function ServiceList({ departmentId, departmentCode, onDeleteSuccess }: S
   const [deleting, setDeleting] = useState<string | null>(null)
   const { toast } = useToast()
 
-  const code = departmentCode || departmentId
-
   useEffect(() => {
-    if (!code) {
-      setServices([])
-      setLoading(false)
-      return
-    }
     fetchServices()
-  }, [code])
+  }, [])
 
   const fetchServices = async () => {
-    if (!code) return
     setLoading(true)
     try {
-      // Use the department-specific endpoint
-      const response = await fetch(`/api/departments/${encodeURIComponent(code)}/services?level=all`)
+      // Fetch all global services (not department-scoped)
+      const response = await fetch('/api/services/list?scope=global')
       if (response.ok) {
         const data = await response.json()
         setServices(data.data?.services || [])
@@ -61,11 +53,10 @@ export function ServiceList({ departmentId, departmentCode, onDeleteSuccess }: S
 
   const handleDelete = async (serviceId: string) => {
     if (!confirm('Are you sure you want to delete this service?')) return
-    if (!code) return
 
     setDeleting(serviceId)
     try {
-      const response = await fetch(`/api/departments/${encodeURIComponent(code)}/services/${serviceId}`, {
+      const response = await fetch(`/api/services/${serviceId}`, {
         method: 'DELETE',
       })
 

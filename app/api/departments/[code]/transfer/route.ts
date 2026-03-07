@@ -80,10 +80,10 @@ export async function POST(request: NextRequest, { params }: { params: Promise<{
       return NextResponse.json(errorResponse(ErrorCodes.NOT_FOUND, 'Source or destination department not found'), { status: getStatusCode(ErrorCodes.NOT_FOUND) })
     }
 
-    // Only support drink, food, inventoryItem, and extra transfers
-    const unsupported = items.find((it: any) => it.type !== 'drink' && it.type !== 'food' && it.type !== 'inventoryItem' && it.type !== 'extra')
+    // Only support drink, food, inventoryItem, extra, and service transfers
+    const unsupported = items.find((it: any) => it.type !== 'drink' && it.type !== 'food' && it.type !== 'inventoryItem' && it.type !== 'extra' && it.type !== 'service')
     if (unsupported) {
-      return NextResponse.json(errorResponse(ErrorCodes.VALIDATION_ERROR, 'Only transfers of type "drink", "food", "inventoryItem", or "extra" are supported by this endpoint'), { status: getStatusCode(ErrorCodes.VALIDATION_ERROR) })
+      return NextResponse.json(errorResponse(ErrorCodes.VALIDATION_ERROR, 'Only transfers of type "drink", "food", "inventoryItem", "extra", or "service" are supported by this endpoint'), { status: getStatusCode(ErrorCodes.VALIDATION_ERROR) })
     }
 
     // Normalize and validate items
@@ -98,8 +98,11 @@ export async function POST(request: NextRequest, { params }: { params: Promise<{
       if (!mi.productId || mi.productId.length > MAX_PRODUCT_ID_LENGTH) {
         return NextResponse.json(errorResponse(ErrorCodes.VALIDATION_ERROR, `Invalid product id`), { status: getStatusCode(ErrorCodes.VALIDATION_ERROR) })
       }
-      if (!Number.isFinite(mi.quantity) || mi.quantity <= 0 || mi.quantity > MAX_QUANTITY) {
-        return NextResponse.json(errorResponse(ErrorCodes.VALIDATION_ERROR, `Invalid quantity for product ${mi.productId}`), { status: getStatusCode(ErrorCodes.VALIDATION_ERROR) })
+      // Services don't require quantity validation (quantity = 1 or just presence)
+      if (mi.productType !== 'service') {
+        if (!Number.isFinite(mi.quantity) || mi.quantity <= 0 || mi.quantity > MAX_QUANTITY) {
+          return NextResponse.json(errorResponse(ErrorCodes.VALIDATION_ERROR, `Invalid quantity for product ${mi.productId}`), { status: getStatusCode(ErrorCodes.VALIDATION_ERROR) })
+        }
       }
     }
 
@@ -168,6 +171,29 @@ export async function POST(request: NextRequest, { params }: { params: Promise<{
         if (availableQty < extraItem.quantity) {
           return NextResponse.json(
             errorResponse(ErrorCodes.VALIDATION_ERROR, `Insufficient quantity for extra "${deptExtra.extra.name}"`),
+            { status: getStatusCode(ErrorCodes.VALIDATION_ERROR) }
+          )
+        }
+      }
+    }
+
+    // Check services separately
+    const serviceItems = mappedItems.filter(m => m.productType === 'service')
+    if (serviceItems.length > 0) {
+      for (const serviceItem of serviceItems) {
+        const service = await prisma.serviceInventory.findUnique({
+          where: { id: serviceItem.productId },
+        })
+        if (!service) {
+          return NextResponse.json(
+            errorResponse(ErrorCodes.NOT_FOUND, `Service not found: ${serviceItem.productId}`),
+            { status: getStatusCode(ErrorCodes.NOT_FOUND) }
+          )
+        }
+        // Verify service exists at department level or global level
+        if (service.departmentId && service.departmentId !== fromDept.id) {
+          return NextResponse.json(
+            errorResponse(ErrorCodes.VALIDATION_ERROR, `Service does not belong to this department`),
             { status: getStatusCode(ErrorCodes.VALIDATION_ERROR) }
           )
         }
