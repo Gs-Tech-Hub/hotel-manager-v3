@@ -770,6 +770,51 @@ export class SectionService {
     skip: number = 0,
     pageSize: number = 20
   ) {
+    // Helper to calculate service stats from OrderLine records
+    const getServiceStats = async (serviceId: string) => {
+      const orderLines = await prisma.orderLine.findMany({
+        where: {
+          productId: serviceId,
+          productType: 'service',
+        },
+        include: {
+          orderHeader: {
+            include: {
+              fulfillments: true,
+              payments: true,
+            },
+          },
+        },
+      });
+
+      let totalOrdered = 0;
+      let totalFulfilled = 0;
+      let fulfilledRevenue = 0;
+
+      for (const line of orderLines) {
+        totalOrdered += line.quantity;
+
+        // Count fulfilled quantities and revenue
+        const fulfilledQty = line.orderHeader.fulfillments
+          ?.filter((f: any) => f.orderLineId === line.id && f.status === 'fulfilled')
+          ?.reduce((sum: number, f: any) => sum + (f.fulfilledQuantity || 0), 0) || 0;
+        
+        totalFulfilled += fulfilledQty;
+        
+        // Only count revenue for fulfilled items
+        if (fulfilledQty > 0) {
+          fulfilledRevenue += (line.lineTotal || 0);
+        }
+      }
+
+      return {
+        unitsSold: totalFulfilled, // Only fulfilled units
+        amountSold: fulfilledRevenue, // Revenue from fulfilled items only
+        totalOrdered,
+        fulfillmentRate: totalOrdered > 0 ? Math.round((totalFulfilled / totalOrdered) * 100) : 0,
+      };
+    };
+
     if (!resolvedSectionId) {
       // For parent department, get department-level services
       const services = await prisma.serviceInventory.findMany({
@@ -779,7 +824,7 @@ export class SectionService {
           ...(search ? { name: { contains: search, mode: 'insensitive' } } : {}),
         },
         orderBy: { name: 'asc' },
-      })
+      });
 
       const total = await prisma.serviceInventory.count({
         where: {
@@ -787,15 +832,65 @@ export class SectionService {
           sectionId: null,
           ...(search ? { name: { contains: search, mode: 'insensitive' } } : {}),
         },
-      })
+      });
 
-      const mapped = services.map((service: any) => {
-        let unitPrice = 0
+      const mapped = await Promise.all(
+        services.map(async (service: any) => {
+          let unitPrice = 0;
+          if (service.pricingModel === 'per_count' && service.pricePerCount) {
+            unitPrice = Math.round(Number(service.pricePerCount) * 100);
+          } else if (service.pricingModel === 'per_time' && service.pricePerMinute) {
+            unitPrice = Math.round(Number(service.pricePerMinute) * 100);
+          }
+
+          const stats = await getServiceStats(service.id);
+
+          return {
+            id: service.id,
+            name: service.name,
+            type: 'service',
+            available: 1, // Services have unlimited availability
+            unitPrice,
+            pricingModel: service.pricingModel,
+            serviceType: service.serviceType,
+            description: service.description,
+            isService: true, // Flag for special handling
+            unitsSold: stats.unitsSold, // Fulfilled units only
+            amountSold: stats.amountSold, // Fulfilled revenue only
+            pendingQuantity: stats.totalOrdered - stats.unitsSold, // Orders pending fulfillment
+          };
+        })
+      );
+
+      return { items: mapped, total };
+    }
+
+    // For section, get section-specific services
+    const services = await prisma.serviceInventory.findMany({
+      where: {
+        sectionId: resolvedSectionId,
+        ...(search ? { name: { contains: search, mode: 'insensitive' } } : {}),
+      },
+      orderBy: { name: 'asc' },
+    });
+
+    const total = await prisma.serviceInventory.count({
+      where: {
+        sectionId: resolvedSectionId,
+        ...(search ? { name: { contains: search, mode: 'insensitive' } } : {}),
+      },
+    });
+
+    const mapped = await Promise.all(
+      services.map(async (service: any) => {
+        let unitPrice = 0;
         if (service.pricingModel === 'per_count' && service.pricePerCount) {
-          unitPrice = Math.round(Number(service.pricePerCount) * 100)
+          unitPrice = Math.round(Number(service.pricePerCount) * 100);
         } else if (service.pricingModel === 'per_time' && service.pricePerMinute) {
-          unitPrice = Math.round(Number(service.pricePerMinute) * 100)
+          unitPrice = Math.round(Number(service.pricePerMinute) * 100);
         }
+
+        const stats = await getServiceStats(service.id);
 
         return {
           id: service.id,
@@ -807,50 +902,14 @@ export class SectionService {
           serviceType: service.serviceType,
           description: service.description,
           isService: true, // Flag for special handling
-        }
+          unitsSold: stats.unitsSold, // Fulfilled units only
+          amountSold: stats.amountSold, // Fulfilled revenue only
+          pendingQuantity: stats.totalOrdered - stats.unitsSold, // Orders pending fulfillment
+        };
       })
+    );
 
-      return { items: mapped, total }
-    }
-
-    // For section, get section-specific services
-    const services = await prisma.serviceInventory.findMany({
-      where: {
-        sectionId: resolvedSectionId,
-        ...(search ? { name: { contains: search, mode: 'insensitive' } } : {}),
-      },
-      orderBy: { name: 'asc' },
-    })
-
-    const total = await prisma.serviceInventory.count({
-      where: {
-        sectionId: resolvedSectionId,
-        ...(search ? { name: { contains: search, mode: 'insensitive' } } : {}),
-      },
-    })
-
-    const mapped = services.map((service: any) => {
-      let unitPrice = 0
-      if (service.pricingModel === 'per_count' && service.pricePerCount) {
-        unitPrice = Math.round(Number(service.pricePerCount) * 100)
-      } else if (service.pricingModel === 'per_time' && service.pricePerMinute) {
-        unitPrice = Math.round(Number(service.pricePerMinute) * 100)
-      }
-
-      return {
-        id: service.id,
-        name: service.name,
-        type: 'service',
-        available: 1, // Services have unlimited availability
-        unitPrice,
-        pricingModel: service.pricingModel,
-        serviceType: service.serviceType,
-        description: service.description,
-        isService: true, // Flag for special handling
-      }
-    })
-
-    return { items: mapped, total }
+    return { items: mapped, total };
   }
 
   /**
