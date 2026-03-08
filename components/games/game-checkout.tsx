@@ -32,6 +32,7 @@ export function GameCheckout({
 }: GameCheckoutProps) {
   const router = useRouter();
   const [loading, setLoading] = useState(false);
+  const [loadingDetails, setLoadingDetails] = useState(false);
   const [error, setError] = useState('');
   const [paymentMethod, setPaymentMethod] = useState('cash');
   const [orderDetails, setOrderDetails] = useState<any>(null);
@@ -44,8 +45,11 @@ export function GameCheckout({
   useEffect(() => {
     const loadOrderDetails = async () => {
       try {
+        setLoadingDetails(true);
+        setError('');
         if (!orderId) {
           console.warn('No orderId available - session may not have created order yet');
+          setError('Order not yet created. Please wait for the session to initialize.');
           return;
         }
 
@@ -53,10 +57,12 @@ export function GameCheckout({
           ? `/api/departments/${sectionCode}/games/checkout-order?orderId=${orderId}`
           : `/api/departments/${departmentCode}/games/checkout-order?orderId=${orderId}`;
 
+        console.log(`[GameCheckout] Loading order from: ${orderUrl}`);
         const response = await fetch(orderUrl);
         const data = await response.json();
         
         if (response.ok && data.data?.order) {
+          console.log('[GameCheckout] Order loaded successfully:', data.data.order);
           setOrderDetails({
             tax: data.data.order.tax,
             subtotal: data.data.order.subtotal,
@@ -65,10 +71,16 @@ export function GameCheckout({
             orderNumber: data.data.order.orderNumber,
           });
         } else {
-          console.error('Failed to load order details:', data.error?.message);
+          const errorMsg = data.error?.message || 'Failed to load order details';
+          console.error('[GameCheckout] Failed to load order details:', errorMsg);
+          setError(`Failed to load order: ${errorMsg}`);
         }
       } catch (err) {
-        console.error('Error loading order details:', err);
+        const errorMsg = err instanceof Error ? err.message : 'Unknown error';
+        console.error('[GameCheckout] Error loading order details:', err);
+        setError(`Error loading order: ${errorMsg}`);
+      } finally {
+        setLoadingDetails(false);
       }
     };
 
@@ -242,17 +254,17 @@ export function GameCheckout({
               type="button"
               variant="outline"
               onClick={() => onOpenChange(false)}
-              disabled={loading}
+              disabled={loading || loadingDetails}
             >
               Cancel
             </Button>
             <Button
               onClick={handlePay}
-              disabled={loading || !paymentMethod}
+              disabled={loading || loadingDetails || !paymentMethod}
               className="gap-2 bg-green-600 hover:bg-green-700"
             >
               <ShoppingCart className="h-4 w-4" />
-              {loading ? 'Processing...' : `Pay ${formatTablePrice(displayTotal)}`}
+              {loadingDetails ? 'Loading order...' : loading ? 'Processing...' : `Pay ${formatTablePrice(displayTotal)}`}
             </Button>
           </div>
         </div>

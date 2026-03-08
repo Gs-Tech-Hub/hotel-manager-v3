@@ -346,12 +346,13 @@ export function DepartmentGames({ departmentCode, departmentId }: DepartmentGame
                           <Button
                             size="sm"
                             variant="outline"
+                            disabled={loading || !activeSection}
                             onClick={() => {
                               setSelectedCustomer(customer);
                               setStartGameOpen(true);
                             }}
                           >
-                            Start Game
+                            {loading ? 'Loading...' : 'Start Game'}
                           </Button>
                         </TableCell>
                       </TableRow>

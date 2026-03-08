@@ -226,13 +226,9 @@ export async function POST(
       },
     });
 
-    // Update fulfillments to completed
-    await prisma.orderFulfillment.updateMany({
-      where: { orderHeaderId: orderId },
-      data: {
-        status: 'completed',
-      },
-    });
+    // NOTE: OrderFulfillment status stays 'fulfilled' (not changed to 'completed')
+    // Payment status is tracked in OrderHeader.paymentStatus='paid' and OrderPayment.paymentStatus='completed'
+    // This ensures service stats correctly count fulfilled quantities
 
     // CRITICAL: Close the game session
     const closedSession = await prisma.gameSession.update({

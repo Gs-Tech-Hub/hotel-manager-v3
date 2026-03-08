@@ -192,13 +192,31 @@ export async function PATCH(
         });
 
         // Update order line
-        await prisma.orderLine.updateMany({
+        const orderLine = await prisma.orderLine.findFirst({
           where: { orderHeaderId: orderHeader.id },
-          data: {
-            unitPrice: totalInCents,
-            lineTotal: totalInCents,
-          },
         });
+
+        if (orderLine) {
+          await prisma.orderLine.update({
+            where: { id: orderLine.id },
+            data: {
+              unitPrice: totalInCents,
+              lineTotal: totalInCents,
+              quantity: newGameCount,
+            },
+          });
+
+          // Update fulfillment record with new quantity
+          await prisma.orderFulfillment.updateMany({
+            where: {
+              orderLineId: orderLine.id,
+              status: 'fulfilled',
+            },
+            data: {
+              fulfilledQuantity: newGameCount,
+            },
+          });
+        }
       }
     } else if (action === 'end_game') {
       // End game

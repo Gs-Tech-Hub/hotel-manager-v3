@@ -192,8 +192,8 @@ export function StartGame({
             >
               Cancel
             </Button>
-            <Button onClick={handleStartGame} disabled={loading || !defaultSection?.id}>
-              {loading ? 'Starting...' : 'Start Game'}
+            <Button onClick={handleStartGame} disabled={loading || servicesLoading || !defaultSection?.id}>
+              {loading ? 'Starting...' : servicesLoading ? 'Loading services...' : 'Start Game'}
             </Button>
           </div>
         </div>

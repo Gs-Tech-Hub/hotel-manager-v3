@@ -96,8 +96,14 @@ export async function GET(
       take: 100,
     });
 
+    // Ensure orderHeaderId is explicitly included in response
+    const sessionsWithOrderId = sessions.map(s => ({
+      ...s,
+      orderHeaderId: s.orderHeaderId || null,
+    }));
+
     return NextResponse.json(
-      successResponse({ data: { sessions, sectionId: resolvedSectionId } }),
+      successResponse({ data: { sessions: sessionsWithOrderId, sectionId: resolvedSectionId } }),
       { status: 200 }
     );
   } catch (error) {
@@ -314,7 +320,7 @@ export async function POST(
     });
 
     // Create order line for the game service
-    await prisma.orderLine.create({
+    const orderLine = await prisma.orderLine.create({
       data: {
         lineNumber: 1,
         orderHeaderId: orderHeader.id,
@@ -328,6 +334,17 @@ export async function POST(
         unitDiscount: 0,
         lineTotal: initialPriceInCents,
         status: 'fulfilled',
+      } as any,
+    });
+
+    // Create fulfillment record for the service order line (only valid fields)
+    await prisma.orderFulfillment.create({
+      data: {
+        orderHeaderId: orderHeader.id,
+        orderLineId: orderLine.id,
+        status: 'fulfilled',
+        fulfilledQuantity: 1,
+        fulfilledAt: new Date(),
       } as any,
     });
 
