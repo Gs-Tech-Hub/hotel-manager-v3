@@ -233,6 +233,33 @@ export class PaymentService extends BaseService<IPayment> {
         ).catch((err) => {
           console.error('Error in concurrent section metadata updates:', err);
         });
+
+        // CRITICAL: Also recalculate section stats to reflect in dashboards
+        // This ensures payment-triggered changes appear in order tables and section stats
+        console.log(`[Payment] Starting section stats recalculation for ${affectedSectionIds.size} sections`);
+        Promise.all(
+          Array.from(affectedSectionIds).map(async (sectionId) => {
+            try {
+              const section = await prisma.departmentSection.findUnique({
+                where: { id: sectionId },
+                include: { department: true },
+              });
+              if (section?.department?.code) {
+                const { departmentService } = await import('./department.service');
+                await Promise.all([
+                  departmentService.recalculateSectionStats(section.department.code, sectionId),
+                  departmentService.rollupParentStats(section.department.code),
+                ]);
+                console.log(`[Payment] Stats recalculated for section ${sectionId}`);
+              }
+            } catch (e) {
+              console.error(`[Payment] Error recalculating stats for section ${sectionId}:`, e);
+              // Don't fail payment - stats can be recalculated later
+            }
+          })
+        ).catch((err) => {
+          console.error('[Payment] Error in concurrent section stats recalculation:', err);
+        });
       }
 
       const totalTime = Date.now() - startTime;
@@ -410,6 +437,33 @@ export class PaymentService extends BaseService<IPayment> {
           })
         ).catch((err) => {
           console.error('Error in concurrent section metadata updates:', err);
+        });
+
+        // CRITICAL: Also recalculate section stats to reflect in dashboards
+        // This ensures payment-triggered changes appear in order tables and section stats
+        console.log(`[Deferred Payment] Starting section stats recalculation for ${affectedSectionIds.size} sections`);
+        Promise.all(
+          Array.from(affectedSectionIds).map(async (sectionId) => {
+            try {
+              const section = await prisma.departmentSection.findUnique({
+                where: { id: sectionId },
+                include: { department: true },
+              });
+              if (section?.department?.code) {
+                const { departmentService } = await import('./department.service');
+                await Promise.all([
+                  departmentService.recalculateSectionStats(section.department.code, sectionId),
+                  departmentService.rollupParentStats(section.department.code),
+                ]);
+                console.log(`[Deferred Payment] Stats recalculated for section ${sectionId}`);
+              }
+            } catch (e) {
+              console.error(`[Deferred Payment] Error recalculating stats for section ${sectionId}:`, e);
+              // Don't fail payment - stats can be recalculated later
+            }
+          })
+        ).catch((err) => {
+          console.error('[Deferred Payment] Error in concurrent section stats recalculation:', err);
         });
       }
 

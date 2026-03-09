@@ -244,6 +244,53 @@ export async function POST(
       },
     });
 
+    // CRITICAL: Recalculate section stats (must match manual fulfillment flow)
+    // Gather all affected sections from order lines
+    const affectedSections = new Set<string>();
+    for (const line of paidOrderHeader.lines) {
+      const sectionId = line.departmentSectionId;
+      if (sectionId) {
+        const section = await prisma.departmentSection.findUnique({
+          where: { id: sectionId },
+          include: { department: true },
+        });
+        if (section?.department?.code) {
+          affectedSections.add(sectionId);
+        }
+      }
+    }
+
+    // Recalculate stats for all affected sections in parallel
+    if (affectedSections.size > 0) {
+      try {
+        const { departmentService } = await import('@/services/department.service');
+
+        await Promise.all(
+          Array.from(affectedSections).map(async (sectionId) => {
+            try {
+              // Get the section's department code to pass to recalculateSectionStats
+              const section = await prisma.departmentSection.findUnique({
+                where: { id: sectionId },
+                include: { department: true },
+              });
+              if (section?.department?.code) {
+                await Promise.all([
+                  departmentService.recalculateSectionStats(section.department.code, sectionId),
+                  departmentService.rollupParentStats(section.department.code),
+                ]);
+              }
+            } catch (e) {
+              console.error(`[Games Payment] Error updating stats for section ${sectionId}:`, e);
+              // Don't fail the payment - stats can be recalculated later
+            }
+          })
+        );
+      } catch (e) {
+        console.error('[Games Payment] Error in stats recalculation:', e);
+        // Don't fail the payment
+      }
+    }
+
     console.log('[Games Payment] Order paid and session closed:', {
       orderId,
       sessionId,
@@ -254,6 +301,7 @@ export async function POST(
       paymentMethod,
       transactionId: payment.transactionID,
       sessionStatus: closedSession.status,
+      affectedSectionsCount: affectedSections.size,
     });
 
     return NextResponse.json(
