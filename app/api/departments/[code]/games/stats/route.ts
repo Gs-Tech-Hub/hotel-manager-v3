@@ -120,7 +120,7 @@ export async function GET(
         const orderTotal = Number(session.orderHeader.total) || 0;
         let totalPaid = 0;
         if (session.orderHeader.payments && session.orderHeader.payments.length > 0) {
-          totalPaid = session.orderHeader.payments.reduce((sum: number, p: any) => sum + Number(p.total ?? 0), 0);
+          totalPaid = session.orderHeader.payments.reduce((sum: number, p: any) => sum + Number(p.amount ?? 0), 0);
         }
         const isPaid = totalPaid >= orderTotal && orderTotal > 0;
 

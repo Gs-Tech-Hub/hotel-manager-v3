@@ -39,21 +39,28 @@ export async function POST(
 
     const { code } = await params;
 
-    // Support section-style codes
+    // Support section-style codes (format: "department:section")
     const rawCode = code;
     let departmentCode = rawCode;
+    let sectionCode = rawCode;
+    
+    // If code contains ':', it's in format "parent:section"
+    // We need to find the actual PARENT department code
     if (rawCode.includes(':')) {
       const parts = rawCode.split(':');
+      // parts[0] is the parent department code
       departmentCode = parts[0];
+      sectionCode = rawCode; // Keep full code as sectionCode
     }
 
+    // Fetch the department using the department code
     const department = await prisma.department.findFirst({
       where: { code: departmentCode },
     });
 
     if (!department) {
       return NextResponse.json(
-        errorResponse(ErrorCodes.NOT_FOUND, 'Department not found'),
+        errorResponse(ErrorCodes.NOT_FOUND, `Department not found for code: ${departmentCode}`),
         { status: 404 }
       );
     }
@@ -205,7 +212,9 @@ export async function POST(
       where: { id: orderId },
       data: {
         paymentStatus: 'paid',
-        status: 'completed', // Mark order as completed after payment
+        // Do NOT change status to 'completed' - it should remain 'fulfilled'
+        // Payment status is tracked separately in paymentStatus field
+        // Order status ('fulfilled', 'pending', etc.) is determined by fulfillment, not payment
         tax: newTaxCents, // Update with current tax
         total: totalCents, // Update total
       },

@@ -144,13 +144,13 @@ export function StartGame({
           {/* Service Selection */}
           {!servicesLoading && services.length > 0 && (
             <div className="space-y-2">
-              <label className="text-sm font-medium">Service / Pricing (Optional)</label>
+              <label className="text-sm font-medium">Service / Pricing *</label>
               <select
                 value={selectedService}
                 onChange={(e) => setSelectedService(e.target.value)}
                 className="w-full p-2 border rounded text-sm"
               >
-                <option value="">No service (manual pricing)</option>
+                <option value="">Select a service</option>
                 {services.map(service => (
                   <option key={service.id} value={service.id}>
                     {service.name} - {service.pricingModel === 'per_count' 
@@ -192,7 +192,7 @@ export function StartGame({
             >
               Cancel
             </Button>
-            <Button onClick={handleStartGame} disabled={loading || servicesLoading || !defaultSection?.id}>
+            <Button onClick={handleStartGame} disabled={loading || servicesLoading || !defaultSection?.id || !selectedService}>
               {loading ? 'Starting...' : servicesLoading ? 'Loading services...' : 'Start Game'}
             </Button>
           </div>

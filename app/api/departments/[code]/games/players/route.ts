@@ -127,14 +127,22 @@ export async function POST(
 
     const { code } = await params;
 
+    // Support section-style codes
+    const rawCode = code;
+    let departmentCode = rawCode;
+    if (rawCode.includes(':')) {
+      const parts = rawCode.split(':');
+      departmentCode = parts[0];
+    }
+
     // Verify department exists
     const department = await prisma.department.findFirst({
-      where: { code },
+      where: { code: departmentCode },
     });
 
     if (!department) {
       return NextResponse.json(
-        errorResponse(ErrorCodes.NOT_FOUND, 'Department not found'),
+        errorResponse(ErrorCodes.NOT_FOUND, `Department not found for code: ${departmentCode}`),
         { status: 404 }
       );
     }

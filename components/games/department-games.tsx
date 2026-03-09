@@ -382,6 +382,7 @@ export function DepartmentGames({ departmentCode, departmentId }: DepartmentGame
           onOpenChange={setCheckoutOpen}
           session={selectedSession}
           departmentCode={departmentCode}
+          sectionCode={activeSection?.code}
           onCheckoutComplete={handleCheckoutComplete}
         />
       )}
