@@ -5,7 +5,14 @@
  * Query Parameters:
  * - page: number (default: 1)
  * - limit: number (default: 10)
- * - status: booking status filter
+ * - status: booking/guest status filter (comma-separated for multiple)
+ *   - pending_payment: Payment not yet made
+ *   - pending_checkin: Payment made, guest hasn't checked in yet
+ *   - checkin_pending_checkout: Guest checked in, hasn't checked out yet (synonym: in_progress)
+ *   - in_progress: Guest has checked in but not checked out
+ *   - completed: Guest has checked out (timeOut is set)
+ *   - confirmed, pending, cancelled: Filter by booking status
+ *   - Example: "pending_payment,pending_checkin" (comma-separated for multiple)
  * - startDate: start date (YYYY-MM-DD)
  * - endDate: end date (YYYY-MM-DD)
  */
@@ -30,27 +37,52 @@ export async function GET(req: NextRequest) {
     const filters: FilterOptions[] = [];
     
     // Handle status filter with guest status translation
-    // 'in_progress' and 'completed' are now guest statuses (based on timeIn/timeOut)
-    // while bookingStatus is payment status
+    // Support comma-separated statuses for multiple filter values
     let customWhere: any = dateFilter;
 
     if (status) {
-      if (status === 'in_progress') {
-        // Guest has checked in: timeIn is set, timeOut is not set
-        customWhere = {
-          ...customWhere,
-          timeIn: { not: null },
-          timeOut: null,
-        };
-      } else if (status === 'completed') {
-        // Guest has checked out: timeOut is set
-        customWhere = {
-          ...customWhere,
-          timeOut: { not: null },
-        };
-      } else {
-        // For other statuses (pending, confirmed, cancelled): filter by bookingStatus
-        filters.push({ field: 'bookingStatus', operator: 'eq', value: status });
+      // Split comma-separated statuses
+      const statuses = status.split(',').map(s => s.trim()).filter(Boolean);
+      
+      // Build OR conditions for each status
+      const statusConditions = statuses.map((singleStatus) => {
+        if (singleStatus === 'pending_payment') {
+          return {
+            OR: [
+              { paymentId: null },
+              { payment: { paymentStatus: { not: 'completed' } } }
+            ]
+          };
+        } else if (singleStatus === 'pending_checkin') {
+          return {
+            paymentId: { not: null },
+            timeIn: null,
+          };
+        } else if (singleStatus === 'checkin_pending_checkout') {
+          return {
+            timeIn: { not: null },
+            timeOut: null,
+          };
+        } else if (singleStatus === 'in_progress') {
+          return {
+            timeIn: { not: null },
+            timeOut: null,
+          };
+        } else if (singleStatus === 'completed') {
+          return {
+            timeOut: { not: null },
+          };
+        } else {
+          // For booking status filters (pending, confirmed, cancelled)
+          return { bookingStatus: singleStatus };
+        }
+      });
+
+      // If multiple statuses, combine with OR; if single, apply directly
+      if (statusConditions.length === 1) {
+        customWhere = { ...customWhere, ...statusConditions[0] };
+      } else if (statusConditions.length > 1) {
+        customWhere = { ...customWhere, OR: statusConditions };
       }
     }
 

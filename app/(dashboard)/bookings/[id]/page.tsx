@@ -40,6 +40,14 @@ interface BookingDetail {
 	nights: number;
 	guests: number;
 	totalPrice: number;
+	// Calculated charges (computed on the fly)
+	prematureCheckInDays?: number | null;
+	prematureCheckInFee?: number;
+	extraNightsDays?: number | null;
+	demurrageChargePerDay?: number;
+	demurrageCharge?: number;
+	totalAdditionalCharges?: number;
+	totalChargesWithExtra?: number;
 	bookingStatus: "pending" | "confirmed" | "in_progress" | "completed" | "cancelled";
 	customer: {
 		id: string;
@@ -122,6 +130,17 @@ export default function BookingDetailPage({
 
 	const handleCheckIn = async () => {
 		if (!booking || !booking.unit?.id) return;
+		
+		// Validate check-in is available
+		if (!isCheckInAvailable) {
+			toast({
+				title: "Check-in Not Available",
+				description: `Check-in is not available until ${new Date(booking.checkin).toLocaleDateString()}`,
+				variant: "destructive",
+			});
+			return;
+		}
+		
 		setIsSaving(true);
 		try {
 			// Update booking to set check-in time
@@ -322,6 +341,21 @@ export default function BookingDetailPage({
 	const isCheckedIn = booking.timeIn !== undefined && booking.timeIn !== null;
 	const isCheckedOut = booking.timeOut !== undefined && booking.timeOut !== null;
 	const isPaymentMade = booking.payment !== undefined && booking.payment !== null;
+	
+	// Check if check-in is available (not before scheduled date)
+	const getCheckInAvailability = () => {
+		const now = new Date();
+		const todayStart = new Date(now);
+		todayStart.setHours(0, 0, 0, 0);
+		const scheduledStart = new Date(booking.checkin);
+		scheduledStart.setHours(0, 0, 0, 0);
+		return todayStart >= scheduledStart;
+	};
+	
+	const isCheckInAvailable = getCheckInAvailability();
+	const daysUntilCheckIn = Math.ceil(
+		(new Date(booking.checkin).getTime() - new Date().getTime()) / (1000 * 60 * 60 * 24)
+	);
 
 	return (
 		<div className="space-y-6">
@@ -547,7 +581,7 @@ export default function BookingDetailPage({
 				<CardContent className="space-y-4">
 					<div className="grid grid-cols-2 gap-4">
 						<div>
-							<Label className="text-muted-foreground">Total Due</Label>
+							<Label className="text-muted-foreground">Original Price</Label>
 							<p className="text-2xl font-bold text-blue-600">
 								{formatTablePrice(booking.totalPrice)}
 							</p>
@@ -563,6 +597,38 @@ export default function BookingDetailPage({
 							</div>
 						)}
 					</div>
+
+					{/* Additional Charges Section */}
+					{(booking.demurrageCharge || booking.totalAdditionalCharges) && (
+						<div className="bg-orange-50 p-4 rounded border border-orange-200 space-y-3">
+							<p className="text-sm font-semibold text-orange-900">Additional Charges</p>
+							<div className="space-y-2 text-sm text-orange-800">
+								{booking.extraNightsDays && booking.extraNightsDays > 0 && (
+									<div className="flex justify-between">
+										<span>Extra Nights: <span className="font-semibold">{booking.extraNightsDays} day{booking.extraNightsDays > 1 ? 's' : ''}</span></span>
+										<span className="font-semibold">{formatTablePrice(booking.demurrageCharge || 0)}</span>
+									</div>
+								)}
+								{booking.totalAdditionalCharges && booking.totalAdditionalCharges > 0 && (
+									<div className="border-t border-orange-300 pt-2 flex justify-between font-bold">
+										<span>Total Additional Charges</span>
+										<span>{formatTablePrice(booking.totalAdditionalCharges)}</span>
+									</div>
+								)}
+							</div>
+						</div>
+					)}
+
+					{/* Total Due with Extra Charges */}
+					{booking.totalChargesWithExtra && booking.totalChargesWithExtra > booking.totalPrice && (
+						<div className="bg-blue-50 p-4 rounded border border-blue-200">
+							<div className="flex justify-between items-center">
+								<span className="text-sm font-semibold text-blue-900">Total Due (Including Extra Charges)</span>
+								<span className="text-2xl font-bold text-blue-600">{formatTablePrice(booking.totalChargesWithExtra)}</span>
+							</div>
+						</div>
+					)}
+
 					{booking.payment ? (
 						<div className="bg-green-50 p-4 rounded border border-green-200 space-y-2">
 							<p className="text-sm font-semibold text-green-900">Payment Details</p>
@@ -660,40 +726,54 @@ export default function BookingDetailPage({
 					<CardHeader>
 						<CardTitle>Guest Actions</CardTitle>
 					</CardHeader>
-					<CardContent className="flex gap-2">
-						{!isCheckedIn && (
-							<Button
-								onClick={handleCheckIn}
-								disabled={isSaving || !isPaymentMade}
-								className="flex-1"
-								title={!isPaymentMade ? "Payment must be made before check-in" : ""}
-							>
-								{isSaving ? (
-									<Loader2 className="h-4 w-4 animate-spin mr-2" />
-								) : (
-									<LogIn className="h-4 w-4 mr-2" />
-								)}
-								{isPaymentMade ? "Check In" : "Check In (Payment Required)"}
-							</Button>
-						)}
-						{isCheckedIn && (
-							<Button
-								onClick={handleCheckOut}
-								disabled={isSaving}
-								variant="destructive"
-								className="flex-1"
-							>
-								{isSaving ? (
-									<Loader2 className="h-4 w-4 animate-spin mr-2" />
-								) : (
-									<LogOut className="h-4 w-4 mr-2" />
-								)}
-								Check Out
-							</Button>
-						)}
-					</CardContent>
-				</Card>
-			)}
+				<CardContent className="space-y-4">
+					{!isCheckInAvailable && !isCheckedIn && (
+						<div className="bg-amber-50 border-l-4 border-amber-400 p-3 text-sm">
+							<p className="text-amber-800 font-medium">
+								Check-in not available yet
+							</p>
+							<p className="text-amber-700 text-xs mt-1">
+								Available from {new Date(booking.checkin).toLocaleDateString()} ({daysUntilCheckIn} day{daysUntilCheckIn !== 1 ? 's' : ''} remaining)
+							</p>
+						</div>
+					)}
+					{!isCheckedIn && (
+						<Button
+							onClick={handleCheckIn}
+							disabled={isSaving || !isPaymentMade || !isCheckInAvailable}
+							className="w-full"
+							title={!isPaymentMade ? "Payment must be made before check-in" : !isCheckInAvailable ? `Check-in available from ${new Date(booking.checkin).toLocaleDateString()}` : ""}
+						>
+							{isSaving ? (
+								<Loader2 className="h-4 w-4 animate-spin mr-2" />
+							) : (
+								<LogIn className="h-4 w-4 mr-2" />
+							)}
+							{!isCheckInAvailable
+								? `Check In (Available in ${daysUntilCheckIn} day${daysUntilCheckIn !== 1 ? 's' : ''})`
+								: isPaymentMade
+								? "Check In"
+								: "Check In (Payment Required)"}
+						</Button>
+					)}
+					{isCheckedIn && (
+						<Button
+							onClick={handleCheckOut}
+							disabled={isSaving}
+							variant="destructive"
+							className="w-full"
+						>
+							{isSaving ? (
+								<Loader2 className="h-4 w-4 animate-spin mr-2" />
+							) : (
+								<LogOut className="h-4 w-4 mr-2" />
+							)}
+							Check Out
+						</Button>
+					)}
+				</CardContent>
+			</Card>
+		)}
 
 			{/* Receipt Modal */}
 			{showReceipt && booking && (

@@ -27,8 +27,13 @@ interface Booking {
 	checkout: string;
 	timeIn?: string | null;
 	timeOut?: string | null;
+	nights: number;
 	bookingStatus: "pending" | "confirmed" | "in_progress" | "completed" | "cancelled";
 	totalPrice: number;
+	extraNightsDays?: number | null;
+	demurrageCharge?: number;
+	totalAdditionalCharges?: number;
+	totalChargesWithExtra?: number;
 	guests: number;
 }
 
@@ -45,13 +50,39 @@ function getTodayDate(): string {
 	return today.toISOString().split('T')[0];
 }
 
+// Get 30-day window starting from today in YYYY-MM-DD format
+function getMonthRange(): { startDate: string; endDate: string } {
+	const today = new Date();
+	const thirtyDaysFromNow = new Date(today.getTime() + 30 * 24 * 60 * 60 * 1000);
+	
+	return {
+		startDate: today.toISOString().split('T')[0],
+		endDate: thirtyDaysFromNow.toISOString().split('T')[0],
+	};
+}
+
+// Format status filter for display
+function formatStatusFilterDisplay(filter: string): string {
+	if (filter === 'all') return 'All Status';
+	if (filter === 'pending_payment') return 'Pending Payments';
+	if (filter === 'pending_checkin') return 'Pending Check-in';
+	if (filter === 'checkin_pending_checkout') return 'Checked In - Pending Check-out';
+	if (filter === 'pending_payment,pending_checkin') return 'Pending (Payments & Check-in)';
+	if (filter === 'pending') return 'Pending Booking';
+	if (filter === 'confirmed') return 'Confirmed';
+	if (filter === 'completed') return 'Checked Out';
+	if (filter === 'cancelled') return 'Cancelled';
+	return filter;
+}
+
 export default function BookingsPage() {
+	const monthRange = getMonthRange();
 	const [bookings, setBookings] = useState<Booking[]>([]);
 	const [isLoading, setIsLoading] = useState(true);
 	const [search, setSearch] = useState("");
-	const [statusFilter, setStatusFilter] = useState<string>("all");
-	const [startDate, setStartDate] = useState<string>(getTodayDate());
-	const [endDate, setEndDate] = useState<string>(getTodayDate());
+	const [statusFilter, setStatusFilter] = useState<string>("pending_payment,pending_checkin");
+	const [startDate, setStartDate] = useState<string>(monthRange.startDate);
+	const [endDate, setEndDate] = useState<string>(monthRange.endDate);
 	const [page, setPage] = useState(1);
 	const [total, setTotal] = useState(0);
 	const limit = 10;
@@ -197,14 +228,17 @@ export default function BookingsPage() {
 									setPage(1);
 								}}
 							>
-								<SelectTrigger className="w-full sm:w-[180px] text-sm">
-									<SelectValue />
+								<SelectTrigger className="w-full sm:w-[240px] text-sm">
+									<span>{formatStatusFilterDisplay(statusFilter)}</span>
 								</SelectTrigger>
 								<SelectContent>
 									<SelectItem value="all">All Status</SelectItem>
-									<SelectItem value="pending">Pending</SelectItem>
+									<SelectItem value="pending_payment,pending_checkin">Pending (Payments & Check-in)</SelectItem>
+									<SelectItem value="pending_payment">Pending Payments</SelectItem>
+									<SelectItem value="pending_checkin">Pending Check-in</SelectItem>
+									<SelectItem value="checkin_pending_checkout">Checked In - Pending Check-out</SelectItem>
+									<SelectItem value="pending">Pending Booking</SelectItem>
 									<SelectItem value="confirmed">Confirmed</SelectItem>
-									<SelectItem value="in_progress">Checked In</SelectItem>
 									<SelectItem value="completed">Checked Out</SelectItem>
 									<SelectItem value="cancelled">Cancelled</SelectItem>
 								</SelectContent>
@@ -352,11 +386,21 @@ export default function BookingsPage() {
 											{/* Price */}
 											<div className="space-y-1 sm:text-right">
 												<p className="text-xs font-medium text-muted-foreground uppercase">
-													Total
+													{booking.totalAdditionalCharges && booking.totalAdditionalCharges > 0 ? "Total Due (w/ Extra)" : "Total"}
 												</p>
 												<p className="text-lg font-bold">
-													{formatTablePrice(booking.totalPrice)}
+													{formatTablePrice(
+														booking.totalChargesWithExtra && booking.totalChargesWithExtra > 0
+															? booking.totalChargesWithExtra
+															: booking.totalPrice
+													)}
 												</p>
+												{booking.totalAdditionalCharges && booking.totalAdditionalCharges > 0 && (
+													<div className="text-xs text-orange-600 font-medium pt-1">
+														+{formatTablePrice(booking.totalAdditionalCharges)} extra
+														{booking.extraNightsDays && booking.extraNightsDays > 0 && ` (${booking.extraNightsDays} day${booking.extraNightsDays > 1 ? 's' : ''})`}
+													</div>
+												)}
 											</div>
 										</div>
 									</CardContent>

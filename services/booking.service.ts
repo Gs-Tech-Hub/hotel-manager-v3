@@ -109,8 +109,11 @@ export class BookingService extends BaseService<IBooking> {
         prisma.booking.count({ where }),
       ]);
 
+      // Enrich items with calculated charges
+      const enrichedItems = items.map((item) => this.enrichBookingWithCharges(item));
+
       return {
-        items: items as any[],
+        items: enrichedItems as any[],
         meta: {
           page: pageNum,
           limit: pageSize,
@@ -126,9 +129,12 @@ export class BookingService extends BaseService<IBooking> {
       );
     }
   }
+  /**
+   * Get booking details with calculated charges
+   */
   async getBookingDetails(bookingId: string): Promise<any | null> {
     try {
-      return await prisma.booking.findUnique({
+      const booking = await prisma.booking.findUnique({
         where: { id: bookingId },
         include: {
           customer: true,
@@ -140,6 +146,13 @@ export class BookingService extends BaseService<IBooking> {
           hotelServices: true,
         },
       });
+
+      if (!booking) {
+        return null;
+      }
+
+      // Calculate charges dynamically
+      return this.enrichBookingWithCharges(booking);
     } catch (error) {
       console.error('Error fetching booking details:', error);
       return null;
@@ -149,14 +162,15 @@ export class BookingService extends BaseService<IBooking> {
   /**
    * Get bookings by customer
    */
-  async getCustomerBookings(customerId: string): Promise<IBooking[]> {
+  async getCustomerBookings(customerId: string): Promise<any[]> {
     try {
       const rows = await prisma.booking.findMany({
         where: { customerId },
         include: { payment: true },
         orderBy: { createdAt: 'desc' },
       });
-      return mapBookings(rows);
+      // Enrich with calculated charges
+      return rows.map((row) => this.enrichBookingWithCharges(row));
     } catch (error) {
       console.error('Error fetching customer bookings:', error);
       return [];
@@ -166,7 +180,7 @@ export class BookingService extends BaseService<IBooking> {
   /**
    * Get active bookings
    */
-  async getActiveBookings(): Promise<IBooking[]> {
+  async getActiveBookings(): Promise<any[]> {
     try {
       const rows = await prisma.booking.findMany({
         where: {
@@ -175,7 +189,8 @@ export class BookingService extends BaseService<IBooking> {
         include: { customer: true },
         orderBy: { checkin: 'asc' },
       });
-      return mapBookings(rows);
+      // Enrich with calculated charges
+      return rows.map((row) => this.enrichBookingWithCharges(row));
     } catch (error) {
       console.error('Error fetching active bookings:', error);
       return [];
@@ -273,8 +288,15 @@ export class BookingService extends BaseService<IBooking> {
    * Sets check-in time (guest status)
    * Does NOT change payment status (bookingStatus)
    * Preserves all other fields including payment
+   * 
+   * VALIDATION: Prevents check-in before scheduled check-in date
+   * @throws Error if check-in is before scheduled date
    */
-  async checkInBooking(bookingId: string): Promise<boolean> {
+  async checkInBooking(bookingId: string): Promise<{
+    success: boolean;
+    message?: string;
+    nextAvailableCheckIn?: Date;
+  }> {
     try {
       // Get existing booking to preserve all other fields
       const existingBooking = await prisma.booking.findUnique({
@@ -282,7 +304,25 @@ export class BookingService extends BaseService<IBooking> {
       });
       
       if (!existingBooking) {
-        return false;
+        return { success: false, message: 'Booking not found' };
+      }
+
+      // Validate: Cannot check in before scheduled check-in date
+      const now = new Date();
+      const scheduledCheckIn = new Date(existingBooking.checkin);
+      
+      // Reset to start of day for comparison
+      const todayStart = new Date(now);
+      todayStart.setHours(0, 0, 0, 0);
+      const scheduledStart = new Date(scheduledCheckIn);
+      scheduledStart.setHours(0, 0, 0, 0);
+
+      if (todayStart < scheduledStart) {
+        return {
+          success: false,
+          message: `Check-in not available before ${scheduledCheckIn.toLocaleDateString()}`,
+          nextAvailableCheckIn: scheduledStart,
+        };
       }
 
       // Update: only set timeIn (guest check-in)
@@ -293,10 +333,10 @@ export class BookingService extends BaseService<IBooking> {
           timeIn: new Date().toISOString(),
         },
       });
-      return true;
+      return { success: true, message: 'Guest checked in successfully' };
     } catch (error) {
       console.error('Error checking in booking:', error);
-      return false;
+      return { success: false, message: 'Failed to check in guest' };
     }
   }
 
@@ -330,6 +370,125 @@ export class BookingService extends BaseService<IBooking> {
       console.error('Error checking out booking:', error);
       return false;
     }
+  }
+
+  /**
+   * Enrich booking with dynamically calculated charges
+   * Calculates early check-in days and demurrage charges on the fly
+   */
+  private enrichBookingWithCharges(booking: any): any {
+    try {
+      const pricePerNight = Math.ceil(booking.totalPrice / booking.nights);
+
+      // Calculate early check-in
+      const prematureCheckIn = this.calculatePrematureCheckIn(
+        booking.checkin,
+        booking.timeIn
+      );
+
+      // Calculate demurrage (late checkout)
+      const demurrage = this.calculateDemurrage(
+        booking.checkout,
+        booking.timeOut,
+        pricePerNight
+      );
+
+      // Calculate total charges
+      const totalAdditionalCharges =
+        (prematureCheckIn.prematureCheckInFee || 0) + demurrage.demurrageCharge;
+      const totalChargesWithExtra = booking.totalPrice + totalAdditionalCharges;
+
+      return {
+        ...booking,
+        prematureCheckInDays: prematureCheckIn.prematureCheckInDays,
+        prematureCheckInFee: prematureCheckIn.prematureCheckInFee,
+        extraNightsDays: demurrage.extraNightsDays,
+        demurrageChargePerDay: demurrage.demurrageChargePerDay,
+        demurrageCharge: demurrage.demurrageCharge,
+        totalAdditionalCharges,
+        totalChargesWithExtra,
+      };
+    } catch (error) {
+      console.error('Error enriching booking with charges:', error);
+      return booking;
+    }
+  }
+
+  /**
+   * Calculate premature check-in details
+   */
+  private calculatePrematureCheckIn(
+    scheduledCheckIn: Date,
+    actualCheckInTime: string | null | undefined
+  ): {
+    prematureCheckInDays: number | null;
+    prematureCheckInFee: number;
+  } {
+    if (!actualCheckInTime) {
+      return { prematureCheckInDays: null, prematureCheckInFee: 0 };
+    }
+
+    const scheduled = new Date(scheduledCheckIn);
+    const actual = new Date(actualCheckInTime);
+
+    // Reset times to start of day for accurate day comparison
+    scheduled.setHours(0, 0, 0, 0);
+    actual.setHours(0, 0, 0, 0);
+
+    const timeDiff = scheduled.getTime() - actual.getTime();
+    const daysDiff = Math.ceil(timeDiff / (1000 * 60 * 60 * 24));
+
+    if (daysDiff > 0) {
+      return { prematureCheckInDays: daysDiff, prematureCheckInFee: 0 };
+    }
+
+    return { prematureCheckInDays: null, prematureCheckInFee: 0 };
+  }
+
+  /**
+   * Calculate demurrage (extra stay/late checkout) details
+   */
+  private calculateDemurrage(
+    scheduledCheckOut: Date,
+    actualCheckOutTime: string | null | undefined,
+    pricePerNight: number
+  ): {
+    extraNightsDays: number | null;
+    demurrageChargePerDay: number;
+    demurrageCharge: number;
+  } {
+    if (!actualCheckOutTime) {
+      return {
+        extraNightsDays: null,
+        demurrageChargePerDay: pricePerNight,
+        demurrageCharge: 0,
+      };
+    }
+
+    const scheduled = new Date(scheduledCheckOut);
+    const actual = new Date(actualCheckOutTime);
+
+    // Reset times to start of day for accurate day comparison
+    scheduled.setHours(0, 0, 0, 0);
+    actual.setHours(0, 0, 0, 0);
+
+    const timeDiff = actual.getTime() - scheduled.getTime();
+    const daysDiff = Math.ceil(timeDiff / (1000 * 60 * 60 * 24));
+
+    if (daysDiff > 0) {
+      const demurrageCharge = daysDiff * pricePerNight;
+      return {
+        extraNightsDays: daysDiff,
+        demurrageChargePerDay: pricePerNight,
+        demurrageCharge,
+      };
+    }
+
+    return {
+      extraNightsDays: null,
+      demurrageChargePerDay: pricePerNight,
+      demurrageCharge: 0,
+    };
   }
 }
 
