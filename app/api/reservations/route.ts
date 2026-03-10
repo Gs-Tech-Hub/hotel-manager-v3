@@ -7,6 +7,8 @@ import { NextRequest, NextResponse } from 'next/server';
 import { extractUserContext } from '@/lib/user-context';
 import { reservationService } from '@/src/services/ReservationService';
 import { successResponse, errorResponse, ErrorCodes } from '@/lib/api-response';
+import { emailService } from '@/src/services/EmailService';
+import { prisma } from '@/lib/auth/prisma';
 
 export async function POST(request: NextRequest) {
   try {
@@ -23,27 +25,55 @@ export async function POST(request: NextRequest) {
     const body = await request.json();
     const { unitId, guestId, checkInDate, checkOutDate, source, notes, idempotencyKey } = body;
 
-    // Validate required fields
-    if (!unitId || !guestId || !checkInDate || !checkOutDate) {
-      return NextResponse.json(
-        errorResponse(ErrorCodes.BAD_REQUEST, 'unitId, guestId, checkInDate, and checkOutDate are required'),
-        { status: 400 }
-      );
-    }
-
     // Create reservation
     const { reservation, cleaningTaskCreated } = await reservationService.createReservation(
       {
         unitId,
         guestId,
-        checkInDate: new Date(checkInDate),
-        checkOutDate: new Date(checkOutDate),
+        checkInDate,
+        checkOutDate,
         source,
         notes,
       },
       { userId: ctx.userId, userType: (ctx.userRole as any) || 'employee' },
       idempotencyKey
     );
+
+    // Fetch guest and unit details for email
+    const guest = await prisma.guest.findUnique({ where: { id: guestId } });
+    const unit = await prisma.unit.findUnique({
+      where: { id: unitId },
+      include: { roomType: true },
+    });
+
+    // Send confirmation email
+    if (guest && unit) {
+      const totalPrice = (reservation.totalPriceCents / 100).toFixed(2);
+      const emailSent = await emailService.sendBookingConfirmation({
+        recipientName: `${guest.firstName} ${guest.lastName}`,
+        recipientEmail: guest.email,
+        confirmationNumber: reservation.confirmationNo,
+        checkInDate: new Date(checkInDate).toLocaleDateString(),
+        checkOutDate: new Date(checkOutDate).toLocaleDateString(),
+        roomNumber: unit.roomNumber,
+        roomType: unit.roomType.name,
+        totalPrice,
+        guestName: `${guest.firstName} ${guest.lastName}`,
+        phone: guest.phone || 'N/A',
+      });
+
+      if (!emailSent) {
+        console.warn(`Failed to send confirmation email to ${guest.email}`);
+      }
+
+      // Send phone notification if phone exists
+      if (guest.phone) {
+        await emailService.sendPhoneNotification(
+          guest.phone,
+          `Booking confirmation: ${reservation.confirmationNo}. Check-in: ${new Date(checkInDate).toLocaleDateString()}`
+        );
+      }
+    }
 
     return NextResponse.json(
       successResponse({

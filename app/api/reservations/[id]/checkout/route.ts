@@ -9,6 +9,7 @@ import { prisma } from '@/lib/auth/prisma';
 import { successResponse, errorResponse, ErrorCodes } from '@/lib/api-response';
 import { checkPermission, type PermissionContext } from '@/lib/auth/rbac';
 import { logAudit } from '@/lib/auth/audit';
+import { emailService } from '@/src/services/EmailService';
 
 export async function POST(
   request: NextRequest,
@@ -167,6 +168,27 @@ export async function POST(
         cleaningTaskCreated: cleaningTask.id,
       },
     });
+
+    // Send receipt email
+    if (reservation.guest && reservation.unit) {
+      const totalPrice = (reservation.totalPriceCents / 100).toFixed(2);
+      const emailSent = await emailService.sendBookingReceipt({
+        recipientName: `${reservation.guest.firstName} ${reservation.guest.lastName}`,
+        recipientEmail: reservation.guest.email,
+        confirmationNumber: reservation.confirmationNo,
+        checkInDate: new Date(reservation.checkInDate).toLocaleDateString(),
+        checkOutDate: new Date(reservation.checkOutDate).toLocaleDateString(),
+        roomNumber: reservation.unit.roomNumber,
+        roomType: reservation.unit.roomType.name,
+        totalPrice,
+        guestName: `${reservation.guest.firstName} ${reservation.guest.lastName}`,
+        phone: reservation.guest.phone || 'N/A',
+      });
+
+      if (!emailSent) {
+        console.warn(`Failed to send receipt email to ${reservation.guest.email}`);
+      }
+    }
 
     return NextResponse.json(
       successResponse({

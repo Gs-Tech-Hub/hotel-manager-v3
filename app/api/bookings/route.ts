@@ -29,15 +29,36 @@ export async function GET(req: NextRequest) {
 
     const filters: FilterOptions[] = [];
     
+    // Handle status filter with guest status translation
+    // 'in_progress' and 'completed' are now guest statuses (based on timeIn/timeOut)
+    // while bookingStatus is payment status
+    let customWhere: any = dateFilter;
+
     if (status) {
-      filters.push({ field: 'bookingStatus', operator: 'eq', value: status });
+      if (status === 'in_progress') {
+        // Guest has checked in: timeIn is set, timeOut is not set
+        customWhere = {
+          ...customWhere,
+          timeIn: { not: null },
+          timeOut: null,
+        };
+      } else if (status === 'completed') {
+        // Guest has checked out: timeOut is set
+        customWhere = {
+          ...customWhere,
+          timeOut: { not: null },
+        };
+      } else {
+        // For other statuses (pending, confirmed, cancelled): filter by bookingStatus
+        filters.push({ field: 'bookingStatus', operator: 'eq', value: status });
+      }
     }
 
     const response = await bookingService.findAll({
       page,
       limit,
-      filters,
-      where: dateFilter, // Pass date filter as where clause
+      filters: filters.length > 0 ? filters : [],
+      where: customWhere,
     });
 
     if ('error' in response) {

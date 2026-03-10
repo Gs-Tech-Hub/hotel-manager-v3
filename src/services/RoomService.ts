@@ -65,11 +65,12 @@ export class RoomService {
       },
     });
 
-    // Filter out units with conflicting reservations
+    // Filter out units with conflicting reservations OR bookings with payment
     const available: (Unit & { roomType: RoomType })[] = [];
 
     for (const unit of units) {
-      const conflict = await prisma.reservation.findFirst({
+      // Check for conflicting reservations
+      const reservationConflict = await prisma.reservation.findFirst({
         where: {
           unitId: unit.id,
           status: {
@@ -82,9 +83,25 @@ export class RoomService {
         },
       });
 
-      if (!conflict) {
-        available.push(unit);
-      }
+      if (reservationConflict) continue;
+
+      // Check for conflicting bookings with payment made
+      // Room is unavailable if payment made AND check-in overlaps with requested dates
+      const bookingConflict = await prisma.booking.findFirst({
+        where: {
+          unitId: unit.id,
+          paymentId: { not: null }, // Payment must be made
+          bookingStatus: { in: ['confirmed', 'in_progress', 'completed'] }, // Active bookings
+          AND: [
+            { checkin: { lt: checkout } },
+            { checkout: { gt: checkin } },
+          ],
+        },
+      });
+
+      if (bookingConflict) continue;
+
+      available.push(unit);
     }
 
     return available;

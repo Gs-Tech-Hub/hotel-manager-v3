@@ -1,6 +1,7 @@
 /**
  * POST /api/bookings/[id]/payment
  * Create payment for booking
+ * Preserves existing check-in/check-out times
  */
 
 import { NextRequest, NextResponse } from 'next/server';
@@ -24,9 +25,10 @@ export async function POST(
       );
     }
 
-    // Fetch the booking
+    // Fetch the booking with full details
     const booking = await prisma.booking.findUnique({
       where: { id },
+      include: { payment: true },
     });
 
     if (!booking) {
@@ -46,12 +48,15 @@ export async function POST(
       },
     });
 
-    // Update booking with payment
+    // Update booking with payment - preserve all existing fields
     const updatedBooking = await prisma.booking.update({
       where: { id },
       data: {
         bookingStatus: 'confirmed',
         paymentId: payment.id,
+        // Preserve existing check-in/out times
+        timeIn: booking.timeIn,
+        timeOut: booking.timeOut,
       },
       include: {
         customer: true,

@@ -53,7 +53,48 @@ export async function PUT(
       );
     }
 
-    return sendSuccess(booking, 'Booking updated successfully');
+    // Fetch with full relationships to include payment and other data
+    const fullBooking = await bookingService.getBookingDetails(id);
+
+    return sendSuccess(fullBooking, 'Booking updated successfully');
+  } catch (error) {
+    const message = error instanceof Error ? error.message : 'Failed to update booking';
+    return sendError(ErrorCodes.INTERNAL_ERROR, message);
+  }
+}
+
+export async function PATCH(
+  req: NextRequest,
+  { params }: { params: Promise<{ id: string }> }
+) {
+  try {
+    const { id } = await params;
+    const body = await req.json();
+
+    // For PATCH, only allow specific fields to be updated
+    // This prevents unrelated fields from being overwritten
+    const allowedFields = ['checkin', 'checkout', 'bookingStatus', 'timeIn', 'timeOut', 'notes'];
+    const updateData: Record<string, any> = {};
+
+    for (const [key, value] of Object.entries(body)) {
+      if (allowedFields.includes(key)) {
+        updateData[key] = value;
+      }
+    }
+
+    const booking = await bookingService.update(id, updateData);
+
+    if (!booking) {
+      return sendError(
+        ErrorCodes.NOT_FOUND,
+        'Booking not found'
+      );
+    }
+
+    // Fetch with full relationships to include payment and other data
+    const fullBooking = await bookingService.getBookingDetails(id);
+
+    return sendSuccess(fullBooking, 'Booking updated successfully');
   } catch (error) {
     const message = error instanceof Error ? error.message : 'Failed to update booking';
     return sendError(ErrorCodes.INTERNAL_ERROR, message);

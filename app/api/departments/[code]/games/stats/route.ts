@@ -98,8 +98,8 @@ export async function GET(
 
     // Calculate stats from game sessions and their orders
     let totalGames = 0;
-    let completedGames = 0; // Paid games
-    let pendingGames = 0; // Unpaid games
+    let completedGames = 0; // Closed sessions that are paid
+    let pendingGames = 0; // Active sessions (games still in progress)
     let totalRevenue = 0; // Paid revenue (cents)
     let pendingRevenue = 0; // Unpaid revenue (cents)
     const revenueBySectionMap = new Map<string, { name: string; revenue: number; count: number }>();
@@ -116,7 +116,11 @@ export async function GET(
       const sectionStats = revenueBySectionMap.get(sectionKey)!;
       sectionStats.count += 1;
 
-      if (session.orderHeader) {
+      // Only count as completed if session is closed AND paid
+      // Otherwise count as pending (active sessions or unpaid sessions)
+      const isSessionClosed = session.status === 'closed';
+
+      if (session.orderHeader && isSessionClosed) {
         const orderTotal = Number(session.orderHeader.total) || 0;
         let totalPaid = 0;
         if (session.orderHeader.payments && session.orderHeader.payments.length > 0) {
@@ -129,12 +133,17 @@ export async function GET(
           totalRevenue += orderTotal;
           sectionStats.revenue += orderTotal;
         } else {
+          // Closed but unpaid - still pending payment
           pendingGames += 1;
           pendingRevenue += orderTotal;
         }
       } else {
-        // Game session without order (shouldn't happen with new flow)
+        // Active session or session without order
         pendingGames += 1;
+        if (session.orderHeader) {
+          const orderTotal = Number(session.orderHeader.total) || 0;
+          pendingRevenue += orderTotal;
+        }
       }
     }
 
@@ -146,11 +155,11 @@ export async function GET(
 
     const stats = {
       totalGames, // Total game sessions/orders created
-      completedGames, // Paid games (orders with full payment)
-      pendingGames, // Unpaid games (orders without full payment)
+      completedGames, // Closed sessions that are fully paid
+      pendingGames, // Active sessions or unpaid sessions
       totalRevenue, // Revenue from paid games (cents)
-      pendingRevenue, // Revenue pending from unpaid games (cents)
-      completionRate: totalGames > 0 ? Math.round((completedGames / totalGames) * 100) : 0, // Percentage of games paid
+      pendingRevenue, // Revenue pending from active/unpaid games (cents)
+      completionRate: totalGames > 0 ? Math.round((completedGames / totalGames) * 100) : 0, // Percentage of games fully completed and paid
       revenueByType: revenueByTypeWithNames,
     };
 

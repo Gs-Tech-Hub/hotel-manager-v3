@@ -5,10 +5,18 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import { Loader2, ArrowLeft, Edit, Check, LogIn, LogOut, CreditCard } from "lucide-react";
+import { Loader2, ArrowLeft, LogIn, LogOut, CreditCard, Printer } from "lucide-react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { formatTablePrice } from "@/lib/formatters";
+import { 
+	getGuestStatus, 
+	getGuestStatusColor, 
+	getGuestStatusLabel, 
+	getRoomAvailabilityStatus,
+	getRoomAvailabilityColor,
+	getRoomAvailabilityLabel 
+} from "@/src/lib/booking-status";
 import {
 	Select,
 	SelectContent,
@@ -72,10 +80,8 @@ export default function BookingDetailPage({
 	const [isLoading, setIsLoading] = useState(true);
 	const [isSaving, setIsSaving] = useState(false);
 	const [bookingId, setBookingId] = useState<string | null>(null);
-	const [editCheckIn, setEditCheckIn] = useState<string>("");
-	const [editCheckOut, setEditCheckOut] = useState<string>("");
-	const [showDateEdit, setShowDateEdit] = useState(false);
 	const [showPaymentDialog, setShowPaymentDialog] = useState(false);
+	const [showReceipt, setShowReceipt] = useState(false);
 	const [paymentData, setPaymentData] = useState({
 		amount: "",
 		method: "cash",
@@ -98,8 +104,6 @@ export default function BookingDetailPage({
 				const data = await response.json();
 				if (data.success) {
 					setBooking(data.data);
-					setEditCheckIn(data.data.checkin);
-					setEditCheckOut(data.data.checkout);
 				}
 			} catch (error) {
 				console.error("Failed to fetch booking:", error);
@@ -116,48 +120,16 @@ export default function BookingDetailPage({
 		fetchBooking();
 	}, [bookingId, toast]);
 
-	const handleUpdateDates = async () => {
-		if (!booking) return;
-		setIsSaving(true);
-		try {
-			const response = await fetch(`/api/bookings/${bookingId}`, {
-				method: "PATCH",
-				headers: { "Content-Type": "application/json" },
-				body: JSON.stringify({
-					checkin: editCheckIn,
-					checkout: editCheckOut,
-				}),
-			});
-			const data = await response.json();
-		if (data.success && data.data) {
-				setBooking(data.data);
-				setShowDateEdit(false);
-				toast({
-					title: "Success",
-					description: "Booking dates updated",
-				});
-			}
-		} catch (error) {
-			toast({
-				title: "Error",
-				description: "Failed to update dates",
-				variant: "destructive",
-			});
-		} finally {
-			setIsSaving(false);
-		}
-	};
-
 	const handleCheckIn = async () => {
 		if (!booking || !booking.unit?.id) return;
 		setIsSaving(true);
 		try {
-			// Update booking status to in_progress
+			// Update booking to set check-in time
+			// Note: bookingStatus remains 'confirmed' (payment status)
 			const bookingRes = await fetch(`/api/bookings/${bookingId}`, {
 				method: "PUT",
 				headers: { "Content-Type": "application/json" },
 				body: JSON.stringify({
-					bookingStatus: "in_progress",
 					timeIn: new Date().toISOString(),
 				}),
 			});
@@ -195,12 +167,12 @@ export default function BookingDetailPage({
 		if (!booking || !booking.unit?.id) return;
 		setIsSaving(true);
 		try {
-			// Update booking status to completed
+			// Update booking to set check-out time
+			// Note: bookingStatus remains 'confirmed' (payment status)
 			const bookingRes = await fetch(`/api/bookings/${bookingId}`, {
 				method: "PUT",
 				headers: { "Content-Type": "application/json" },
 				body: JSON.stringify({
-					bookingStatus: "completed",
 					timeOut: new Date().toISOString(),
 				}),
 			});
@@ -265,11 +237,16 @@ export default function BookingDetailPage({
 
 		setIsSaving(true);
 		try {
+			// Fetch fresh booking to get current check-in/out state
+			const refreshRes = await fetch(`/api/bookings/${bookingId}`);
+			const refreshData = await refreshRes.json();
+			const currentBooking = refreshData.data;
+
 			const response = await fetch(`/api/bookings/${bookingId}/payment`, {
 				method: "POST",
 				headers: { "Content-Type": "application/json" },
 				body: JSON.stringify({
-					amount: booking.totalPrice, // Full booking amount in cents
+					amount: booking.totalPrice,
 					method: paymentData.method,
 				}),
 			});
@@ -278,6 +255,7 @@ export default function BookingDetailPage({
 
 			const data = await response.json();
 			if (data.data && data.data.booking) {
+				// Response includes preserved check-in/out times from payment endpoint
 				setBooking(data.data.booking);
 			}
 			setShowPaymentDialog(false);
@@ -299,6 +277,11 @@ export default function BookingDetailPage({
 		} finally {
 			setIsSaving(false);
 		}
+	};
+
+	const handlePrintReceipt = () => {
+		if (!booking) return;
+		setShowReceipt(true);
 	};
 
 	const statusColors: Record<string, string> = {
@@ -336,8 +319,9 @@ export default function BookingDetailPage({
 		);
 	}
 
-	const isCheckedIn = booking.bookingStatus === "in_progress";
-	const isCheckedOut = booking.bookingStatus === "completed";
+	const isCheckedIn = booking.timeIn !== undefined && booking.timeIn !== null;
+	const isCheckedOut = booking.timeOut !== undefined && booking.timeOut !== null;
+	const isPaymentMade = booking.payment !== undefined && booking.payment !== null;
 
 	return (
 		<div className="space-y-6">
@@ -356,19 +340,39 @@ export default function BookingDetailPage({
 						</p>
 					</div>
 				</div>
-				<div className="flex items-center gap-2">
-					<Badge className={statusColors[booking.bookingStatus]}>
-						{booking.bookingStatus
-							.split("_")
-							.map(
-								(word) =>
-									word.charAt(0).toUpperCase() + word.slice(1)
-							)
-							.join(" ")}
-					</Badge>
-				<Badge className={roomStatusColors[booking.unit?.status || "AVAILABLE"]}>
-					{booking.unit?.status || "N/A"}
-					</Badge>
+				<div className="flex flex-col items-end gap-2">
+					<div className="flex items-center gap-2">
+						<div>
+							<p className="text-xs text-muted-foreground mb-1">Payment Status</p>
+							<Badge className={statusColors[booking.bookingStatus]}>
+								{booking.bookingStatus
+									.split("_")
+									.map(
+										(word) =>
+											word.charAt(0).toUpperCase() + word.slice(1)
+									)
+									.join(" ")}
+							</Badge>
+						</div>
+						<div>
+							<p className="text-xs text-muted-foreground mb-1">Guest Status</p>
+							<Badge className={getGuestStatusColor(getGuestStatus(booking.timeIn, booking.timeOut))}>
+								{getGuestStatusLabel(getGuestStatus(booking.timeIn, booking.timeOut))}
+							</Badge>
+						</div>
+					</div>
+					{(() => {
+						const roomAvailability = getRoomAvailabilityStatus(
+							booking.checkin,
+							booking.checkout,
+							isPaymentMade
+						);
+						return (
+							<Badge className={getRoomAvailabilityColor(roomAvailability)}>
+								Room: {getRoomAvailabilityLabel(roomAvailability)}
+							</Badge>
+						);
+					})()}
 				</div>
 			</div>
 
@@ -489,103 +493,48 @@ export default function BookingDetailPage({
 
 			{/* Booking Dates & Actions */}
 			<Card>
-				<CardHeader className="flex flex-row items-center justify-between space-y-0">
+				<CardHeader>
 					<CardTitle>Booking Details</CardTitle>
-					{!showDateEdit && (
-						<Button
-							variant="outline"
-							size="sm"
-							onClick={() => setShowDateEdit(true)}
-						>
-							<Edit className="h-4 w-4" />
-						</Button>
-					)}
 				</CardHeader>
 				<CardContent>
-					{showDateEdit ? (
-						<div className="space-y-3">
-							<div>
-								<Label>Check-in</Label>
-								<Input
-									type="datetime-local"
-									value={editCheckIn}
-									onChange={(e) =>
-										setEditCheckIn(e.target.value)
-									}
-								/>
-							</div>
-							<div>
-								<Label>Check-out</Label>
-								<Input
-									type="datetime-local"
-									value={editCheckOut}
-									onChange={(e) =>
-										setEditCheckOut(e.target.value)
-									}
-								/>
-							</div>
-							<div className="flex gap-2">
-								<Button
-									onClick={handleUpdateDates}
-									disabled={isSaving}
-								>
-									{isSaving ? (
-										<Loader2 className="h-4 w-4 animate-spin" />
-									) : (
-										<Check className="h-4 w-4" />
-									)}
-									Save
-								</Button>
-								<Button
-									variant="outline"
-									onClick={() =>
-										setShowDateEdit(false)
-									}
-								>
-									Cancel
-								</Button>
-							</div>
+					<div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+						<div>
+							<Label className="text-muted-foreground">
+								Check-in
+							</Label>
+							<p className="font-semibold">
+								{new Date(
+									booking.checkin
+								).toLocaleString()}
+							</p>
 						</div>
-					) : (
-						<div className="grid grid-cols-2 md:grid-cols-4 gap-4">
-							<div>
-								<Label className="text-muted-foreground">
-									Check-in
-								</Label>
-								<p className="font-semibold">
-									{new Date(
-										booking.checkin
-									).toLocaleString()}
-								</p>
-							</div>
-							<div>
-								<Label className="text-muted-foreground">
-									Check-out
-								</Label>
-								<p className="font-semibold">
-									{new Date(
-										booking.checkout
-									).toLocaleString()}
-								</p>
-							</div>
-							<div>
-								<Label className="text-muted-foreground">
-									Guests
-								</Label>
-								<p className="font-semibold">
-									{booking.guests}
-								</p>
-							</div>
-							<div>
-								<Label className="text-muted-foreground">
-									Status
-								</Label>
-								<p className="font-semibold">
-									{isCheckedIn ? "Checked In" : isCheckedOut ? "Checked Out" : "Pending"}
-								</p>
-							</div>
+						<div>
+							<Label className="text-muted-foreground">
+								Check-out
+							</Label>
+							<p className="font-semibold">
+								{new Date(
+									booking.checkout
+								).toLocaleString()}
+							</p>
 						</div>
-					)}
+						<div>
+							<Label className="text-muted-foreground">
+								Guests
+							</Label>
+							<p className="font-semibold">
+								{booking.guests}
+							</p>
+						</div>
+						<div>
+							<Label className="text-muted-foreground">
+								Status
+							</Label>
+							<p className="font-semibold">
+								{isCheckedIn ? "Checked In" : isCheckedOut ? "Checked Out" : "Pending"}
+							</p>
+						</div>
+					</div>
 				</CardContent>
 			</Card>
 
@@ -625,14 +574,32 @@ export default function BookingDetailPage({
 							</div>
 						</div>
 					) : (
-						<Button
-							onClick={() => setShowPaymentDialog(true)}
-							className="w-full"
-						>
-							<CreditCard className="h-4 w-4 mr-2" />
-							Process Payment
-						</Button>
+						<div className="bg-yellow-50 p-4 rounded border border-yellow-200 space-y-2">
+							<p className="text-sm font-semibold text-yellow-900">Payment Pending</p>
+							<p className="text-sm text-yellow-800">No payment has been processed yet.</p>
+						</div>
 					)}
+					<div className="flex gap-2">
+						<Button
+							onClick={handlePrintReceipt}
+							variant="outline"
+							size="sm"
+							className="flex-1"
+						>
+							<Printer className="h-4 w-4 mr-2" />
+							Print Receipt
+						</Button>
+						{!booking.payment && (
+							<Button
+								onClick={() => setShowPaymentDialog(true)}
+								size="sm"
+								className="flex-1"
+							>
+								<CreditCard className="h-4 w-4 mr-2" />
+								Process Payment
+							</Button>
+						)}
+					</div>
 				</CardContent>
 			</Card>
 
@@ -697,15 +664,16 @@ export default function BookingDetailPage({
 						{!isCheckedIn && (
 							<Button
 								onClick={handleCheckIn}
-								disabled={isSaving}
+								disabled={isSaving || !isPaymentMade}
 								className="flex-1"
+								title={!isPaymentMade ? "Payment must be made before check-in" : ""}
 							>
 								{isSaving ? (
 									<Loader2 className="h-4 w-4 animate-spin mr-2" />
 								) : (
 									<LogIn className="h-4 w-4 mr-2" />
 								)}
-								Check In
+								{isPaymentMade ? "Check In" : "Check In (Payment Required)"}
 							</Button>
 						)}
 						{isCheckedIn && (
@@ -725,6 +693,155 @@ export default function BookingDetailPage({
 						)}
 					</CardContent>
 				</Card>
+			)}
+
+			{/* Receipt Modal */}
+			{showReceipt && booking && (
+				<div className="fixed inset-0 bg-black bg-opacity-40 flex items-center justify-center z-50">
+					<div className="bg-white rounded-lg p-6 w-96 shadow-lg max-h-[80vh] overflow-auto">
+						<div className="font-mono text-sm space-y-2">
+							{/* Header */}
+							<div className="text-center border-b pb-3 mb-3">
+								<div className="font-bold text-lg">HOTEL RECEIPT</div>
+								<div className="text-xs text-muted-foreground">Booking Confirmation</div>
+								<div className="text-xs text-muted-foreground mt-1">
+									{new Date().toLocaleDateString()} {new Date().toLocaleTimeString()}
+								</div>
+							</div>
+
+							{/* Booking Info */}
+							<div className="space-y-1 border-b pb-2">
+								<div className="flex justify-between text-xs">
+									<span className="font-semibold">Booking ID:</span>
+									<span>{booking.bookingId}</span>
+								</div>
+								<div className="flex justify-between text-xs">
+									<span className="font-semibold">Status:</span>
+									<span className="capitalize">{booking.bookingStatus.replace(/_/g, ' ')}</span>
+								</div>
+							</div>
+
+							{/* Guest Info */}
+							<div className="space-y-1 border-b pb-2">
+								<div className="text-xs font-semibold mb-1">Guest Information</div>
+								<div className="flex justify-between text-xs">
+									<span>Name:</span>
+									<span>{`${booking.customer?.firstName || ''} ${booking.customer?.lastName || ''}`.trim()}</span>
+								</div>
+								<div className="flex justify-between text-xs">
+									<span>Email:</span>
+									<span className="text-right max-w-[150px] truncate">{booking.customer?.email}</span>
+								</div>
+								{booking.customer?.phone && (
+									<div className="flex justify-between text-xs">
+										<span>Phone:</span>
+										<span>{booking.customer.phone}</span>
+									</div>
+								)}
+							</div>
+
+							{/* Room & Dates */}
+							<div className="space-y-1 border-b pb-2">
+								<div className="text-xs font-semibold mb-1">Accommodation Details</div>
+								<div className="flex justify-between text-xs">
+									<span>Room Number:</span>
+									<span>{booking.unit?.roomNumber || 'N/A'}</span>
+								</div>
+								<div className="flex justify-between text-xs">
+									<span>Room Type:</span>
+									<span>{booking.unit?.roomType?.name || 'N/A'}</span>
+								</div>
+								<div className="flex justify-between text-xs">
+									<span>Check-in:</span>
+									<span>{new Date(booking.checkin).toLocaleDateString()}</span>
+								</div>
+								<div className="flex justify-between text-xs">
+									<span>Check-out:</span>
+									<span>{new Date(booking.checkout).toLocaleDateString()}</span>
+								</div>
+								<div className="flex justify-between text-xs">
+									<span>Nights:</span>
+									<span>{booking.nights}</span>
+								</div>
+								<div className="flex justify-between text-xs">
+									<span>Guests:</span>
+									<span>{booking.guests}</span>
+								</div>
+							</div>
+
+							{/* Pricing */}
+							<div className="space-y-1 border-b pb-2">
+								<div className="flex justify-between text-xs font-semibold">
+									<span>Per Night:</span>
+									<span>{formatTablePrice(Math.round(booking.totalPrice / booking.nights))}</span>
+								</div>
+								<div className="flex justify-between font-bold text-sm">
+									<span>Total:</span>
+									<span>{formatTablePrice(booking.totalPrice)}</span>
+								</div>
+							</div>
+
+							{/* Payment Info */}
+							{booking.payment && (
+								<div className="space-y-1 border-b pb-2">
+									<div className="text-xs font-semibold mb-1">Payment Information</div>
+									<div className="flex justify-between text-xs">
+										<span>Method:</span>
+										<span className="capitalize">{booking.payment.paymentMethod}</span>
+									</div>
+									<div className="flex justify-between text-xs">
+										<span>Status:</span>
+										<span className="text-green-600 font-semibold">✓ {booking.payment.paymentStatus}</span>
+									</div>
+									{booking.payment.transactionID && (
+										<div className="flex justify-between text-xs">
+											<span>Reference:</span>
+											<span className="font-mono">{booking.payment.transactionID}</span>
+										</div>
+									)}
+								</div>
+							)}
+
+							{/* Footer */}
+							<div className="text-center text-xs text-muted-foreground pt-2 border-t">
+								<div>Thank you for your stay!</div>
+								<div className="mt-1">Please keep this receipt for your records</div>
+							</div>
+						</div>
+
+						{/* Buttons */}
+						<div className="flex gap-2 mt-4">
+							<Button
+								onClick={() => {
+									const printWindow = window.open('', '', 'width=600,height=800');
+									if (printWindow) {
+										const receiptContent = document.querySelector('.font-mono');
+										if (receiptContent) {
+											printWindow.document.write('<html><head><title>Receipt</title></head><body>');
+											printWindow.document.write(receiptContent.innerHTML);
+											printWindow.document.write('</body></html>');
+											printWindow.document.close();
+											printWindow.print();
+										}
+									}
+								}}
+								size="sm"
+								className="flex-1"
+							>
+								<Printer className="h-4 w-4 mr-2" />
+								Print
+							</Button>
+							<Button
+								onClick={() => setShowReceipt(false)}
+								variant="outline"
+								size="sm"
+								className="flex-1"
+							>
+								Close
+							</Button>
+						</div>
+					</div>
+				</div>
 			)}
 		</div>
 	);

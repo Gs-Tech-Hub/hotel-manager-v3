@@ -13,7 +13,9 @@ import {
 	SelectTrigger,
 	SelectValue,
 } from "@/components/ui/select";
-import { Loader2 } from "lucide-react";
+import { Loader2, X, Plus } from "lucide-react";
+import { useMultipleUnitBooking } from "@/hooks/useMultipleUnitBooking";
+import { formatTablePrice } from "@/lib/formatters";
 
 interface Customer {
 	id: string;
@@ -26,6 +28,8 @@ interface Unit {
 	id: string;
 	roomNumber: string;
 	status: string;
+	isAvailable?: boolean;
+	unavailableReason?: string;
 	roomType: {
 		id: string;
 		name: string;
@@ -59,37 +63,73 @@ export default function BookingCreatePage() {
 		phone: "",
 	});
 
-	// Fetch customers and rooms
-	useEffect(() => {
-		const fetchData = async () => {
-			setIsLoading(true);
-			try {
-				const [customersRes, roomsRes] = await Promise.all([
-					fetch("/api/customers"),
-					fetch("/api/rooms"),
-				]);
+	// Multi-booking state
+	const [isMultiBooking, setIsMultiBooking] = useState(false);
+	const multiBooking = useMultipleUnitBooking();
 
+	// Fetch customers on mount
+	useEffect(() => {
+		setIsLoading(true);
+		const fetchCustomers = async () => {
+			try {
+				const customersRes = await fetch("/api/customers");
 				if (customersRes.ok) {
 					const customersData = await customersRes.json();
 					setCustomers(customersData.data?.items || []);
 				}
-
-				if (roomsRes.ok) {
-					const roomsData = await roomsRes.json();
-					console.log("Units API Response:", roomsData);
-					console.log("Units Data:", roomsData.data);
-					setUnits(roomsData.data || []);
-				}
 			} catch (err) {
-				console.error("Failed to fetch data:", err);
-				setError("Failed to load customers and rooms");
+				console.error("Failed to fetch customers:", err);
+				setError("Failed to load customers");
 			} finally {
 				setIsLoading(false);
 			}
 		};
 
-		fetchData();
+		fetchCustomers();
 	}, []);
+
+	// Fetch available units when dates change
+	useEffect(() => {
+		const fetchAvailableUnits = async () => {
+			if (!booking.checkin || !booking.checkout) {
+				// If no dates set, fetch all available units
+				try {
+					const roomsRes = await fetch("/api/rooms");
+					if (roomsRes.ok) {
+						const roomsData = await roomsRes.json();
+						setUnits(roomsData.data || []);
+					}
+				} catch (err) {
+					console.error("Failed to fetch rooms:", err);
+				}
+				return;
+			}
+
+			try {
+				// Parse dates and format as YYYY-MM-DD
+				const checkInDate = new Date(booking.checkin);
+				const checkOutDate = new Date(booking.checkout);
+				const checkinStr = checkInDate.toISOString().split('T')[0];
+				const checkoutStr = checkOutDate.toISOString().split('T')[0];
+
+				// Fetch only available units for these dates
+				const roomsRes = await fetch(
+					`/api/rooms?checkin=${checkinStr}&checkout=${checkoutStr}`
+				);
+
+				if (roomsRes.ok) {
+					const roomsData = await roomsRes.json();
+					console.log("Available Units:", roomsData.data);
+					setUnits(roomsData.data || []);
+				}
+			} catch (err) {
+				console.error("Failed to fetch available units:", err);
+				setError("Failed to load available rooms");
+			}
+		};
+
+		fetchAvailableUnits();
+	}, [booking.checkin, booking.checkout]);
 
 	const handleChange = (e: React.ChangeEvent<HTMLInputElement>) => {
 		const { name, value } = e.target;
@@ -104,12 +144,12 @@ export default function BookingCreatePage() {
 		setBooking((prev) => {
 			const updated = { ...prev, [field]: value };
 
-		// If unit is selected, calculate total price
+// If unit is selected, calculate total price (store as whole number in cents)
 		if (field === "unitId") {
 			const selectedUnit = units.find((u) => u.id === value);
 			if (selectedUnit) {
 				const unitPrice = selectedUnit.roomType.basePriceCents || 0;
-				updated.totalPrice = unitPrice * prev.nights;
+				updated.totalPrice = Math.round(unitPrice * prev.nights);
 				}
 			}
 
@@ -174,18 +214,78 @@ export default function BookingCreatePage() {
 				);
 				updated.nights = Math.max(1, nightsCount);
 
-		// Recalculate total price if unit is selected
+		// Recalculate total price if unit is selected (store as cents)
 			if (updated.unitId) {
 				const selectedUnit = units.find((u) => u.id === updated.unitId);
 				if (selectedUnit) {
 					const unitPrice = selectedUnit.roomType.basePriceCents || 0;
-					updated.totalPrice = unitPrice * updated.nights;
+					updated.totalPrice = Math.round(unitPrice * updated.nights);
 					}
 				}
 			}
 
 			return updated;
 		});
+	};
+
+	const validateDates = (): string | null => {
+		// Check if check-in date is not in the past
+		if (booking.checkin) {
+			const checkInDate = new Date(booking.checkin);
+			const today = new Date();
+			today.setHours(0, 0, 0, 0);
+			
+			if (checkInDate < today) {
+				return 'Check-in date cannot be in the past';
+			}
+		}
+
+		// Check that checkout is after check-in
+		if (booking.checkin && booking.checkout) {
+			const checkInDate = new Date(booking.checkin);
+			const checkOutDate = new Date(booking.checkout);
+			
+			if (checkOutDate <= checkInDate) {
+				return 'Check-out date must be after check-in date';
+			}
+		}
+
+		return null;
+	};
+
+	const handleAddUnitToMultiBooking = () => {
+		if (!booking.customerId) {
+			setError("Please select a customer first");
+			return;
+		}
+		if (!booking.unitId) {
+			setError("Please select a unit");
+			return;
+		}
+		if (!booking.checkin || !booking.checkout) {
+			setError("Please select check-in and check-out dates");
+			return;
+		}
+
+		const dateError = validateDates();
+		if (dateError) {
+			setError(dateError);
+			return;
+		}
+
+		multiBooking.addUnitBooking({
+			unitId: booking.unitId,
+			checkInDate: booking.checkin,
+			checkOutDate: booking.checkout,
+			totalCents: booking.totalPrice, // already in cents
+		});
+
+		// Reset unit selection for next booking
+		setBooking(prev => ({
+			...prev,
+			unitId: "",
+		}));
+		setError(null);
 	};
 
 	const handleSubmit = async (e: React.FormEvent) => {
@@ -197,6 +297,64 @@ export default function BookingCreatePage() {
 			setError("Please select a customer");
 			return;
 		}
+
+		// Multi-booking mode
+		if (isMultiBooking) {
+			if (multiBooking.state.bookings.length === 0) {
+				setError("Please add at least one unit booking");
+				return;
+			}
+
+			setIsSaving(true);
+
+			try {
+				const formatDateTime = (dateStr: string) => {
+					if (!dateStr) return dateStr;
+					let formatted = dateStr;
+					const parts = dateStr.split('T');
+					if (parts[1]?.split(':').length === 2) {
+						formatted = `${parts[0]}T${parts[1]}:00`;
+					}
+					if (!formatted.endsWith('Z')) {
+						formatted = `${formatted}Z`;
+					}
+					return formatted;
+				};
+
+				// Submit all bookings
+				const bookingPromises = multiBooking.state.bookings.map(unitBooking =>
+					fetch("/api/bookings", {
+						method: "POST",
+						headers: { "Content-Type": "application/json" },
+						body: JSON.stringify({
+							customerId: booking.customerId,
+							unitId: unitBooking.unitId,
+							checkin: formatDateTime(unitBooking.checkInDate),
+							checkout: formatDateTime(unitBooking.checkOutDate),
+							nights: Math.ceil((new Date(unitBooking.checkOutDate).getTime() - new Date(unitBooking.checkInDate).getTime()) / (1000 * 60 * 60 * 24)),
+							guests: booking.guests || 1,
+							totalPrice: unitBooking.totalCents / 100, // convert back to dollars for booking API
+						}),
+					})
+				);
+
+				const responses = await Promise.all(bookingPromises);
+				const allSuccess = responses.every(r => r.ok);
+
+				if (allSuccess) {
+					router.push("/bookings");
+				} else {
+					setError("Failed to create one or more bookings");
+				}
+			} catch (err) {
+				setError(err instanceof Error ? err.message : "Network error");
+			} finally {
+				setIsSaving(false);
+			}
+			return;
+		}
+
+		// Single booking mode
 		if (!booking.unitId) {
 			setError("Please select a unit");
 			return;
@@ -207,6 +365,13 @@ export default function BookingCreatePage() {
 		}
 		if (booking.guests < 1) {
 			setError("Number of guests must be at least 1");
+			return;
+		}
+
+		// Validate dates
+		const dateError = validateDates();
+		if (dateError) {
+			setError(dateError);
 			return;
 		}
 
@@ -305,6 +470,26 @@ export default function BookingCreatePage() {
 								>
 									Create New Customer
 								</Button>
+
+								{/* Multi-booking toggle */}
+								<div className="pt-4 border-t">
+									<Button
+										type="button"
+										variant={isMultiBooking ? "default" : "outline"}
+										className="w-full"
+										onClick={() => {
+											setIsMultiBooking(!isMultiBooking);
+											setError(null);
+										}}
+									>
+										{isMultiBooking ? "✓ Multi-Booking Mode" : "Enable Multi-Booking"}
+									</Button>
+									<p className="text-xs text-muted-foreground mt-2">
+										{isMultiBooking 
+											? "Add multiple units for this guest" 
+											: "Book multiple units for same guest"}
+									</p>
+								</div>
 							</>
 						) : (
 							<>
@@ -397,95 +582,218 @@ export default function BookingCreatePage() {
 					</CardContent>
 				</Card>
 
-				{/* Room & Dates */}
-				<Card>
-					<CardHeader>
-						<CardTitle>Room & Dates</CardTitle>
-					</CardHeader>
-					<CardContent className="space-y-4">
-						<div>
-							<Label htmlFor="unitId">Unit</Label>
-							<Select value={booking.unitId} onValueChange={(val) => handleSelectChange("unitId", val)}>
-								<SelectTrigger>
-									<SelectValue placeholder="Select a unit" />
-								</SelectTrigger>
-								<SelectContent>
-									{units.map((unit) => {
-										const isNotBookable = ['CLEANING', 'MAINTENANCE', 'BLOCKED'].includes(unit.status);
-										const statusIcon = unit.status === 'AVAILABLE' ? '✓ AVAILABLE' : `✗ ${unit.status}`;
-										const displayText = `${unit.roomNumber} - ${unit.roomType.name} (${unit.roomType.capacity}) ${statusIcon}`;
+				{/* Room & Dates - Single or Multi Mode */}
+				{isMultiBooking ? (
+					<Card>
+						<CardHeader>
+							<CardTitle>Add Multiple Units</CardTitle>
+						</CardHeader>
+						<CardContent className="space-y-4">
+							<div>
+								<Label htmlFor="unitId">Unit</Label>
+								<Select value={booking.unitId} onValueChange={(val) => handleSelectChange("unitId", val)}>
+									<SelectTrigger>
+										<SelectValue placeholder="Select a unit" />
+									</SelectTrigger>
+									<SelectContent>
+										{units.map((unit) => {
+										const isDisabled = !unit.isAvailable;
+										const statusLabel = unit.isAvailable ? '✓ Available' : `✗ ${unit.unavailableReason || 'Unavailable'}`;
+										const displayText = `${unit.roomNumber} - ${unit.roomType.name} (${unit.roomType.capacity}) ${statusLabel}`;
 										
 										return (
 											<SelectItem 
 												key={unit.id} 
 												value={unit.id}
-											>
-												{displayText}
-											</SelectItem>
+												disabled={isDisabled}
+												title={isDisabled ? unit.unavailableReason : undefined}
+												>
+													{displayText}
+												</SelectItem>
+											);
+										})}
+									</SelectContent>
+								</Select>
+							</div>
+
+							<div>
+								<Label htmlFor="checkin">Check-in Date</Label>
+								<Input
+									id="checkin"
+									name="checkin"
+									type="datetime-local"
+									value={booking.checkin}
+									onChange={(e) => handleDateChange("checkin", e.target.value)}
+								/>
+							</div>
+
+							<div>
+								<Label htmlFor="checkout">Check-out Date</Label>
+								<Input
+									id="checkout"
+									name="checkout"
+									type="datetime-local"
+									value={booking.checkout}
+									onChange={(e) => handleDateChange("checkout", e.target.value)}
+								/>
+							</div>
+
+							<Button
+								type="button"
+								className="w-full"
+								onClick={handleAddUnitToMultiBooking}
+							>
+								<Plus className="h-4 w-4 mr-2" />
+								Add Unit to Booking
+							</Button>
+
+							{/* List of added units */}
+							{multiBooking.state.bookings.length > 0 && (
+								<div className="bg-muted p-3 rounded space-y-2 mt-4">
+									<p className="text-sm font-semibold">Added Units ({multiBooking.state.bookings.length})</p>
+									{multiBooking.state.bookings.map((ub, idx) => {
+										const unit = units.find(u => u.id === ub.unitId);
+										return (
+											<div key={idx} className="bg-background p-2 rounded flex justify-between items-center text-sm">
+												<div>
+													<p className="font-medium">{unit?.roomNumber}</p>
+													<p className="text-xs text-muted-foreground">
+														{new Date(ub.checkInDate).toLocaleDateString()} - {new Date(ub.checkOutDate).toLocaleDateString()}
+													</p>
+												</div>
+												<Button
+													type="button"
+													variant="ghost"
+													size="sm"
+													onClick={() => multiBooking.removeUnitBooking(ub.unitId, ub.checkInDate)}
+												>
+													<X className="h-4 w-4" />
+												</Button>
+											</div>
 										);
 									})}
-								</SelectContent>
-							</Select>
-							<p className="text-xs text-muted-foreground mt-1">
-								✓ = Bookable | ✗ = Not bookable (Cleaning/Maintenance/Blocked)
-							</p>
-						</div>
+								</div>
+							)}
 
-						<div>
-							<Label htmlFor="checkin">Check-in Date</Label>
-							<Input
-								id="checkin"
-								name="checkin"
-								type="datetime-local"
-								value={booking.checkin}
-								onChange={(e) => handleDateChange("checkin", e.target.value)}
-							/>
-						</div>
+							<div className="bg-muted p-3 rounded">
+								<p className="text-sm">
+								<span className="font-semibold">Total Price:</span> {formatTablePrice(multiBooking.state.totalCents)}
+								</p>
+							</div>
+						</CardContent>
+					</Card>
+				) : (
+					<Card>
+						<CardHeader>
+							<CardTitle>Room & Dates</CardTitle>
+						</CardHeader>
+						<CardContent className="space-y-4">
+							<div>
+								<Label htmlFor="unitId">Unit</Label>
+								<Select value={booking.unitId} onValueChange={(val) => handleSelectChange("unitId", val)}>
+									<SelectTrigger>
+										<SelectValue placeholder="Select a unit" />
+									</SelectTrigger>
+									<SelectContent>
+										{units.map((unit) => {
+											const isDisabled = !unit.isAvailable;
+											const statusLabel = unit.isAvailable ? '✓ Available' : `✗ ${unit.unavailableReason || 'Unavailable'}`;
+											const displayText = `${unit.roomNumber} - ${unit.roomType.name} (${unit.roomType.capacity}) ${statusLabel}`;
+											
+											return (
+												<SelectItem 
+													key={unit.id} 
+													value={unit.id}
+													disabled={isDisabled}
+													title={isDisabled ? unit.unavailableReason : undefined}
+												>
+													{displayText}
+												</SelectItem>
+											);
+										})}
+									</SelectContent>
+								</Select>
+								<p className="text-xs text-muted-foreground mt-1">
+									✓ = Available for booking | ✗ = Not available (already booked or needs cleaning)
+								</p>
+							</div>
 
-						<div>
-							<Label htmlFor="checkout">Check-out Date</Label>
-							<Input
-								id="checkout"
-								name="checkout"
-								type="datetime-local"
-								value={booking.checkout}
-								onChange={(e) => handleDateChange("checkout", e.target.value)}
-							/>
-						</div>
+							<div>
+								<Label htmlFor="checkin">Check-in Date</Label>
+								<Input
+									id="checkin"
+									name="checkin"
+									type="datetime-local"
+									value={booking.checkin}
+									onChange={(e) => handleDateChange("checkin", e.target.value)}
+								/>
+							</div>
 
-						<div className="bg-muted p-3 rounded">
-							<p className="text-sm">
-								<span className="font-semibold">Nights:</span> {booking.nights}
-							</p>
-						</div>
-					</CardContent>
-				</Card>
+							<div>
+								<Label htmlFor="checkout">Check-out Date</Label>
+								<Input
+									id="checkout"
+									name="checkout"
+									type="datetime-local"
+									value={booking.checkout}
+									onChange={(e) => handleDateChange("checkout", e.target.value)}
+								/>
+							</div>
+
+							<div className="bg-muted p-3 rounded">
+								<p className="text-sm">
+									<span className="font-semibold">Nights:</span> {booking.nights}
+								</p>
+							</div>
+						</CardContent>
+					</Card>
+				)}
 
 				{/* Pricing */}
 				<Card className="md:col-span-2">
 					<CardHeader>
-						<CardTitle>Pricing</CardTitle>
+						<CardTitle>{isMultiBooking ? "Multi-Booking Summary" : "Pricing"}</CardTitle>
 					</CardHeader>
 					<CardContent className="space-y-4">
-						<div className="grid gap-4 md:grid-cols-3">
-							<div>
-								<Label htmlFor="totalPrice">Total Price</Label>
-								<Input
-									id="totalPrice"
-									name="totalPrice"
-									type="number"
-									min="0"
-									step="0.01"
-									value={booking.totalPrice}
-									readOnly
-									placeholder="0.00"
-									className="bg-muted"
-								/>
-								<p className="text-xs text-muted-foreground mt-1">
-									Auto-calculated: Room Rate × Nights
-								</p>
+						{isMultiBooking ? (
+							<div className="grid gap-4 md:grid-cols-3">
+								<div>
+									<Label>Units Booked</Label>
+									<Input
+										type="number"
+										value={multiBooking.state.bookings.length}
+										readOnly
+										className="bg-muted"
+									/>
+								</div>
+								<div>
+									<Label>Total Price</Label>
+									<Input
+										type="text"
+										value={formatTablePrice(multiBooking.state.totalCents)}
+										readOnly
+										className="bg-muted"
+									/>
+								</div>
 							</div>
-						</div>
+						) : (
+							<div className="grid gap-4 md:grid-cols-3">
+								<div>
+									<Label htmlFor="totalPrice">Total Price</Label>
+									<Input
+										id="totalPrice"
+										name="totalPrice"
+											type="text"
+											value={formatTablePrice(booking.totalPrice)}
+											readOnly
+										className="bg-muted"
+									/>
+									<p className="text-xs text-muted-foreground mt-1">
+										Auto-calculated: Room Rate × Nights
+									</p>
+								</div>
+							</div>
+						)}
 
 						{error && (
 							<div className="bg-destructive/10 text-destructive border border-destructive/20 rounded p-3">
@@ -508,6 +816,8 @@ export default function BookingCreatePage() {
 										<Loader2 className="h-4 w-4 mr-2 animate-spin" />
 										Creating...
 									</>
+								) : isMultiBooking ? (
+									`Create ${multiBooking.state.bookings.length} Booking${multiBooking.state.bookings.length !== 1 ? 's' : ''}`
 								) : (
 									"Create Booking"
 								)}

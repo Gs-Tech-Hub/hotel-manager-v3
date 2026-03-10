@@ -16,6 +16,7 @@ import {
 import { Loader2, Plus, Search } from "lucide-react";
 import Link from "next/link";
 import { formatTablePrice } from "@/lib/formatters";
+import { getGuestStatus, getGuestStatusColor, getGuestStatusLabel } from "@/src/lib/booking-status";
 
 interface Booking {
 	id: string;
@@ -24,6 +25,8 @@ interface Booking {
 	unit?: { roomNumber: string; roomType: { name: string } };
 	checkin: string;
 	checkout: string;
+	timeIn?: string | null;
+	timeOut?: string | null;
 	bookingStatus: "pending" | "confirmed" | "in_progress" | "completed" | "cancelled";
 	totalPrice: number;
 	guests: number;
@@ -317,20 +320,33 @@ export default function BookingsPage() {
 												<p className="text-xs font-medium text-muted-foreground uppercase">
 													Status
 												</p>
-												<Badge
-													className={`${statusColors[booking.bookingStatus]} text-xs`}
-												>
-													{booking.bookingStatus
-														.split("_")
-														.map(
-															(word) =>
-																word
-																	.charAt(0)
-																	.toUpperCase() +
-																word.slice(1)
-														)
-														.join(" ")}
-												</Badge>
+												<div className="flex flex-col gap-1">
+													<div>
+														<p className="text-xs text-muted-foreground mb-1">Payment</p>
+														<Badge
+															className={`${statusColors[booking.bookingStatus]} text-xs`}
+														>
+															{booking.bookingStatus
+																.split("_")
+																.map(
+																	(word) =>
+																		word
+																			.charAt(0)
+																			.toUpperCase() +
+																		word.slice(1)
+																)
+																.join(" ")}
+														</Badge>
+													</div>
+													<div>
+														<p className="text-xs text-muted-foreground mb-1">Guest</p>
+														<Badge
+														className={`${getGuestStatusColor(getGuestStatus(booking.timeIn, booking.timeOut))} text-xs`}
+													>
+														{getGuestStatusLabel(getGuestStatus(booking.timeIn, booking.timeOut))}
+														</Badge>
+													</div>
+												</div>
 											</div>
 
 											{/* Price */}

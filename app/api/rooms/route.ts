@@ -1,5 +1,6 @@
 /**
  * GET /api/rooms - List all units
+ * Query params: ?checkin=YYYY-MM-DD&checkout=YYYY-MM-DD (to mark unavailable units)
  * POST /api/rooms - Create new unit
  */
 
@@ -10,7 +11,10 @@ import { UnitStatus, UnitKind } from '@prisma/client';
 
 export async function GET(request: NextRequest) {
   try {
-    // Get all units (rooms) for booking selection
+    const checkin = request.nextUrl.searchParams.get('checkin');
+    const checkout = request.nextUrl.searchParams.get('checkout');
+
+    // Get all rooms
     const units = await prisma.unit.findMany({
       select: {
         id: true,
@@ -42,8 +46,109 @@ export async function GET(request: NextRequest) {
 
     console.log('Fetched units:', units);
 
+    // If dates provided, mark which units are unavailable
+    if (checkin && checkout) {
+      try {
+        const checkInDate = new Date(checkin);
+        const checkOutDate = new Date(checkout);
+
+        // Validate dates
+        if (isNaN(checkInDate.getTime()) || isNaN(checkOutDate.getTime())) {
+          return NextResponse.json(
+            errorResponse(ErrorCodes.BAD_REQUEST, 'Invalid date format'),
+            { status: 400 }
+          );
+        }
+
+        if (checkInDate >= checkOutDate) {
+          return NextResponse.json(
+            errorResponse(ErrorCodes.BAD_REQUEST, 'Check-in must be before check-out'),
+            { status: 400 }
+          );
+        }
+
+        // For each unit, check if it's available for the dates
+        const unitsWithAvailability = await Promise.all(
+          units.map(async (unit) => {
+            let isAvailable = true;
+            let unavailableReason = '';
+
+            // Check room status
+            if (unit.status !== UnitStatus.AVAILABLE) {
+              isAvailable = false;
+              unavailableReason = `Room is ${unit.status}`;
+            }
+
+            // If status is OK, check for booking conflicts
+            if (isAvailable) {
+              const bookingConflict = await prisma.booking.findFirst({
+                where: {
+                  unitId: unit.id,
+                  paymentId: { not: null }, // Payment must be made
+                  bookingStatus: { in: ['confirmed', 'in_progress', 'completed'] },
+                  AND: [
+                    { checkin: { lt: checkOutDate } },
+                    { checkout: { gt: checkInDate } },
+                  ],
+                },
+              });
+
+              if (bookingConflict) {
+                isAvailable = false;
+                unavailableReason = 'Already booked for these dates';
+              }
+            }
+
+            // Check for reservation conflicts
+            if (isAvailable) {
+              const reservationConflict = await prisma.reservation.findFirst({
+                where: {
+                  unitId: unit.id,
+                  status: { in: ['CONFIRMED', 'CHECKED_IN'] },
+                  AND: [
+                    { checkInDate: { lt: checkOutDate } },
+                    { checkOutDate: { gt: checkInDate } },
+                  ],
+                },
+              });
+
+              if (reservationConflict) {
+                isAvailable = false;
+                unavailableReason = 'Already reserved for these dates';
+              }
+            }
+
+            return {
+              ...unit,
+              isAvailable,
+              unavailableReason,
+            };
+          })
+        );
+
+        return NextResponse.json(
+          successResponse({ data: unitsWithAvailability }),
+          { status: 200 }
+        );
+      } catch (err) {
+        console.error('Error filtering units:', err);
+        // Fall back to returning all units without availability info
+        return NextResponse.json(
+          successResponse({ data: units }),
+          { status: 200 }
+        );
+      }
+    }
+
+    // No dates provided - return all units
+    const unitsWithDefault = units.map((u) => ({
+      ...u,
+      isAvailable: u.status === UnitStatus.AVAILABLE,
+      unavailableReason: u.status !== UnitStatus.AVAILABLE ? `Room is ${u.status}` : '',
+    }));
+
     return NextResponse.json(
-      successResponse({ data: units }),
+      successResponse({ data: unitsWithDefault }),
       { status: 200 }
     );
   } catch (error) {

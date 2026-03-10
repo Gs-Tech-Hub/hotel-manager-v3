@@ -50,11 +50,12 @@ export async function GET(request: NextRequest) {
         totalUnpaid += booking.totalPrice || 0;
       }
 
-      // Count check-in/out status
-      if (booking.bookingStatus === 'in_progress') {
-        totalCheckedIn += 1;
-      } else if (booking.bookingStatus === 'completed') {
+      // Count check-in/out status based on timeIn/timeOut, not bookingStatus
+      // bookingStatus reflects payment status, not guest status
+      if (booking.timeOut !== null && booking.timeOut !== undefined) {
         totalCheckedOut += 1;
+      } else if (booking.timeIn !== null && booking.timeIn !== undefined) {
+        totalCheckedIn += 1;
       } else if (booking.bookingStatus === 'pending') {
         pendingBookings += 1;
       } else if (booking.bookingStatus === 'confirmed') {

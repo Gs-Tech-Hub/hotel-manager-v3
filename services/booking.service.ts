@@ -1,4 +1,5 @@
 /**
+ * 
  * Booking Service
  * Handles all booking-related operations
  */
@@ -269,12 +270,28 @@ export class BookingService extends BaseService<IBooking> {
 
   /**
    * Check in booking
+   * Sets check-in time (guest status)
+   * Does NOT change payment status (bookingStatus)
+   * Preserves all other fields including payment
    */
   async checkInBooking(bookingId: string): Promise<boolean> {
     try {
+      // Get existing booking to preserve all other fields
+      const existingBooking = await prisma.booking.findUnique({
+        where: { id: bookingId },
+      });
+      
+      if (!existingBooking) {
+        return false;
+      }
+
+      // Update: only set timeIn (guest check-in)
+      // Do NOT change bookingStatus (payment status stays as-is)
       await prisma.booking.update({
         where: { id: bookingId },
-        data: { bookingStatus: 'in_progress' },
+        data: {
+          timeIn: new Date().toISOString(),
+        },
       });
       return true;
     } catch (error) {
@@ -285,12 +302,28 @@ export class BookingService extends BaseService<IBooking> {
 
   /**
    * Check out booking
+   * Sets check-out time (guest status)
+   * Does NOT change payment status (bookingStatus)
+   * Preserves all other fields including payment
    */
   async checkOutBooking(bookingId: string): Promise<boolean> {
     try {
+      // Get existing booking to preserve all other fields
+      const existingBooking = await prisma.booking.findUnique({
+        where: { id: bookingId },
+      });
+      
+      if (!existingBooking) {
+        return false;
+      }
+
+      // Update: only set timeOut (guest check-out)
+      // Do NOT change bookingStatus (payment status stays as-is)
       await prisma.booking.update({
         where: { id: bookingId },
-        data: { bookingStatus: 'completed' },
+        data: {
+          timeOut: new Date().toISOString(),
+        },
       });
       return true;
     } catch (error) {
