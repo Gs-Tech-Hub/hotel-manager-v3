@@ -1109,7 +1109,7 @@ export default function SalesTerminal() {
             <div className="mt-4 p-3 bg-gray-50 border rounded">
               <DiscountDropdown
                 departmentCode={Array.from(selectedSections).length > 0 
-                  ? departments.find(d => d.id === sections.find(s => s.id === Array.from(selectedSections)[0])?.departmentId)?.code 
+                  ? sections.find(s => s.id === Array.from(selectedSections)[0])?.departmentId
                   : undefined}
                 subtotal={subtotal}
                 appliedDiscounts={appliedDiscountIds}

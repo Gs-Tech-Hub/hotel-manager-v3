@@ -144,8 +144,8 @@ const sidebarGroups = [
 		title: "POS & Operations",
 		items: [
 			{
-				title: "POS",
-				href: "/pos",
+				title: "Sales",
+				href: "/pos/orders",
 				icon: ShoppingCart,
 				badge: null,
 			},
@@ -153,12 +153,6 @@ const sidebarGroups = [
 				title: "Sales Terminal",
 				href: "/terminal",
 				icon: Layers,
-				badge: null,
-			},
-			{
-				title: "POS Terminals",
-				href: "/pos-terminals",
-				icon: ShoppingCart,
 				badge: null,
 			},
 			{

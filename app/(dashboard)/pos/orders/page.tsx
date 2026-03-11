@@ -8,10 +8,9 @@ import { formatCents, normalizeToCents, centsToDollars, calculateTax, calculateT
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "@/components/ui/dialog";
-import { Input } from "@/components/ui/input";
-import { Loader2, Plus } from "lucide-react";
+import { Loader2, Plus, BarChart3 } from "lucide-react";
 import { POSPayment } from "@/components/admin/pos/pos-payment";
-import Price from '@/components/ui/Price';
+import { PosReportsContent } from "@/components/pos/reports/PosReportsContent";
 import DateRangeFilter from '@/components/departments/DateRangeFilter';
 
 type Order = {
@@ -36,6 +35,7 @@ type Order = {
 };
 
 export default function PosOrdersPage() {
+    const [activeTab, setActiveTab] = useState<'orders' | 'reports'>('orders');
     
     const [orders, setOrders] = useState<Order[]>([]);
     const [isLoading, setIsLoading] = useState(true);
@@ -377,10 +377,31 @@ export default function PosOrdersPage() {
     return (
         <div className="space-y-8">
             <div>
-                <h1 className="text-3xl font-bold">POS Orders</h1>
-                <p className="text-muted-foreground">Manage orders from restaurant, bar and other departments.</p>
+                <h1 className="text-3xl font-bold">Sales</h1>
+                <p className="text-muted-foreground">View orders and sales reports.</p>
             </div>
 
+            {/* Tab Navigation */}
+            <div className="flex gap-2 border-b">
+                <Button
+                    variant={activeTab === 'orders' ? 'default' : 'ghost'}
+                    onClick={() => setActiveTab('orders')}
+                    className="rounded-none"
+                >
+                    Orders
+                </Button>
+                <Button
+                    variant={activeTab === 'reports' ? 'default' : 'ghost'}
+                    onClick={() => setActiveTab('reports')}
+                    className="rounded-none"
+                >
+                    <BarChart3 className="h-4 w-4 mr-2" />
+                    Reports
+                </Button>
+            </div>
+
+            {/* Orders Tab */}
+            {activeTab === 'orders' && (
             <div className="grid gap-4">
                 <div className="flex items-center gap-4 flex-wrap">
                     <div className="flex-1 min-w-[300px]">
@@ -492,6 +513,12 @@ export default function PosOrdersPage() {
                     />
                 )}
             </div>
+            )}
+
+            {/* Reports Tab */}
+            {activeTab === 'reports' && (
+                <PosReportsContent showTitle={false} />
+            )}
 
             {/* Payment Modal - Using POSPayment Component */}
             {showPaymentModal && selectedOrderForPayment && (
