@@ -170,6 +170,7 @@ export async function GET(
       // Determine payment status based on section's amount
       const isPaid = sectionPaymentAllocated >= sectionFinalAmount && sectionFinalAmount > 0
       const isUnpaid = sectionPaymentAllocated === 0
+      const isPartial = !isPaid && !isUnpaid
       
       // Count units in this section only
       const sectionUnits = sectionLines.reduce((sum: number, l: any) => sum + (l.quantity || 0), 0)
@@ -198,6 +199,35 @@ export async function GET(
         
         unpaidTotalUnits += sectionUnits
         if (order.status === 'fulfilled') unpaidFulfilledUnits += sectionFulfilledUnits
+      }
+
+      if (isPartial) {
+        // OPTION A: Amount-based allocation - split amounts but NOT order counts
+        // This prevents double-counting when order is partially paid (e.g., discount applied)
+        totalPaidAmount += sectionPaymentAllocated
+        totalUnpaidAmount += sectionOwedAmount
+        
+        // Track units once (for fulfillment rate calculation)
+        paidTotalUnits += sectionUnits
+        unpaidTotalUnits += sectionUnits
+        
+        // Count status breakdowns in both buckets for rate calculation
+        if (order.status === 'pending') {
+          paidPendingOrders += 1
+          unpaidPendingOrders += 1
+        }
+        if (order.status === 'processing') {
+          paidProcessingOrders += 1
+          unpaidProcessingOrders += 1
+        }
+        if (order.status === 'fulfilled') {
+          paidFulfilledOrders += 1
+          unpaidFulfilledOrders += 1
+          paidFulfilledUnits += sectionFulfilledUnits
+          unpaidFulfilledUnits += sectionFulfilledUnits
+        }
+        
+        console.log(`[DEDICATED SECTION/STATS] PARTIAL: +${sectionPaymentAllocated} to paid, +${sectionOwedAmount} to unpaid (order NOT counted in either bucket)`)
       }
     }
     

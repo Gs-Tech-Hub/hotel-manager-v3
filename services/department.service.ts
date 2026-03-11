@@ -349,8 +349,12 @@ export class DepartmentService extends BaseService<IDepartment> {
         updatedAt: new Date(),
       };
 
-      // Separate tracker for aggregated (full order totals regardless of payment)
+      // Separate trackers for aggregated (full order totals regardless of payment)
       let aggregatedTotalAmount = 0;
+      let aggregatedTotalUnits = 0;
+      let aggregatedFulfilledUnits = 0;
+      let aggregatedTotalOrders = 0;
+      let aggregatedFulfilledOrders = 0;
 
       for (const order of orders) {
         // Calculate section's proportion based on line items (if filtering by sectionId)
@@ -374,14 +378,20 @@ export class DepartmentService extends BaseService<IDepartment> {
         
         // Total paid for this order
         const totalPaid = order.payments.reduce((sum: number, p: any) => sum + (p.amount || 0), 0);
+
+        // Section's discount share (proportional to its line total)
+        const sectionDiscount = Math.round(sectionProportion * order.discountTotal);
         
-        // Section's payment share = proportion × total paid (NO TAX included)
+        // Section's final amount after discount (this is what the section owes)
+        const sectionFinalAmount = Math.max(0, sectionLineTotal - sectionDiscount);
+        
+        // Section's payment share = proportion × total paid
         const sectionPaidAmount = Math.round(sectionProportion * totalPaid);
         
-        // Section's line subtotal (for fulfillment/unit tracking)
-        const sectionOwedAmount = Math.max(0, sectionLineTotal - sectionPaidAmount);
+        // Section's owed amount (after discount is applied)
+        const sectionOwedAmount = Math.max(0, sectionFinalAmount - sectionPaidAmount);
         
-        const isPaid = sectionPaidAmount >= sectionLineTotal;
+        const isPaid = sectionPaidAmount >= sectionFinalAmount;
         const isUnpaid = sectionPaidAmount === 0;
         const isPartial = !isPaid && !isUnpaid;
         
@@ -400,9 +410,11 @@ export class DepartmentService extends BaseService<IDepartment> {
         console.log(`  [Order ${order.id}] lineTotal=${sectionLineTotal}, proportion=${sectionProportion.toFixed(2)}, paid=${sectionPaidAmount}, status=${order.status}, isPaid=${isPaid}, isUnpaid=${isUnpaid}, isPartial=${isPartial}, units=${totalUnits}, cash=${sectionCashAmount}, card=${sectionCardAmount}`);
 
         if (isPartial) {
-          // Split partial payment
-          console.log(`    → PARTIAL: +${sectionPaidAmount} to PAID, +${sectionOwedAmount} to UNPAID (split from total ${sectionLineTotal})`);
+          // OPTION A: Amount-based split without double-counting orders
+          // Split amounts between paid/unpaid, but don't increment totalOrders for BOTH buckets
+          console.log(`    → PARTIAL: +${sectionPaidAmount} to PAID, +${sectionOwedAmount} to UNPAID (amounts split, order NOT counted in either bucket)`);
           
+          // Split amounts
           paidStats.totalAmount += sectionPaidAmount;
           paidStats.cashAmount += sectionCashAmount;
           paidStats.cardAmount += sectionCardAmount;
@@ -410,12 +422,19 @@ export class DepartmentService extends BaseService<IDepartment> {
           
           unpaidStats.totalAmount += sectionOwedAmount;
           
-          paidStats.totalOrders += 1;
-          unpaidStats.totalOrders += 1;
+          // CRITICAL FIX: Don't increment totalOrders for BOTH buckets (that was the duplicate)
+          // Only track amounts and units, not order/fulfillment counts in the split buckets
           
+          // Track units in both for fulfillment rate calculation
+          paidStats.totalUnits += totalUnits;
           unpaidStats.totalUnits += totalUnits;
-          unpaidStats.fulfilledUnits += fulfilledUnits;
           
+          if (order.status === 'fulfilled') {
+            paidStats.fulfilledUnits += fulfilledUnits;
+            unpaidStats.fulfilledUnits += fulfilledUnits;
+          }
+          
+          // Track status split for rate calculations, but NOT as separate order counts
           if (order.status === 'pending') {
             paidStats.pendingOrders += 1;
             unpaidStats.pendingOrders += 1;
@@ -428,31 +447,55 @@ export class DepartmentService extends BaseService<IDepartment> {
             paidStats.fulfilledOrders += 1;
             unpaidStats.fulfilledOrders += 1;
           }
+          
+          // Add to aggregated (counted once, not split) - use SEPARATE trackers to avoid double-counting
+          aggregatedTotalAmount += sectionFinalAmount;
+          aggregatedTotalUnits += totalUnits;
+          if (order.status === 'fulfilled') {
+            aggregatedFulfilledUnits += fulfilledUnits;
+            aggregatedFulfilledOrders += 1;
+          }
+          aggregatedTotalOrders += 1;
         } else if (isUnpaid) {
-          console.log(`    → Adding to UNPAID: +${sectionLineTotal} (completely unpaid)`);
+          console.log(`    → Adding to UNPAID: +${sectionFinalAmount} (completely unpaid)`);
           unpaidStats.totalOrders += 1;
-          unpaidStats.totalAmount += sectionLineTotal;
+          unpaidStats.totalAmount += sectionFinalAmount;
           unpaidStats.totalUnits += totalUnits;
           unpaidStats.fulfilledUnits += fulfilledUnits;
           if (order.status === 'pending') unpaidStats.pendingOrders += 1;
           if (order.status === 'processing') unpaidStats.processingOrders += 1;
           if (order.status === 'fulfilled') unpaidStats.fulfilledOrders += 1;
+          
+          // For unpaid orders, add to aggregated once
+          aggregatedTotalAmount += sectionFinalAmount;
+          aggregatedTotalUnits += totalUnits;
+          aggregatedTotalOrders += 1;
+          if (order.status === 'fulfilled') {
+            aggregatedFulfilledUnits += fulfilledUnits;
+            aggregatedFulfilledOrders += 1;
+          }
         } else if (isPaid) {
-          console.log(`    → Adding to PAID: +${sectionLineTotal} (fully paid)`);
+          console.log(`    → Adding to PAID: +${sectionFinalAmount} (fully paid)`);
           paidStats.totalOrders += 1;
-          paidStats.totalAmount += sectionLineTotal;
+          paidStats.totalAmount += sectionFinalAmount;
           paidStats.cashAmount += sectionCashAmount;
           paidStats.cardAmount += sectionCardAmount;
           paidStats.totalUnits += totalUnits;
           paidStats.fulfilledUnits += fulfilledUnits;
-          if (order.status === 'fulfilled') paidStats.amountFulfilled += sectionLineTotal;
+          if (order.status === 'fulfilled') paidStats.amountFulfilled += sectionFinalAmount;
           if (order.status === 'pending') paidStats.pendingOrders += 1;
           if (order.status === 'processing') paidStats.processingOrders += 1;
           if (order.status === 'fulfilled') paidStats.fulfilledOrders += 1;
+          
+          // For paid orders, add to aggregated once
+          aggregatedTotalAmount += sectionFinalAmount;
+          aggregatedTotalUnits += totalUnits;
+          aggregatedTotalOrders += 1;
+          if (order.status === 'fulfilled') {
+            aggregatedFulfilledUnits += fulfilledUnits;
+            aggregatedFulfilledOrders += 1;
+          }
         }
-
-        // Always add section line total to aggregated (regardless of payment status)
-        aggregatedTotalAmount += sectionLineTotal;
       }
 
       // Calculate fulfillment rates
@@ -475,12 +518,12 @@ export class DepartmentService extends BaseService<IDepartment> {
         unpaid: unpaidStats,
         paid: paidStats,
         aggregated: {
-          totalOrders: unpaidStats.totalOrders + paidStats.totalOrders,
+          totalOrders: aggregatedTotalOrders,
           totalPending: unpaidStats.pendingOrders + paidStats.pendingOrders,
           totalProcessing: unpaidStats.processingOrders + paidStats.processingOrders,
-          totalFulfilled: unpaidStats.fulfilledOrders + paidStats.fulfilledOrders,
-          totalUnits: unpaidStats.totalUnits + paidStats.totalUnits,
-          totalFulfilledUnits: unpaidStats.fulfilledUnits + paidStats.fulfilledUnits,
+          totalFulfilled: aggregatedFulfilledOrders,
+          totalUnits: aggregatedTotalUnits,
+          totalFulfilledUnits: aggregatedFulfilledUnits,
           totalAmount: aggregatedTotalAmount,
         },
         updatedAt: new Date(),
