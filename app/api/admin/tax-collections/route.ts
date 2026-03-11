@@ -41,7 +41,7 @@ export async function GET(request: NextRequest) {
     const orders = await prisma.orderHeader.findMany({
       where: {
         tax: { gt: 0 }, // Only orders with tax > 0
-        createdAt: dateFilter,
+        ...dateFilter,
       },
       select: {
         id: true,

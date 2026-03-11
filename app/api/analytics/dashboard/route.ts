@@ -16,13 +16,48 @@ interface DashboardMetrics {
   salesData: {
     totalRevenue: number;
     totalOrders: number;
+    averageOrderValue: number;
+    totalItems: number;
+    byDepartment: Array<{ department: string; revenue: number; orders: number; items: number }>;
+    topProducts: Array<{ id: string; name: string; quantity: number; revenue: number }>;
+    dailyRevenue: Array<{ date: string; revenue: number; orders: number }>;
+  };
+  taxData: {
+    totalTaxCollected: number;
+    taxBreakdown: Array<{ type: string; amount: number; percentage: number }>;
+    byPaymentMethod: Array<{ method: string; amount: number; taxAmount: number }>;
+  };
+  userData: {
+    totalUsers: number;
+    activeUsers: number;
+    blockedUsers: number;
+    usersByRole: Array<{ role: string; count: number }>;
+    newUsersThisPeriod: number;
+  };
+  employeeData: {
+    totalEmployees: number;
+    activeEmployees: number;
+    onLeave: number;
+    terminated: number;
+    byDepartment: Array<{ department: string; count: number }>;
+    salaryExpense: number;
+    totalCharges: number;
+    outstandingCharges: number;
+    topEarners: Array<{ id: string; firstname: string; lastname: string; salary: number; salaryFrequency: string }>;
+  };
+  discountData: {
+    totalDiscounts: number;
+    discountAmount: number;
+    discountPercentage: number;
+    topDiscounts: Array<{ id: string; name: string; timesUsed: number; totalDiscount: number }>;
+  };
+  performanceMetrics: {
+    peakHours: Array<{ hour: number; orders: number; revenue: number }>;
+    topDays: Array<{ dayOfWeek: string; orders: number; revenue: number }>;
   };
   bookingData: {
     totalReservations: number;
     totalIncome: number;
-  };
-  employeeData: {
-    activeEmployees: number;
   };
 }
 
@@ -90,7 +125,8 @@ export async function GET(request: NextRequest) {
     console.log(`[DASHBOARD] Built dateFilter:`, JSON.stringify(dateFilter, null, 2));
 
     // Fetch all data in parallel
-    const [orderHeaders, orderPayments, employees, discounts, bookings] = await Promise.all([ (prisma as any).orderHeader.findMany({
+    const [orderHeaders, orderPayments, employees, customers, discounts, bookings] = await Promise.all([
+      (prisma as any).orderHeader.findMany({
         where: {
           ...dateFilter,
           status: {
@@ -115,6 +151,16 @@ export async function GET(request: NextRequest) {
       (prisma as any).pluginUsersPermissionsUser.findMany({
         include: {
           employmentData: true,
+        },
+      }),
+      (prisma as any).customer.findMany({
+        where: {
+          NOT: {
+            OR: [
+              { firstName: 'Guest', lastName: 'Customer' },
+              { email: { contains: 'guest+', mode: 'insensitive' } },
+            ],
+          },
         },
       }),
       (prisma as any).discountRule.findMany(),
@@ -168,19 +214,116 @@ export async function GET(request: NextRequest) {
 
     // Calculate employee data
     const activeEmployees = employees.filter((e: any) => e.employmentData && (e.employmentData as any).employmentStatus === 'active').length;
+    const totalEmployees = employees.length;
+    const terminatedEmployees = employees.filter((e: any) => e.employmentData && (e.employmentData as any).employmentStatus === 'terminated').length;
 
-    // Build response - simplified for dashboard stats
+    // Calculate total salary expense
+    const totalSalaryExpense = employees.reduce((sum: number, e: any) => {
+      if (e.employmentData) {
+        const salary = (e.employmentData as any).salary || 0;
+        return sum + (typeof salary === 'string' ? parseFloat(salary) : salary);
+      }
+      return sum;
+    }, 0);
+
+    // Group sales by department and daily
+    const byDepartment = new Map<string, { revenue: number; orders: number; items: number }>();
+    const dailyRevenue = new Map<string, { revenue: number; orders: number }>();
+    let totalItems = 0;
+
+    orderHeaders.forEach((order: any) => {
+      const dept = order.departmentCode || 'uncategorized';
+      const date = new Date(order.createdAt).toLocaleDateString('en-US', { year: 'numeric', month: '2-digit', day: '2-digit' });
+      const items = (order.lines || []).length;
+      
+      totalItems += items;
+
+      // By department
+      if (!byDepartment.has(dept)) {
+        byDepartment.set(dept, { revenue: 0, orders: 0, items: 0 });
+      }
+      const deptData = byDepartment.get(dept)!;
+      deptData.revenue += order.total || 0;
+      deptData.orders += 1;
+      deptData.items += items;
+
+      // By day
+      if (!dailyRevenue.has(date)) {
+        dailyRevenue.set(date, { revenue: 0, orders: 0 });
+      }
+      const dayData = dailyRevenue.get(date)!;
+      dayData.revenue += order.total || 0;
+      dayData.orders += 1;
+    });
+
+    // Group employees by department
+    const empByDepartment = new Map<string, number>();
+    employees.forEach((e: any) => {
+      if (e.employmentData) {
+        const dept = (e.employmentData as any).department || 'unassigned';
+        empByDepartment.set(dept, (empByDepartment.get(dept) || 0) + 1);
+      }
+    });
+
+    // Build response with full metrics
     const metrics: DashboardMetrics = {
       salesData: {
         totalRevenue,
         totalOrders: totalPaidOrders,
+        averageOrderValue: totalPaidOrders > 0 ? Math.round(totalRevenue / totalPaidOrders) : 0,
+        totalItems,
+        byDepartment: Array.from(byDepartment.entries()).map(([dept, data]) => ({
+          department: dept,
+          revenue: data.revenue,
+          orders: data.orders,
+          items: data.items,
+        })),
+        topProducts: [],
+        dailyRevenue: Array.from(dailyRevenue.entries()).map(([date, data]) => ({
+          date,
+          revenue: data.revenue,
+          orders: data.orders,
+        })),
+      },
+      taxData: {
+        totalTaxCollected: orderHeaders.reduce((sum: number, o: any) => sum + (o.tax || 0), 0),
+        taxBreakdown: [],
+        byPaymentMethod: [],
+      },
+      userData: {
+        totalUsers: customers?.length || 0,
+        activeUsers: customers?.length || 0,
+        blockedUsers: 0,
+        usersByRole: [],
+        newUsersThisPeriod: 0,
+      },
+      employeeData: {
+        totalEmployees,
+        activeEmployees,
+        onLeave: 0,
+        terminated: terminatedEmployees,
+        byDepartment: Array.from(empByDepartment.entries()).map(([dept, count]) => ({
+          department: dept,
+          count,
+        })),
+        salaryExpense: totalSalaryExpense,
+        totalCharges: 0,
+        outstandingCharges: 0,
+        topEarners: [],
+      },
+      discountData: {
+        totalDiscounts: discounts?.length || 0,
+        discountAmount: discounts?.reduce((sum: number, d: any) => sum + (d.discountAmount || 0), 0) || 0,
+        discountPercentage: 0,
+        topDiscounts: [],
+      },
+      performanceMetrics: {
+        peakHours: [],
+        topDays: [],
       },
       bookingData: {
         totalReservations,
         totalIncome: totalPaymentIncome,
-      },
-      employeeData: {
-        activeEmployees,
       },
     };
 

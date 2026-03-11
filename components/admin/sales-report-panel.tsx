@@ -157,7 +157,7 @@ export function SalesReportPanel({ departmentFilter }: SalesReportProps) {
           </div>
 
           {/* Revenue by Hour */}
-          {report.byHour.length > 0 && (
+          {report?.byHour?.length > 0 && (
             <DashboardChart
               title="Revenue by Hour"
               type="line"
@@ -169,7 +169,7 @@ export function SalesReportPanel({ departmentFilter }: SalesReportProps) {
           )}
 
           {/* Revenue by Day */}
-          {report.byDay.length > 0 && (
+          {report?.byDay?.length > 0 && (
             <DashboardChart
               title="Daily Revenue"
               type="bar"
@@ -181,7 +181,7 @@ export function SalesReportPanel({ departmentFilter }: SalesReportProps) {
           )}
 
           {/* Top Products */}
-          {report.topProducts.length > 0 && (
+          {report?.topProducts?.length > 0 && (
             <DashboardDataTable
               title="Top 10 Products"
               columns={[
@@ -200,7 +200,7 @@ export function SalesReportPanel({ departmentFilter }: SalesReportProps) {
           )}
 
           {/* Payment Methods */}
-          {report.byPaymentMethod.length > 0 && (
+          {report?.byPaymentMethod?.length > 0 && (
             <DashboardDataTable
               title="Revenue by Payment Method"
               columns={[

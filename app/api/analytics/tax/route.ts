@@ -49,80 +49,94 @@ export async function GET(request: NextRequest) {
 
     const dateFilter = buildDateFilter(startDate, endDate);
 
-    // Fetch tax-related data
-    const payments = await prisma.payment.findMany({
+    // Fetch orders with tax collected - use OrderHeader model
+    const orders = await prisma.orderHeader.findMany({
       where: {
-        createdAt: dateFilter,
+        ...dateFilter,
+        tax: { gt: 0 }, // Only orders with tax > 0
+      },
+      include: {
+        payments: true,
+      },
+      orderBy: {
+        createdAt: 'desc',
       },
     });
 
     const taxSettings = await prisma.taxSettings.findFirst();
 
     // Calculate tax breakdown
-    const taxByType = new Map<string, { amount: number; taxable: number; rate: number }>();
-    const taxByPaymentMethod = new Map<string, { count: number; amount: number; taxAmount: number }>();
-    const dailyTax = new Map<string, { collected: number; baseAmount: number }>();
+    const taxByPaymentMethod = new Map<string, { count: number; subtotal: number; taxAmount: number }>();
+    const dailyTax = new Map<string, { collected: number; baseAmount: number; orderCount: number }>();
+    let totalTaxCollected = 0;
+    let totalTaxableAmount = 0;
 
-    payments.forEach((payment: any) => {
-      const date = new Date(payment.createdAt).toLocaleDateString('en-US', { year: 'numeric', month: '2-digit', day: '2-digit' });
-      const paymentMethod = payment.paymentMethod || 'Unknown';
-      const taxAmount = 0;
+    orders.forEach((order: any) => {
+      const date = new Date(order.createdAt).toLocaleDateString('en-US', { year: 'numeric', month: '2-digit', day: '2-digit' });
+      const paymentMethod = (order.payments && order.payments.length > 0) ? (order.payments[0].paymentMethod || 'Unknown') : 'Unknown';
+      const taxAmount = order.tax || 0;
+      const subtotal = order.subtotal || 0;
+
+      totalTaxCollected += taxAmount;
+      totalTaxableAmount += subtotal;
 
       // By payment method
       if (!taxByPaymentMethod.has(paymentMethod)) {
-        taxByPaymentMethod.set(paymentMethod, { count: 0, amount: 0, taxAmount: 0 });
+        taxByPaymentMethod.set(paymentMethod, { count: 0, subtotal: 0, taxAmount: 0 });
       }
       const methodData = taxByPaymentMethod.get(paymentMethod)!;
       methodData.count += 1;
-      methodData.amount += payment.totalPrice || 0;
+      methodData.subtotal += subtotal;
       methodData.taxAmount += taxAmount;
 
       // Daily tax
       if (!dailyTax.has(date)) {
-        dailyTax.set(date, { collected: 0, baseAmount: 0 });
+        dailyTax.set(date, { collected: 0, baseAmount: 0, orderCount: 0 });
       }
       const dayData = dailyTax.get(date)!;
       dayData.collected += taxAmount;
-      dayData.baseAmount += payment.totalPrice || 0;
+      dayData.baseAmount += subtotal;
+      dayData.orderCount += 1;
     });
 
-    // Aggregate summary
-    const totalTaxCollected = payments.reduce((sum: number, p: any) => sum + 0, 0);
-    const totalTaxableAmount = Math.round((payments.reduce((sum: number, p: any) => sum + (p.totalPrice || 0), 0)) * 100);
     const effectiveTaxRate = totalTaxableAmount > 0 ? (totalTaxCollected / totalTaxableAmount) * 100 : 0;
 
     const report = {
       summary: {
         totalTaxCollected,
         totalTaxableAmount,
-        effectiveTaxRate: totalTaxableAmount > 0 ? parseFloat(((totalTaxCollected / totalTaxableAmount) * 100).toFixed(2)) : 0,
-        paymentCount: payments.length,
-        averageTaxPerPayment: payments.length > 0 ? Math.round(totalTaxCollected / payments.length) : 0,
+        effectiveTaxRate: parseFloat(effectiveTaxRate.toFixed(2)),
+        orderCount: orders.length,
+        averageTaxPerOrder: orders.length > 0 ? Math.round(totalTaxCollected / orders.length) : 0,
+        taxRate: taxSettings?.taxRate || 0,
       },
       byPaymentMethod: Array.from(taxByPaymentMethod.entries()).map(([method, data]) => ({
         method,
         count: data.count,
-        amount: Math.round(data.amount * 100),
+        subtotal: data.subtotal,
         taxAmount: data.taxAmount,
-        effectiveRate: data.amount > 0 ? parseFloat(((data.taxAmount / (data.amount * 100)) * 100).toFixed(2)) : 0,
+        effectiveRate: data.subtotal > 0 ? parseFloat(((data.taxAmount / data.subtotal) * 100).toFixed(2)) : 0,
       })),
       dailyTax: Array.from(dailyTax.entries()).map(([date, data]) => ({
         date,
         collected: data.collected,
-        baseAmount: Math.round(data.baseAmount * 100),
-        rate: data.baseAmount > 0 ? parseFloat(((data.collected / (data.baseAmount * 100)) * 100).toFixed(2)) : 0,
+        baseAmount: data.baseAmount,
+        orderCount: data.orderCount,
+        rate: data.baseAmount > 0 ? parseFloat(((data.collected / data.baseAmount) * 100).toFixed(2)) : 0,
       })),
       taxSettings: taxSettings ? {
         taxRate: taxSettings.taxRate,
         isEnabled: taxSettings.enabled,
       } : null,
-      paymentDetails: payments
-        .map((p: any) => ({
-          id: p.id,
-          amount: Math.round((p.totalPrice || 0) * 100),
-          taxAmount: 0,
-          method: p.paymentMethod,
-          createdAt: p.createdAt,
+      orderDetails: orders
+        .map((o: any) => ({
+          id: o.id,
+          orderNumber: o.orderNumber,
+          subtotal: o.subtotal,
+          taxAmount: o.tax,
+          total: o.total,
+          paymentStatus: o.paymentStatus,
+          createdAt: o.createdAt,
         }))
         .slice(0, 100), // Limit to last 100 for performance
     };

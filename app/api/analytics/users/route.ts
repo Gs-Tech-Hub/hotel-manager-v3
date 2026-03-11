@@ -58,7 +58,7 @@ export async function GET(request: NextRequest) {
       }),
       prisma.pluginUsersPermissionsUser.findMany({
         where: {
-          createdAt: dateFilter,
+          ...dateFilter,
         },
       }),
       prisma.adminUser.findMany(),

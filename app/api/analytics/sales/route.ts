@@ -51,11 +51,15 @@ export async function GET(request: NextRequest) {
 
     const dateFilter = buildDateFilter(startDate, endDate);
 
-    // Fetch orders with detailed breakdown
-    const orders = await prisma.order.findMany({
+    // Fetch orders with detailed breakdown - use OrderHeader model
+    const orders = await prisma.orderHeader.findMany({
       where: {
-        createdAt: dateFilter,
-        ...(department && { orderDepartment: department }),
+        ...dateFilter,
+        ...(department && { departmentCode: department }),
+      },
+      include: {
+        lines: true,
+        payments: true,
       },
       orderBy: {
         createdAt: 'desc',
@@ -65,13 +69,17 @@ export async function GET(request: NextRequest) {
     // Detailed sales breakdown
     const salesByHour = new Map<number, { orders: number; revenue: number; items: number }>();
     const salesByDay = new Map<string, { orders: number; revenue: number; items: number }>();
-    const salesByPaymentType = new Map<string, { count: number; amount: number; taxAmount: number }>();
-    const topProducts = new Map<string, { name: string; quantity: number; revenue: number }>();
+    const salesByPaymentMethod = new Map<string, { count: number; amount: number; taxAmount: number }>();
+    let totalTaxCollected = 0;
 
     orders.forEach((order: any) => {
       const date = new Date(order.createdAt);
       const hour = date.getHours();
       const dayKey = date.toLocaleDateString('en-US', { year: 'numeric', month: '2-digit', day: '2-digit' });
+      const itemCount = (order.lines || []).length;
+      const paymentMethod = (order.payments && order.payments.length > 0) ? (order.payments[0].paymentMethod || 'Unknown') : 'Unknown';
+
+      totalTaxCollected += order.tax || 0;
 
       // By hour
       if (!salesByHour.has(hour)) {
@@ -80,7 +88,7 @@ export async function GET(request: NextRequest) {
       const hourData = salesByHour.get(hour)!;
       hourData.orders += 1;
       hourData.revenue += order.total || 0;
-      hourData.items += 1;
+      hourData.items += itemCount;
 
       // By day
       if (!salesByDay.has(dayKey)) {
@@ -89,43 +97,79 @@ export async function GET(request: NextRequest) {
       const dayData = salesByDay.get(dayKey)!;
       dayData.orders += 1;
       dayData.revenue += order.total || 0;
-      dayData.items += 1;
+      dayData.items += itemCount;
+
+      // By payment method
+      if (!salesByPaymentMethod.has(paymentMethod)) {
+        salesByPaymentMethod.set(paymentMethod, { count: 0, amount: 0, taxAmount: 0 });
+      }
+      const methodData = salesByPaymentMethod.get(paymentMethod)!;
+      methodData.count += 1;
+      methodData.amount += order.total || 0;
+      methodData.taxAmount += order.tax || 0;
+    });
+
+    const totalRevenue = orders.reduce((sum: number, o: any) => sum + (o.total || 0), 0);
+
+    // Build top products map
+    const topProducts = new Map<string, { id: string; name: string; quantity: number; revenue: number }>();
+    orders.forEach((order: any) => {
+      (order.lines || []).forEach((line: any) => {
+        const key = line.productId || 'unknown';
+        if (!topProducts.has(key)) {
+          topProducts.set(key, {
+            id: line.productId || 'unknown',
+            name: line.productName || 'Unknown Product',
+            quantity: 0,
+            revenue: 0,
+          });
+        }
+        const prodData = topProducts.get(key)!;
+        prodData.quantity += line.quantity || 1;
+        prodData.revenue += line.unitPrice * (line.quantity || 1) || 0;
+      });
     });
 
     const report = {
       summary: {
         totalOrders: orders.length,
-        totalRevenue: Math.round((orders.reduce((sum: number, o: any) => sum + (o.total || 0), 0)) * 100),
-        totalItems: orders.length,
-        averageOrderValue: orders.length > 0 ? Math.round((orders.reduce((sum: number, o: any) => sum + (o.total || 0), 0) / orders.length) * 100) : 0,
-        totalTax: 0,
+        totalRevenue: totalRevenue,
+        totalItems: orders.reduce((sum: number, o: any) => sum + ((o.lines || []).length || 1), 0),
+        averageOrderValue: orders.length > 0 ? Math.round(totalRevenue / orders.length) : 0,
+        totalTax: totalTaxCollected,
       },
       byHour: Array.from(salesByHour.entries()).map(([hour, data]) => ({
         hour,
         orders: data.orders,
-        revenue: Math.round(data.revenue * 100),
+        revenue: data.revenue,
         items: data.items,
       })),
       byDay: Array.from(salesByDay.entries()).map(([day, data]) => ({
         day,
         orders: data.orders,
-        revenue: Math.round(data.revenue * 100),
+        revenue: data.revenue,
         items: data.items,
       })),
-      byPaymentMethod: Array.from(salesByPaymentType.entries()).map(([method, data]) => ({
+      byPaymentMethod: Array.from(salesByPaymentMethod.entries()).map(([method, data]) => ({
         method,
-        ...data,
+        count: data.count,
+        amount: data.amount,
+        taxAmount: data.taxAmount,
       })),
       topProducts: Array.from(topProducts.values())
         .sort((a, b) => b.revenue - a.revenue)
         .slice(0, 20),
       orders: orders.map((o: any) => ({
         id: o.id,
+        orderNumber: o.orderNumber,
         total: o.total,
-        status: o.orderStatus,
+        subtotal: o.subtotal,
+        tax: o.tax,
+        status: o.status,
+        paymentStatus: o.paymentStatus,
         createdAt: o.createdAt,
-        items: 1,
-        discount: 0,
+        items: (o.lines || []).length,
+        discount: o.discountTotal || 0,
       })),
     };
 
