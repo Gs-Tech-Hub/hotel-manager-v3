@@ -3,12 +3,31 @@
 import { useState } from "react"
 import { formatTablePrice } from '@/lib/formatters'
 
-export function POSPayment({ total, onComplete, onCancel, allowDeferred = true, isProcessing: externalIsProcessing = false }: { total: number; onComplete: (r: { method: string; amount?: number; isMinor?: boolean; isDeferred?: boolean }) => void; onCancel?: () => void; allowDeferred?: boolean; isProcessing?: boolean }) {
+interface PaymentProps {
+  total: number;
+  onComplete: (r: { method: string; amount?: number; isMinor?: boolean; isDeferred?: boolean }) => void;
+  onCancel?: () => void;
+  allowDeferred?: boolean;
+  isProcessing?: boolean;
+  selectedEmployee?: { id: string; name?: string } | null;
+}
+
+export function POSPayment({ 
+  total, 
+  onComplete, 
+  onCancel, 
+  allowDeferred = true, 
+  isProcessing: externalIsProcessing = false,
+  selectedEmployee = null 
+}: PaymentProps) {
   // total is expected to come in as cents from POS checkout
   const totalCents = total
   
+  // Determine initial payment type and method based on employee selection
+  // If employee selected, default to 'charges' method; otherwise 'cash'
+  const defaultMethod = selectedEmployee?.id ? 'charges' : 'cash'
   const [paymentType, setPaymentType] = useState<'immediate'|'deferred'>(allowDeferred ? 'immediate' : 'immediate')
-  const [method, setMethod] = useState<'cash'|'card'>('cash')
+  const [method, setMethod] = useState<'cash'|'card'|'charges'>(defaultMethod as 'cash'|'card'|'charges')
   
   // Use external processing state if provided (from parent)
   const isTransacting = externalIsProcessing
@@ -20,6 +39,9 @@ export function POSPayment({ total, onComplete, onCancel, allowDeferred = true, 
     // Just call onComplete and let parent handle the loading state
     if (paymentType === 'deferred') {
       onComplete({ method: 'deferred', isDeferred: true })
+    } else if (method === 'charges') {
+      // Charges payment method - special handling in parent
+      onComplete({ method: 'charges', amount: totalCents, isMinor: true })
     } else {
       // Send amount in cents (isMinor: true) for consistency with backend
       onComplete({ method, amount: totalCents, isMinor: true })
@@ -47,9 +69,29 @@ export function POSPayment({ total, onComplete, onCancel, allowDeferred = true, 
           <>
             <div className="mb-3">
               <label className="block text-sm font-semibold mb-2">Payment Method</label>
-              <div className="flex gap-2">
-                <button onClick={() => setMethod('cash')} disabled={isTransacting} className={`flex-1 px-3 py-2 rounded transition disabled:opacity-50 disabled:cursor-not-allowed ${method==='cash' ? 'bg-sky-600 text-white' : 'bg-slate-100 hover:bg-slate-200'}`}>💵 Cash</button>
-                <button onClick={() => setMethod('card')} disabled={isTransacting} className={`flex-1 px-3 py-2 rounded transition disabled:opacity-50 disabled:cursor-not-allowed ${method==='card' ? 'bg-sky-600 text-white' : 'bg-slate-100 hover:bg-slate-200'}`}>💳 Card</button>
+              <div className="flex flex-col gap-2">
+                {/* Charges payment method - only shown if employee selected */}
+                {selectedEmployee?.id && (
+                  <button 
+                    onClick={() => setMethod('charges')} 
+                    disabled={isTransacting} 
+                    className={`px-3 py-2 rounded transition disabled:opacity-50 disabled:cursor-not-allowed text-left ${method==='charges' ? 'bg-orange-600 text-white border-2 border-orange-700' : 'bg-slate-100 hover:bg-slate-200 border-2 border-transparent'}`}
+                  >
+                    <div className="font-semibold">💳 Charge to {selectedEmployee.name || 'Employee'}</div>
+                    <div className="text-xs opacity-75">Amount will be deducted from salary</div>
+                  </button>
+                )}
+                
+                {/* Cash and Card methods */}
+                <div className={`flex gap-2 ${selectedEmployee?.id ? 'opacity-60' : ''}`}>
+                  <button onClick={() => setMethod('cash')} disabled={isTransacting} className={`flex-1 px-3 py-2 rounded transition disabled:opacity-50 disabled:cursor-not-allowed ${method==='cash' ? 'bg-sky-600 text-white' : 'bg-slate-100 hover:bg-slate-200'}`}>💵 Cash</button>
+                  <button onClick={() => setMethod('card')} disabled={isTransacting} className={`flex-1 px-3 py-2 rounded transition disabled:opacity-50 disabled:cursor-not-allowed ${method==='card' ? 'bg-sky-600 text-white' : 'bg-slate-100 hover:bg-slate-200'}`}>💳 Card</button>
+                </div>
+                {selectedEmployee?.id && (
+                  <div className="text-xs text-gray-500 mt-1">
+                    ℹ️ Cash/Card also applies when employee has charges
+                  </div>
+                )}
               </div>
             </div>
             <div className="mb-3">

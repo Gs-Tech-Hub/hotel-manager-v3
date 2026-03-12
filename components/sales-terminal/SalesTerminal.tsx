@@ -723,7 +723,9 @@ export default function SalesTerminal() {
       if (selectedEmployee?.id) {
         try {
           const chargeAmountDollars = estimatedTotal / 100 // Convert cents to dollars
-          console.log('[SalesTerminal] Creating employee charge for order:', orderId, 'employee:', selectedEmployee.id, 'amount:', chargeAmountDollars)
+          const isChargesPayment = payment.method === 'charges' // Check if payment method is 'charges'
+          
+          console.log('[SalesTerminal] Creating employee charge for order:', orderId, 'employee:', selectedEmployee.id, 'amount:', chargeAmountDollars, 'payment method:', payment.method)
           
           const chargeRes = await fetch(`/api/employees/${selectedEmployee.id}/charges`, {
             method: 'POST',
@@ -732,8 +734,8 @@ export default function SalesTerminal() {
             body: JSON.stringify({
               chargeType: 'order_discount',
               amount: chargeAmountDollars,
-              description: `Sales Terminal Order ${orderId} - Employee Discount Charge`,
-              reason: 'Employee discount auto-charge from Sales Terminal',
+              description: `Sales Terminal Order ${orderId} - ${isChargesPayment ? 'Employee Charge Payment' : 'Employee Discount Charge'}`,
+              reason: isChargesPayment ? 'Employee charge payment from Sales Terminal' : 'Employee discount auto-charge from Sales Terminal',
               date: new Date().toISOString(),
             }),
           })
@@ -744,7 +746,36 @@ export default function SalesTerminal() {
             console.warn('[SalesTerminal] Failed to create employee charge (non-blocking):', chargeJson?.error?.message)
             // Don't fail order if charge creation fails - charge is secondary to order
           } else {
-            console.log('[SalesTerminal] Employee charge created:', chargeJson.data?.id)
+            const chargeId = chargeJson.data?.id
+            console.log('[SalesTerminal] Employee charge created:', chargeId)
+            
+            // Step 2.5.1: If payment method was 'charges', mark the charge as PAID immediately
+            if (isChargesPayment && chargeId) {
+              try {
+                console.log('[SalesTerminal] Marking charge as PAID for charges payment method')
+                const markPaidRes = await fetch(`/api/employees/${selectedEmployee.id}/charges/${chargeId}`, {
+                  method: 'PUT',
+                  credentials: 'include',
+                  headers: { 'Content-Type': 'application/json' },
+                  body: JSON.stringify({
+                    status: 'paid',
+                    paidAmount: chargeAmountDollars,
+                    paidDate: new Date().toISOString(),
+                  }),
+                })
+                
+                const markPaidJson = await markPaidRes.json()
+                if (markPaidRes.ok && markPaidJson?.success) {
+                  console.log('[SalesTerminal] Charge successfully marked as PAID:', chargeId)
+                } else {
+                  console.warn('[SalesTerminal] Failed to mark charge as paid (non-blocking):', markPaidJson?.error?.message)
+                  // Don't fail if marking as paid fails - charge was created successfully
+                }
+              } catch (markPaidErr) {
+                console.warn('[SalesTerminal] Exception marking charge as paid (non-blocking):', markPaidErr)
+                // Don't throw
+              }
+            }
           }
         } catch (chargeErr) {
           console.warn('[SalesTerminal] Exception creating employee charge (non-blocking):', chargeErr)
@@ -1146,6 +1177,7 @@ export default function SalesTerminal() {
                 onComplete={handlePaymentComplete}
                 onCancel={() => setShowPayment(false)}
                 isProcessing={isProcessingPayment}
+                selectedEmployee={selectedEmployee}
               />
             </div>
           ) : (
@@ -1207,6 +1239,13 @@ export default function SalesTerminal() {
                   console.error('[SalesTerminal] Error selecting employee:', err)
                   setCheckoutError(`Error: ${msg}`)
                 }
+              }}
+              onProceedToPayment={() => {
+                console.log('[SalesTerminal] Proceeding to payment with selected employee:', selectedEmployee)
+                // Close employee targeting modal and open payment modal
+                // selectedEmployee is already set via onEmployeeSelected callback
+                setShowEmployeeTargeting(false)
+                setShowPayment(true)
               }}
             />
           </div>
