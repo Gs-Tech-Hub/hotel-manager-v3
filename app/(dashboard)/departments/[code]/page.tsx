@@ -191,6 +191,48 @@ export default function DepartmentDetail() {
     }
   }
 
+  const cancelTransfer = async (id: string) => {
+    try {
+      const res = await fetch(
+        `/api/departments/${encodeURIComponent(decodedCode)}/transfer/${encodeURIComponent(id)}/cancel`,
+        { method: 'POST' }
+      )
+      const j = await res.json()
+      if (!res.ok || !j?.success) {
+        alert(j?.error?.message || 'Cancel failed')
+        return
+      }
+      // refresh UI
+      await refreshDepartment(decodedCode)
+      await fetchPendingTransfers(decodedCode)
+      alert('Transfer canceled')
+    } catch (e: any) {
+      console.error('cancelTransfer error', e)
+      alert(e?.message || 'Cancel failed')
+    }
+  }
+
+  const removeTransferItem = async (transferId: string, itemId: string) => {
+    try {
+      const res = await fetch(
+        `/api/departments/${encodeURIComponent(decodedCode)}/transfer/${encodeURIComponent(transferId)}/item/${encodeURIComponent(itemId)}`,
+        { method: 'DELETE' }
+      )
+      const j = await res.json()
+      if (!res.ok || !j?.success) {
+        alert(j?.error?.message || 'Remove failed')
+        return
+      }
+      // refresh UI
+      await refreshDepartment(decodedCode)
+      await fetchPendingTransfers(decodedCode)
+      alert('Item removed from transfer')
+    } catch (e: any) {
+      console.error('removeTransferItem error', e)
+      alert(e?.message || 'Remove failed')
+    }
+  }
+
   const resolveStoreName = (t: any) => {
     // Prefer explicit friendly name returned by the API, fall back to known fields
     return (
@@ -229,6 +271,8 @@ export default function DepartmentDetail() {
         pendingTransfers={pendingTransfers}
         loadingTransfers={loadingTransfers}
         onAcceptTransfer={markReceived}
+        onCancelTransfer={cancelTransfer}
+        onRemoveItem={removeTransferItem}
         resolveStoreName={resolveStoreName}
         resolveProductName={resolveProductName}
       />

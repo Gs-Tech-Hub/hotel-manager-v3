@@ -164,13 +164,32 @@ export class StockService {
     if (!productIds.length) return balances
 
     // Get from DepartmentInventory first
+    const whereClause = {
+      departmentId,
+      inventoryItemId: { in: productIds },
+      sectionId: sectionId === undefined ? null : sectionId,
+    };
+    
+    // Debug: Log what we're querying
+    console.log(`[STOCK] getBalances query:`, {
+      productType,
+      productIds: productIds.slice(0, 3), // First 3 IDs
+      departmentId,
+      sectionId: sectionId || 'null',
+      whereClause,
+    });
+    
     const deptInvRecords = await prisma.departmentInventory.findMany({
-      where: {
-        departmentId,
-        inventoryItemId: { in: productIds },
-        sectionId: sectionId === undefined ? null : sectionId,
-      },
-    })
+      where: whereClause,
+    });
+    
+    console.log(`[STOCK] getBalances found ${deptInvRecords.length} records:`, 
+      deptInvRecords.slice(0, 3).map((r: any) => ({
+        inventoryItemId: r.inventoryItemId,
+        quantity: r.quantity,
+        sectionId: r.sectionId,
+      }))
+    );
 
     const foundInDeptInv = new Set<string>()
     for (const record of deptInvRecords) {

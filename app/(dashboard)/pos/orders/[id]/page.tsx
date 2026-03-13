@@ -566,7 +566,7 @@ export default function OrderDetailPage() {
             </Dialog>
 
             {/* Refund Order Dialog */}
-            <Dialog open={refundDialogOpen} onOpenChange={setRefundDialogOpen}>
+            {/* <Dialog open={refundDialogOpen} onOpenChange={setRefundDialogOpen}>
                 <DialogContent>
                     <DialogHeader>
                         <DialogTitle>Refund Order?</DialogTitle>
@@ -611,7 +611,7 @@ export default function OrderDetailPage() {
                         </Button>
                     </DialogFooter>
                 </DialogContent>
-            </Dialog>
+            </Dialog>  */}
 
             {/* Extras Dialog */}
             <OrderExtrasDialog

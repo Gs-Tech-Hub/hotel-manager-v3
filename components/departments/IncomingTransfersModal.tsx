@@ -8,6 +8,8 @@ type IncomingTransfersModalProps = {
   transfers: any[] | null
   isLoading: boolean
   onAcceptTransfer: (id: string) => Promise<void>
+  onCancelTransfer?: (id: string) => Promise<void>
+  onRemoveItem?: (transferId: string, itemId: string) => Promise<void>
   resolveStoreName: (transfer: any) => string
   resolveProductName: (item: any) => string
 }
@@ -18,10 +20,14 @@ export default function IncomingTransfersModal({
   transfers,
   isLoading,
   onAcceptTransfer,
+  onCancelTransfer,
+  onRemoveItem,
   resolveStoreName,
   resolveProductName,
 }: IncomingTransfersModalProps) {
   const [accepting, setAccepting] = useState<string | null>(null)
+  const [canceling, setCanceling] = useState<string | null>(null)
+  const [removingItem, setRemovingItem] = useState<{ transferId: string; itemId: string } | null>(null)
 
   const handleAccept = async (id: string) => {
     try {
@@ -29,6 +35,26 @@ export default function IncomingTransfersModal({
       await onAcceptTransfer(id)
     } finally {
       setAccepting(null)
+    }
+  }
+
+  const handleCancel = async (id: string) => {
+    if (!onCancelTransfer) return
+    try {
+      setCanceling(id)
+      await onCancelTransfer(id)
+    } finally {
+      setCanceling(null)
+    }
+  }
+
+  const handleRemoveItem = async (transferId: string, itemId: string) => {
+    if (!onRemoveItem) return
+    try {
+      setRemovingItem({ transferId, itemId })
+      await onRemoveItem(transferId, itemId)
+    } finally {
+      setRemovingItem(null)
     }
   }
 
@@ -57,22 +83,40 @@ export default function IncomingTransfersModal({
                     <div className="text-xs text-muted-foreground">
                       {new Date(t.createdAt).toLocaleString()}
                     </div>
-                    <div className="text-sm mt-2">
+                    <div className="text-sm mt-2 space-y-1">
                       {t.items?.map((it: any) => (
-                        <div key={it.id}>
-                          {resolveProductName(it)} x {it.quantity}
+                        <div key={it.id} className="flex items-center justify-between p-2 bg-gray-50 rounded border border-gray-200">
+                          <span>{resolveProductName(it)} x {it.quantity}</span>
+                          {onRemoveItem && (
+                            <button
+                              onClick={() => handleRemoveItem(t.id, it.id)}
+                              className="ml-2 px-2 py-0.5 text-xs bg-red-500 text-white rounded hover:bg-red-600 disabled:bg-red-300"
+                              disabled={removingItem?.itemId === it.id}
+                            >
+                              {removingItem?.itemId === it.id ? 'Removing...' : '✕'}
+                            </button>
+                          )}
                         </div>
                       ))}
                     </div>
                   </div>
-                  <div className="ml-4">
+                  <div className="ml-4 flex gap-2">
                     <button
                       onClick={() => handleAccept(t.id)}
                       className="px-3 py-1 bg-green-600 text-white rounded disabled:bg-green-400"
-                      disabled={accepting === t.id}
+                      disabled={accepting === t.id || canceling === t.id}
                     >
                       {accepting === t.id ? 'Accepting...' : 'Accept'}
                     </button>
+                    {onCancelTransfer && (
+                      <button
+                        onClick={() => handleCancel(t.id)}
+                        className="px-3 py-1 bg-red-600 text-white rounded disabled:bg-red-400"
+                        disabled={accepting === t.id || canceling === t.id}
+                      >
+                        {canceling === t.id ? 'Canceling...' : 'Cancel'}
+                      </button>
+                    )}
                   </div>
                 </div>
               ))

@@ -13,7 +13,9 @@ export default function DepartmentHeader({
   onBack, 
   pendingTransfers, 
   loadingTransfers, 
-  onAcceptTransfer, 
+  onAcceptTransfer,
+  onCancelTransfer,
+  onRemoveItem,
   resolveStoreName, 
   resolveProductName 
 }: any) {
@@ -68,6 +70,8 @@ export default function DepartmentHeader({
         transfers={pendingTransfers}
         isLoading={loadingTransfers}
         onAcceptTransfer={onAcceptTransfer}
+        onCancelTransfer={onCancelTransfer}
+        onRemoveItem={onRemoveItem}
         resolveStoreName={resolveStoreName}
         resolveProductName={resolveProductName}
       />

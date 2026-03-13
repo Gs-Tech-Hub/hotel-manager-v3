@@ -79,7 +79,7 @@ export async function GET(
     const inventorySnapshot: any = {};
     try {
       const inventoryPromises = order.lines.map(async (line: any) => {
-        if (line.productType && ['inventoryItem', 'food', 'drink'].includes(line.productType)) {
+        if (line.productType && ['inventoryItem', 'inventory', 'food', 'drink'].includes(line.productType)) {
           try {
             const dept = await prisma.department.findUnique({ 
               where: { code: line.departmentCode } 
@@ -263,9 +263,17 @@ export async function PUT(
     const fulfilledQty = quantity || lineItem.quantity;
     
     console.log(`[FULFILLMENT] START - Order: ${orderId}, Line: ${lineItemId}, Status: ${status}, Qty: ${fulfilledQty}`);
+    console.log(`[FULFILLMENT] LineItem details:`, {
+      productType: lineItem.productType,
+      departmentCode: lineItem.departmentCode,
+      departmentSectionId: lineItem.departmentSectionId,
+      productId: lineItem.productId,
+      productName: lineItem.productName,
+      quantity: lineItem.quantity,
+    });
     console.log(`[FULFILLMENT] Product Type: ${lineItem.productType}, Dept Code: ${lineItem.departmentCode}, Section: ${lineItem.departmentSectionId}`);
     
-    if (status === 'fulfilled' && ['inventoryItem', 'food', 'drink'].includes(lineItem.productType)) {
+    if (status === 'fulfilled' && ['inventoryItem', 'inventory', 'food', 'drink'].includes(lineItem.productType)) {
       try {
         console.log(`[FULFILLMENT] Inventory deduction required for product type: ${lineItem.productType}`);
         
@@ -291,7 +299,14 @@ export async function PUT(
             inventoryWhere.sectionId = null;
           }
           
-          console.log(`[FULFILLMENT] Inventory query: ${JSON.stringify(inventoryWhere)}`);
+          console.log(`[FULFILLMENT] Inventory query details:`, {
+            departmentId: dept.id,
+            inventoryItemId: lineItem.productId,
+            productType: lineItem.productType,
+            productName: lineItem.productName,
+            sectionId: lineItem.departmentSectionId || 'null (department-level)',
+            whereClause: inventoryWhere
+          });
           
           // Get current inventory
           const inventory = await prisma.departmentInventory.findFirst({
@@ -361,63 +376,110 @@ export async function PUT(
       console.log(`[FULFILLMENT] [TX] ✅ Fulfillment record created`);
 
       // If fulfilled AND inventory item, deduct inventory within transaction
-      if (status === 'fulfilled' && deptId && ['inventoryItem', 'food', 'drink'].includes(lineItem.productType)) {
-        // IMPORTANT: Always try section-level first if section exists, then fallback to department-level in SAME transaction
-        // This ensures inventory is deducted from the correct location without race conditions
+      if (status === 'fulfilled' && deptId && ['inventoryItem', 'inventory', 'food', 'drink'].includes(lineItem.productType)) {
+        console.log(`[FULFILLMENT] [TX] Inventory deduction conditions:`, {
+          statusIsFulfilled: status === 'fulfilled',
+          deptIdExists: !!deptId,
+          productTypeValid: ['inventoryItem', 'inventory', 'food', 'drink'].includes(lineItem.productType),
+          productType: lineItem.productType,
+          deptId,
+        });
         
-        let sectionDeducted = false;
-        
-        // Step 1: If there's a section ID, try to deduct from section inventory
+        // For section orders: Ensure section inventory is properly decremented (no fallback to department)        
         if (lineItem.departmentSectionId) {
-          console.log(`[FULFILLMENT] [TX] Attempting section-level deduction for sectionId=${lineItem.departmentSectionId}`);
+          // SECTION ORDER: Decrement ONLY section-level inventory
+          console.log(`[FULFILLMENT] [TX] Section order - decrementing section-level inventory only`);
+          
+          const sectionWhere = {
+            departmentId: deptId,
+            inventoryItemId: lineItem.productId,
+            sectionId: lineItem.departmentSectionId,
+          };
+          
+          console.log(`[FULFILLMENT] [TX] Section decrement WHERE clause:`, sectionWhere);
           
           const sectionResult = await tx.departmentInventory.updateMany({
-            where: {
-              departmentId: deptId,
-              inventoryItemId: lineItem.productId,
-              sectionId: lineItem.departmentSectionId,
-            },
+            where: sectionWhere,
             data: { quantity: { decrement: fulfilledQty } },
           });
           
-          sectionDeducted = sectionResult.count > 0;
-          console.log(`[FULFILLMENT] [TX] Section deduction result: count=${sectionResult.count}`);
+          console.log(`[FULFILLMENT] [TX] Section updateMany result:`, { count: sectionResult.count });
           
-          if (sectionDeducted) {
+          if (sectionResult.count > 0) {
             inventoryDeducted = true;
             console.log(`[FULFILLMENT] [TX] ✅ Section inventory deducted successfully (${fulfilledQty} units)`);
+          } else {
+            console.log(`[FULFILLMENT] [TX] ❌ Failed to decrement section inventory (count=0)`);
+            throw new Error(`Failed to decrement section inventory for ${lineItem.productName}`);
           }
-        }
-        
-        // Step 2: If section deduction wasn't successful or no section, try department-level
-        if (!sectionDeducted) {
-          console.log(`[FULFILLMENT] [TX] Attempting department-level deduction`);
+        } else {
+          // DEPARTMENT ORDER: Decrement department-level inventory (no section)
+          console.log(`[FULFILLMENT] [TX] Department order - decrementing department-level inventory`);
+          
+          const deptWhere = {
+            departmentId: deptId,
+            inventoryItemId: lineItem.productId,
+            sectionId: null,
+          };
+          
+          console.log(`[FULFILLMENT] [TX] Department decrement WHERE clause:`, deptWhere);
           
           const deptResult = await tx.departmentInventory.updateMany({
-            where: {
-              departmentId: deptId,
-              inventoryItemId: lineItem.productId,
-              sectionId: null,
-            },
+            where: deptWhere,
             data: { quantity: { decrement: fulfilledQty } },
           });
           
-          console.log(`[FULFILLMENT] [TX] Department deduction result: count=${deptResult.count}`);
+          console.log(`[FULFILLMENT] [TX] Department updateMany result:`, { count: deptResult.count });
           
-          inventoryDeducted = deptResult.count > 0;
-          
-          if (inventoryDeducted) {
-            console.log(`[FULFILLMENT] [TX] ✅ Department-level inventory deducted successfully (${fulfilledQty} units)`);
+          if (deptResult.count > 0) {
+            inventoryDeducted = true;
+            console.log(`[FULFILLMENT] [TX] ✅ Department inventory deducted successfully (${fulfilledQty} units)`);
           } else {
-            console.log(`[FULFILLMENT] [TX] ❌ No inventory records updated at either section or department level (count=0)`);
+            console.log(`[FULFILLMENT] [TX] ❌ Failed to decrement department inventory (count=0)`);
+            throw new Error(`Failed to decrement department inventory for ${lineItem.productName}`);
           }
         }
       } else {
-        console.log(`[FULFILLMENT] [TX] Skipping inventory deduction: status=${status}, deptId=${deptId}, productType=${lineItem.productType}`);
+        console.log(`[FULFILLMENT] [TX] Skipping inventory deduction:`, {
+          statusIsFulfilled: status === 'fulfilled',
+          deptIdExists: !!deptId,
+          productTypeValid: ['inventoryItem', 'food', 'drink'].includes(lineItem.productType),
+          productType: lineItem.productType,
+          deptId,
+        });
       }
     }, { timeout: 15000 });
     
     console.log(`[FULFILLMENT] Transaction complete - inventoryDeducted: ${inventoryDeducted}`);
+    
+    // VERIFY INVENTORY WAS UPDATED - Query DepartmentInventory to confirm decrement
+    if (inventoryDeducted && deptId && lineItem.productId) {
+      try {
+        const verifyWhere: any = {
+          departmentId: deptId,
+          inventoryItemId: lineItem.productId,
+        };
+        
+        if (lineItem.departmentSectionId) {
+          verifyWhere.sectionId = lineItem.departmentSectionId;
+        } else {
+          verifyWhere.sectionId = null;
+        }
+        
+        const verifiedInv = await prisma.departmentInventory.findFirst({
+          where: verifyWhere,
+        });
+        
+        console.log(`[FULFILLMENT] VERIFY - Inventory after transaction:`, {
+          inventoryItemId: lineItem.productId,
+          sectionId: lineItem.departmentSectionId || 'null',
+          quantityAfterDecrement: verifiedInv?.quantity || 'NOT FOUND',
+          whereClause: verifyWhere
+        });
+      } catch (e) {
+        console.error('[FULFILLMENT] VERIFY - Error checking inventory:', e);
+      }
+    }
     
     // Note: Both section-level and department-level inventory deduction is now handled
     // within the transaction to prevent race conditions
@@ -459,7 +521,7 @@ export async function PUT(
 
         // Step 5: BATCH OPERATION - Create inventory movement record if inventory was deducted in transaction
         // Inventory deduction happened in the transaction above, now just log it
-        if (inventoryDeducted && txLine && txLine.productType && ['inventoryItem', 'food', 'drink'].includes(txLine.productType)) {
+        if (inventoryDeducted && txLine && txLine.productType && ['inventoryItem', 'inventory', 'food', 'drink'].includes(txLine.productType)) {
           const fulfilledQty = quantity || (txLine?.quantity || 0);
           
           try {
@@ -539,7 +601,7 @@ export async function PUT(
       // Fetch current inventory for all order lines to include in response
       if (updatedOrder?.lines) {
         const inventoryPromises = updatedOrder.lines.map(async (line: any) => {
-          if (line.productType && ['inventoryItem', 'food', 'drink'].includes(line.productType)) {
+          if (line.productType && ['inventoryItem', 'inventory', 'food', 'drink'].includes(line.productType)) {
             try {
               const dept = await prisma.department.findUnique({ 
                 where: { code: line.departmentCode } 
