@@ -32,8 +32,14 @@ export async function GET(
     }
 
     const { code: departmentCode } = await params;
-    const sectionId = request.nextUrl.searchParams.get('sectionId');
+    let sectionId = request.nextUrl.searchParams.get('sectionId');
     const limit = parseInt(request.nextUrl.searchParams.get('limit') || '999');
+    const forTransfer = request.nextUrl.searchParams.get('forTransfer') === 'true';
+
+    // Convert string 'null' to actual null
+    if (sectionId === 'null') {
+      sectionId = null;
+    }
 
     // Get department
     const dept = await prisma.department.findFirst({
@@ -104,7 +110,7 @@ export async function GET(
     });
 
     // Combine and format response
-    const items = [
+    let items = [
       // Inventory items
       ...inventoryRecords.map((record) => ({
         id: record.inventoryItem.id,
@@ -135,6 +141,11 @@ export async function GET(
         departmentExtraId: record.id, // For transfers
       })),
     ];
+
+    // Filter out items with zero available quantity if loading for transfer
+    if (forTransfer) {
+      items = items.filter((item) => (item.available ?? 0) > 0);
+    }
 
     return NextResponse.json(
       successResponse({

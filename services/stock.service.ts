@@ -27,6 +27,9 @@ export class StockService {
   async getBalance(productType: string, productId: string, departmentId: string, sectionId?: string | null): Promise<number> {
     if (!productId || !departmentId) return 0
 
+    // Normalize sectionId: convert string 'null' to actual null
+    const normalizedSectionId = sectionId === 'null' ? null : sectionId;
+
     // First, check DepartmentInventory (the authoritative source)
     try {
       // For drinks and inventoryItems, they're tracked in DepartmentInventory by inventoryItemId
@@ -34,7 +37,7 @@ export class StockService {
         where: {
           departmentId,
           inventoryItemId: productId,
-          sectionId: sectionId === undefined ? null : sectionId,
+          sectionId: normalizedSectionId === undefined ? null : normalizedSectionId,
         },
       })
 
@@ -43,9 +46,9 @@ export class StockService {
       // DepartmentInventory query failed, will fall back below
     }
 
-    // If section ID is provided, return 0 - sections should ONLY have transferred items
+    // If section ID is provided (and not null), return 0 - sections should ONLY have transferred items
     // Do NOT fall back to department or legacy stock for sections
-    if (sectionId) {
+    if (normalizedSectionId && normalizedSectionId !== 'null') {
       return 0
     }
 
@@ -163,11 +166,14 @@ export class StockService {
 
     if (!productIds.length) return balances
 
+    // Normalize sectionId: convert string 'null' to actual null
+    const normalizedSectionId = sectionId === 'null' ? null : sectionId;
+
     // Get from DepartmentInventory first
     const whereClause = {
       departmentId,
       inventoryItemId: { in: productIds },
-      sectionId: sectionId === undefined ? null : sectionId,
+      sectionId: normalizedSectionId === undefined ? null : normalizedSectionId,
     };
     
     // Debug: Log what we're querying
@@ -200,9 +206,9 @@ export class StockService {
     // For products not found in DepartmentInventory, handle differently based on section filter
     const missingIds = productIds.filter((id) => !foundInDeptInv.has(id))
 
-    // If section ID is provided, return 0 for missing items - sections should ONLY have transferred items
+    // If section ID is provided (and not null), return 0 for missing items - sections should ONLY have transferred items
     // Do NOT fall back to department or legacy stock for sections
-    if (sectionId) {
+    if (normalizedSectionId && normalizedSectionId !== 'null') {
       for (const id of missingIds) {
         balances.set(id, 0)
       }
