@@ -2,8 +2,9 @@
 
 import { useEffect, useState } from 'react'
 import { useRouter } from 'next/navigation'
-import Price from '@/components/ui/Price'
 import { getDisplayUnit, formatQuantityWithUnit } from '@/lib/unit-mapper'
+import { formatPrice } from '@/lib/price'
+import { Trash2, Edit2 } from 'lucide-react'
 
 type Movement = {
   id: string
@@ -33,6 +34,10 @@ export default function InventoryDetail(...args: any[]) {
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [restockQty, setRestockQty] = useState<number>(0)
+  const [isEditing, setIsEditing] = useState(false)
+  const [editForm, setEditForm] = useState({ name: '', unitPrice: '' })
+  const [editLoading, setEditLoading] = useState(false)
+  const [editError, setEditError] = useState<string | null>(null)
   const router = useRouter()
 
   const fetchItem = async () => {
@@ -53,6 +58,74 @@ export default function InventoryDetail(...args: any[]) {
   }
 
   useEffect(() => { if (id) fetchItem() }, [id])
+
+  const handleEditClick = () => {
+    if (item) {
+      setEditForm({ name: item.name, unitPrice: String(item.unitPrice || 0) })
+      setIsEditing(true)
+      setEditError(null)
+    }
+  }
+
+  const handleEditSubmit = async (e: React.FormEvent) => {
+    e.preventDefault()
+    if (!item || !editForm.name) {
+      setEditError('Item name is required')
+      return
+    }
+
+    setEditLoading(true)
+    setEditError(null)
+    try {
+      const res = await fetch(`/api/inventory/${encodeURIComponent(id)}`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          name: editForm.name,
+          unitPrice: Number(editForm.unitPrice),
+        }),
+      })
+
+      if (!res.ok) throw new Error(`Failed to update item (${res.status})`)
+      const json = await res.json()
+      if (!json?.success) throw new Error(json?.error || 'Invalid response')
+
+      await fetchItem()
+      setIsEditing(false)
+    } catch (err: any) {
+      console.error('Failed to edit inventory item', err)
+      setEditError(err?.message || 'Failed to update item')
+    } finally {
+      setEditLoading(false)
+    }
+  }
+
+  const handleDelete = async () => {
+    if (!item) return
+    if (!confirm(`Are you sure you want to delete "${item.name}"? This cannot be undone.`)) {
+      return
+    }
+
+    setLoading(true)
+    setError(null)
+    try {
+      const res = await fetch(`/api/inventory/${encodeURIComponent(id)}`, {
+        method: 'DELETE',
+      })
+
+      if (!res.ok) throw new Error(`Failed to delete item (${res.status})`)
+      const json = await res.json()
+      if (!json?.success) throw new Error(json?.error || 'Invalid response')
+
+      // Redirect back to inventory list after successful deletion
+      router.push('/inventory')
+    } catch (err: any) {
+      console.error('Failed to delete inventory item', err)
+      setError(err?.message || 'Failed to delete item')
+    } finally {
+      setLoading(false)
+    }
+  }
 
   const submitRestock = async (e: React.FormEvent) => {
     e.preventDefault()
@@ -96,7 +169,23 @@ export default function InventoryDetail(...args: any[]) {
     <div className="space-y-6">
       <div className="flex items-center justify-between">
         <h1 className="text-2xl font-bold">{item.name}</h1>
-        <button onClick={() => router.back()} className="px-3 py-1 border rounded text-sm">Back</button>
+        <div className="flex gap-2">
+          <button 
+            onClick={handleEditClick}
+            className="px-3 py-1 bg-blue-600 text-white rounded text-sm flex items-center gap-1 hover:bg-blue-700"
+          >
+            <Edit2 size={16} />
+            Edit
+          </button>
+          <button 
+            onClick={handleDelete}
+            className="px-3 py-1 bg-red-600 text-white rounded text-sm flex items-center gap-1 hover:bg-red-700"
+          >
+            <Trash2 size={16} />
+            Delete
+          </button>
+          <button onClick={() => router.back()} className="px-3 py-1 border rounded text-sm">Back</button>
+        </div>
       </div>
 
       <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
@@ -104,7 +193,7 @@ export default function InventoryDetail(...args: any[]) {
           <div><strong>SKU:</strong> {item.sku}</div>
           <div><strong>Category:</strong> {item.category}</div>
           <div><strong>Quantity:</strong> {formatQuantityWithUnit(item.quantity, getDisplayUnit(item.category, item.itemType))}</div>
-          <div><strong>Unit price:</strong> <Price amount={Number(item.unitPrice)} isMinor={false} /></div>
+          <div><strong>Unit price:</strong> {formatPrice(item.unitPrice)}</div>
         </div>
 
         <div className="border rounded p-4 bg-white">
@@ -120,6 +209,45 @@ export default function InventoryDetail(...args: any[]) {
           </form>
         </div>
       </div>
+
+      {isEditing && (
+        <div className="border rounded p-4 bg-white border-blue-400">
+          <h3 className="font-semibold mb-3">Edit Item</h3>
+          {editError && <div className="text-red-600 text-sm mb-2">{editError}</div>}
+          <form onSubmit={handleEditSubmit} className="space-y-3">
+            <div>
+              <label className="block text-sm font-medium">Item Name</label>
+              <input
+                type="text"
+                value={editForm.name}
+                onChange={(e) => setEditForm({ ...editForm, name: e.target.value })}
+                className="border px-2 py-1 w-full rounded"
+              />
+            </div>
+            <div>
+              <label className="block text-sm font-medium">Unit Price (in cents)</label>
+              <input
+                type="number"
+                value={editForm.unitPrice}
+                onChange={(e) => setEditForm({ ...editForm, unitPrice: e.target.value })}
+                className="border px-2 py-1 w-full rounded"
+              />
+            </div>
+            <div className="flex gap-2">
+              <button type="submit" disabled={editLoading} className="px-3 py-1 bg-blue-600 text-white rounded text-sm hover:bg-blue-700 disabled:opacity-50">
+                {editLoading ? 'Saving...' : 'Save'}
+              </button>
+              <button
+                type="button"
+                onClick={() => setIsEditing(false)}
+                className="px-3 py-1 border rounded text-sm"
+              >
+                Cancel
+              </button>
+            </div>
+          </form>
+        </div>
+      )}
 
       <div className="border rounded p-4 bg-white">
         <h3 className="font-semibold">Movements</h3>

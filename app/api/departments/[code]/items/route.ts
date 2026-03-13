@@ -58,7 +58,12 @@ export async function GET(
     }
 
     const inventoryRecords = await prisma.departmentInventory.findMany({
-      where: deptInvWhere,
+      where: {
+        ...deptInvWhere,
+        inventoryItem: {
+          isActive: true  // Filter only active (not deleted) items
+        }
+      },
       include: {
         inventoryItem: {
           select: {

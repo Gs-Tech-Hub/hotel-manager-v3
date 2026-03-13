@@ -568,14 +568,6 @@ export default function InventoryPage() {
                     </td>
                     <td className="p-2 space-x-2">
                       <Link href={`/inventory/${encodeURIComponent(it.id)}`} className="px-2 py-1 bg-sky-600 text-white rounded text-sm inline-block">Open</Link>
-                      {hasPermission('inventory_items.delete') && (
-                        <button
-                          onClick={() => handleDeleteInventoryItem(it.id)}
-                          className="px-2 py-1 bg-red-600 text-white rounded text-sm inline-flex items-center gap-1 hover:bg-red-700"
-                        >
-                          <Trash2 size={14} /> Delete
-                        </button>
-                      )}
                       {it.usedAsExtras && it.usedAsExtras.length > 0 && (
                         <button
                           onClick={() => handleConvertToExtra(it)}
