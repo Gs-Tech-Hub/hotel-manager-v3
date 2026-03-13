@@ -104,7 +104,7 @@ export class InventoryItemService extends BaseService<IInventoryItem> {
   }
 
   /**
-   * Override findById to normalize unitPrice to minor units (cents)
+   * Override findById to normalize unitPrice to minor units (cents) and filter deleted items
    */
   async findById(id: string): Promise<IInventoryItem | null> {
     try {
@@ -112,6 +112,10 @@ export class InventoryItemService extends BaseService<IInventoryItem> {
         where: { id },
         include: { inventoryType: true },
       });
+      // Return null if item is deleted (soft delete)
+      if (row && !row.isActive) {
+        return null;
+      }
       return mapInventoryItem(row as any);
     } catch (error) {
       console.error(`Error finding inventoryItem with ID ${id}:`, error);
@@ -120,7 +124,7 @@ export class InventoryItemService extends BaseService<IInventoryItem> {
   }
 
   /**
-   * Get all inventory items with optional filtering
+   * Get all inventory items with optional filtering (excludes deleted items)
    */
   async getAllItems(filters?: {
     inventoryTypeId?: string;
@@ -129,7 +133,7 @@ export class InventoryItemService extends BaseService<IInventoryItem> {
     location?: string;
   }): Promise<IInventoryItem[]> {
     try {
-      const where: any = {};
+      const where: any = { isActive: true };
       if (filters?.inventoryTypeId) where.inventoryTypeId = filters.inventoryTypeId;
       if (filters?.category) where.category = filters.category;
       if (filters?.itemType) where.itemType = filters.itemType;
@@ -148,12 +152,12 @@ export class InventoryItemService extends BaseService<IInventoryItem> {
   }
 
   /**
-   * Get inventory items by type
+   * Get inventory items by type (excludes deleted items)
    */
   async getByType(inventoryTypeId: string): Promise<IInventoryItem[]> {
     try {
       const rows = await prisma.inventoryItem.findMany({
-        where: { inventoryTypeId },
+        where: { inventoryTypeId, isActive: true },
         include: { inventoryType: true },
         orderBy: { name: 'asc' },
       });
@@ -166,12 +170,12 @@ export class InventoryItemService extends BaseService<IInventoryItem> {
   }
 
   /**
-   * Get inventory items by category
+   * Get inventory items by category (excludes deleted items)
    */
   async getByCategory(category: string): Promise<IInventoryItem[]> {
     try {
       const rows = await prisma.inventoryItem.findMany({
-        where: { category },
+        where: { category, isActive: true },
         include: { inventoryType: true },
         orderBy: { name: 'asc' },
       });
@@ -184,13 +188,14 @@ export class InventoryItemService extends BaseService<IInventoryItem> {
   }
 
   /**
-   * Get low stock items (quantity <= reorderLevel)
+   * Get low stock items (quantity <= reorderLevel, excludes deleted items)
    */
   async getLowStockItems(): Promise<IInventoryItem[]> {
     try {
       // Prisma doesn't support comparing one column to another directly in a where clause.
       // Fetch all items and filter in JS as a reliable fallback.
       const allItems = await prisma.inventoryItem.findMany({
+        where: { isActive: true },
         include: { inventoryType: true },
       });
 
@@ -205,13 +210,14 @@ export class InventoryItemService extends BaseService<IInventoryItem> {
   }
 
   /**
-   * Get expired items
+   * Get expired items (excludes deleted items)
    */
   async getExpiredItems(): Promise<IInventoryItem[]> {
     try {
       const now = new Date();
       const rows = await prisma.inventoryItem.findMany({
         where: {
+          isActive: true,
           expiry: {
             lte: now,
           },
@@ -376,12 +382,13 @@ export class InventoryItemService extends BaseService<IInventoryItem> {
   }
 
   /**
-   * Search items by name or SKU
+   * Search items by name or SKU (excludes deleted items)
    */
   async search(query: string): Promise<IInventoryItem[]> {
     try {
       const rows = await prisma.inventoryItem.findMany({
         where: {
+          isActive: true,
           OR: [
             { name: { contains: query, mode: 'insensitive' } },
             { sku: { contains: query, mode: 'insensitive' } },
@@ -564,6 +571,22 @@ export class InventoryItemService extends BaseService<IInventoryItem> {
     } catch (error) {
       console.error('Error fetching items needing restock:', error);
       return [];
+    }
+  }
+
+  /**
+   * Override delete to perform soft delete (set isActive to false)
+   */
+  async delete(id: string): Promise<boolean> {
+    try {
+      const result = await prisma.inventoryItem.update({
+        where: { id },
+        data: { isActive: false },
+      });
+      return !!result;
+    } catch (error) {
+      console.error(`Error deleting inventoryItem with ID ${id}:`, error);
+      return false;
     }
   }
 }
