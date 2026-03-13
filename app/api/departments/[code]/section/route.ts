@@ -168,6 +168,12 @@ export async function GET(
       fulfilledUnits: 0,
       amountFulfilled: 0,
       amountPaid: 0,
+      paymentMethods: {
+        cash: 0,
+        card: 0,
+        bank: 0,
+        charges: 0,
+      },
     }
 
     // Import getTodayDate for default date handling
@@ -226,6 +232,10 @@ export async function GET(
           let pendingOrderCount = 0
           let fulfilledOrderCount = 0
           let paidFulfilledOrderCount = 0
+          let cashAmount = 0
+          let cardAmount = 0
+          let bankAmount = 0
+          let chargesAmount = 0
           
           for (const order of ordersForSection) {
             // Find section lines in this order
@@ -259,6 +269,18 @@ export async function GET(
               return sum + amt
             }, 0) || 0
             
+            // Calculate cash, card, bank, and charges amounts
+            const sectionCashAmount = Math.round(sectionProportion * (order.payments?.filter((p: any) => p.paymentMethod === 'cash').reduce((sum: any, p: any) => sum + (p.amount || 0), 0) || 0))
+            const sectionCardAmount = Math.round(sectionProportion * (order.payments?.filter((p: any) => p.paymentMethod === 'card').reduce((sum: any, p: any) => sum + (p.amount || 0), 0) || 0))
+            const sectionBankAmount = Math.round(sectionProportion * (order.payments?.filter((p: any) => p.paymentMethod === 'bank_transfer').reduce((sum: any, p: any) => sum + (p.amount || 0), 0) || 0))
+            const sectionChargesAmount = Math.round(sectionProportion * (order.payments?.filter((p: any) => p.paymentMethod === 'charges' || p.paymentMethod === 'employee_charge').reduce((sum: any, p: any) => sum + (p.amount || 0), 0) || 0))
+            
+            // Accumulate payment method amounts
+            cashAmount += sectionCashAmount
+            cardAmount += sectionCardAmount
+            bankAmount += sectionBankAmount
+            chargesAmount += sectionChargesAmount
+            
             // OPTION B: Simple proportional allocation
             const sectionPaymentAllocated = Math.round(sectionProportion * totalOrderPaid)
             
@@ -290,6 +312,12 @@ export async function GET(
             fulfilledUnits: 0,
             amountFulfilled: totalPaid,  // Paid portion of fulfilled orders (matches service logic)
             amountPaid: totalPaid,
+            paymentMethods: {
+              cash: cashAmount,
+              card: cardAmount,
+              bank: bankAmount,
+              charges: chargesAmount,
+            },
           }
           
           console.log(`[SECTION/STATS] DATE FILTER - FINAL STATS: totalPaid=${totalPaid}, totalUnpaid=${totalUnpaid}, fulfilled=${fulfilledOrderCount}, pending=${pendingOrderCount}, orders=${ordersForSection.length}`)

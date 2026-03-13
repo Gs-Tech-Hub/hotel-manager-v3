@@ -346,6 +346,8 @@ export class DepartmentService extends BaseService<IDepartment> {
         fulfillmentRate: 0,
         cashAmount: 0,
         cardAmount: 0,
+        bankAmount: 0,
+        chargesAmount: 0,
         updatedAt: new Date(),
       };
 
@@ -406,8 +408,14 @@ export class DepartmentService extends BaseService<IDepartment> {
         const sectionCardAmount = Math.round(sectionProportion * order.payments
           .filter((p: any) => p.paymentMethod === 'card')
           .reduce((sum: number, p: any) => sum + (p.amount || 0), 0));
+        const sectionBankAmount = Math.round(sectionProportion * order.payments
+          .filter((p: any) => p.paymentMethod === 'bank_transfer')
+          .reduce((sum: number, p: any) => sum + (p.amount || 0), 0));
+        const sectionChargesAmount = Math.round(sectionProportion * order.payments
+          .filter((p: any) => p.paymentMethod === 'charges' || p.paymentMethod === 'employee_charge')
+          .reduce((sum: number, p: any) => sum + (p.amount || 0), 0));
 
-        console.log(`  [Order ${order.id}] lineTotal=${sectionLineTotal}, proportion=${sectionProportion.toFixed(2)}, paid=${sectionPaidAmount}, status=${order.status}, isPaid=${isPaid}, isUnpaid=${isUnpaid}, isPartial=${isPartial}, units=${totalUnits}, cash=${sectionCashAmount}, card=${sectionCardAmount}`);
+        console.log(`  [Order ${order.id}] lineTotal=${sectionLineTotal}, proportion=${sectionProportion.toFixed(2)}, paid=${sectionPaidAmount}, status=${order.status}, isPaid=${isPaid}, isUnpaid=${isUnpaid}, isPartial=${isPartial}, units=${totalUnits}, cash=${sectionCashAmount}, card=${sectionCardAmount}, bank=${sectionBankAmount}, charges=${sectionChargesAmount}`);
 
         if (isPartial) {
           // OPTION A: Amount-based split without double-counting orders
@@ -418,6 +426,8 @@ export class DepartmentService extends BaseService<IDepartment> {
           paidStats.totalAmount += sectionPaidAmount;
           paidStats.cashAmount += sectionCashAmount;
           paidStats.cardAmount += sectionCardAmount;
+          paidStats.bankAmount += sectionBankAmount;
+          paidStats.chargesAmount += sectionChargesAmount;
           if (order.status === 'fulfilled') paidStats.amountFulfilled += sectionPaidAmount;
           
           unpaidStats.totalAmount += sectionOwedAmount;
@@ -480,6 +490,8 @@ export class DepartmentService extends BaseService<IDepartment> {
           paidStats.totalAmount += sectionFinalAmount;
           paidStats.cashAmount += sectionCashAmount;
           paidStats.cardAmount += sectionCardAmount;
+          paidStats.bankAmount += sectionBankAmount;
+          paidStats.chargesAmount += sectionChargesAmount;
           paidStats.totalUnits += totalUnits;
           paidStats.fulfilledUnits += fulfilledUnits;
           if (order.status === 'fulfilled') paidStats.amountFulfilled += sectionFinalAmount;
@@ -516,7 +528,15 @@ export class DepartmentService extends BaseService<IDepartment> {
 
       const stats = {
         unpaid: unpaidStats,
-        paid: paidStats,
+        paid: {
+          ...paidStats,
+          paymentMethods: {
+            cash: paidStats.cashAmount,
+            card: paidStats.cardAmount,
+            bank: paidStats.bankAmount,
+            charges: paidStats.chargesAmount,
+          },
+        },
         aggregated: {
           totalOrders: aggregatedTotalOrders,
           totalPending: unpaidStats.pendingOrders + paidStats.pendingOrders,
@@ -525,6 +545,12 @@ export class DepartmentService extends BaseService<IDepartment> {
           totalUnits: aggregatedTotalUnits,
           totalFulfilledUnits: aggregatedFulfilledUnits,
           totalAmount: aggregatedTotalAmount,
+          totalByPaymentMethod: {
+            cash: paidStats.cashAmount,
+            card: paidStats.cardAmount,
+            bank: paidStats.bankAmount,
+            charges: paidStats.chargesAmount,
+          },
         },
         updatedAt: new Date(),
       };
