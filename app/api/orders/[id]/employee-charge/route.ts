@@ -10,6 +10,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { prisma } from '@/lib/auth/prisma';
 import { extractUserContext, loadUserWithRoles } from '@/lib/user-context';
 import { successResponse, errorResponse, ErrorCodes, getStatusCode } from '@/lib/api-response';
+import { checkPermission, type PermissionContext } from '@/lib/auth/rbac';
 import { OrderService } from '@/services/order.service';
 
 interface ChargeEmployeeRequest {
@@ -36,11 +37,26 @@ export async function POST(
       );
     }
 
-    // Verify authorization (staff/manager can charge employees)
+    // Load full user with roles for RBAC checks
     const userWithRoles = await loadUserWithRoles(ctx.userId);
-    if (!userWithRoles?.roles?.some((r: any) => ['admin', 'manager', 'staff'].includes(r.code))) {
+    if (!userWithRoles) {
       return NextResponse.json(
         errorResponse(ErrorCodes.FORBIDDEN, 'Insufficient permissions'),
+        { status: getStatusCode(ErrorCodes.FORBIDDEN) }
+      );
+    }
+
+    // Build permission context for RBAC check
+    const permCtx: PermissionContext = {
+      userId: ctx.userId,
+      userType: userWithRoles.isAdmin ? 'admin' : 'employee',
+    };
+
+    // Check permission to update employees (includes charging)
+    const canChargeEmployee = await checkPermission(permCtx, 'employees.update', 'employees');
+    if (!canChargeEmployee) {
+      return NextResponse.json(
+        errorResponse(ErrorCodes.FORBIDDEN, 'Insufficient permissions to charge employee'),
         { status: getStatusCode(ErrorCodes.FORBIDDEN) }
       );
     }

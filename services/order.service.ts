@@ -1313,6 +1313,20 @@ export class OrderService extends BaseService<IOrderHeader> {
 
       console.log('[ORDER SERVICE] ✅ Order marked for employee charge');
 
+      // 6. Create OrderPayment record for tracking in stats
+      const payment = await (prisma as any).orderPayment.create({
+        data: {
+          orderHeaderId: orderId,
+          amount: Math.round(chargeAmount * 100), // Convert to cents for storage
+          paymentMethod: 'employee_charge',
+          paymentStatus: 'completed', // Mark as completed since employee is charged
+          transactionReference: `EMPCHARGE-${charge.id}`,
+          processedAt: new Date(),
+        },
+      });
+
+      console.log('[ORDER SERVICE] ✅ OrderPayment created for employee charge:', payment.id);
+
       return {
         success: true,
         chargeId: charge.id,

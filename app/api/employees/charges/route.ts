@@ -1,8 +1,9 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { prisma } from '@/lib/auth/prisma';
-import { extractUserContext } from '@/lib/user-context';
+import { extractUserContext, loadUserWithRoles, hasAnyRole } from '@/lib/user-context';
 import { successResponse, errorResponse, getStatusCode } from '@/lib/api-response';
 import { ErrorCodes } from '@/lib/api-response';
+import { checkPermission, type PermissionContext } from '@/lib/auth/rbac';
 import { z } from 'zod';
 
 const CreateChargeSchema = z.object({
@@ -97,6 +98,29 @@ export async function POST(request: NextRequest) {
       return NextResponse.json(
         errorResponse(ErrorCodes.UNAUTHORIZED),
         { status: getStatusCode(ErrorCodes.UNAUTHORIZED) }
+      );
+    }
+
+    // Load user with roles
+    const userWithRoles = await loadUserWithRoles(ctx.userId);
+    if (!userWithRoles) {
+      return NextResponse.json(
+        errorResponse(ErrorCodes.FORBIDDEN, 'Insufficient permissions'),
+        { status: getStatusCode(ErrorCodes.FORBIDDEN) }
+      );
+    }
+
+    // Check permission to update employees (includes charge management)
+    const permCtx: PermissionContext = {
+      userId: ctx.userId,
+      userType: userWithRoles.isAdmin ? 'admin' : hasAnyRole(userWithRoles, ['admin', 'manager', 'staff']) ? 'employee' : 'other',
+    };
+
+    const canCreate = await checkPermission(permCtx, 'employees.update', 'employees');
+    if (!canCreate) {
+      return NextResponse.json(
+        errorResponse(ErrorCodes.FORBIDDEN, 'Insufficient permissions to create employee charges'),
+        { status: getStatusCode(ErrorCodes.FORBIDDEN) }
       );
     }
 

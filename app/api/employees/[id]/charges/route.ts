@@ -102,7 +102,7 @@ export async function GET(
 /**
  * POST /api/employees/[id]/charges
  * Create a new charge/debt for an employee
- * Requires: employees.charges:create permission
+ * Requires: employees.update permission (includes charge management)
  */
 export async function POST(
   req: NextRequest,
@@ -126,13 +126,13 @@ export async function POST(
       );
     }
 
-    // Check permission to create employee charges
+    // Check permission to update employees (includes charge management)
     const permCtx: PermissionContext = {
       userId: ctx.userId,
       userType: userWithRoles.isAdmin ? 'admin' : hasAnyRole(userWithRoles, ['admin', 'manager', 'staff']) ? 'employee' : 'other',
     };
 
-    const canCreate = await checkPermission(permCtx, 'employees.charges:create', 'employees');
+    const canCreate = await checkPermission(permCtx, 'employees.update', 'employees');
     if (!canCreate) {
       return NextResponse.json(
         errorResponse(ErrorCodes.FORBIDDEN, 'Insufficient permissions to create employee charges'),

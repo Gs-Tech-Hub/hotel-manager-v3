@@ -265,6 +265,36 @@ export async function GET(request: NextRequest) {
       }
     });
 
+    // Calculate payment method breakdown
+    const byPaymentMethod = new Map<string, { amount: number; taxAmount: number }>();
+    orderPayments.forEach((payment: any) => {
+      const method = payment.paymentMethod || 'unknown';
+      if (!byPaymentMethod.has(method)) {
+        byPaymentMethod.set(method, { amount: 0, taxAmount: 0 });
+      }
+      const methodData = byPaymentMethod.get(method)!;
+      methodData.amount += payment.amount || 0;
+    });
+
+    // Calculate total charges for employees
+    const totalCharges = employees.reduce((sum: number, e: any) => {
+      if (e.employmentData) {
+        const charges = (e.employmentData as any).totalCharges || 0;
+        return sum + (typeof charges === 'string' ? parseFloat(charges) : charges);
+      }
+      return sum;
+    }, 0);
+
+    const outstandingCharges = employees.reduce((sum: number, e: any) => {
+      if (e.employmentData) {
+        const total = (e.employmentData as any).totalCharges || 0;
+        const paid = (e.employmentData as any).totalPaid || 0;
+        const outstanding = (typeof total === 'string' ? parseFloat(total) : total) - (typeof paid === 'string' ? parseFloat(paid) : paid);
+        return sum + Math.max(0, outstanding);
+      }
+      return sum;
+    }, 0);
+
     // Build response with full metrics
     const metrics: DashboardMetrics = {
       salesData: {
@@ -288,7 +318,11 @@ export async function GET(request: NextRequest) {
       taxData: {
         totalTaxCollected: orderHeaders.reduce((sum: number, o: any) => sum + (o.tax || 0), 0),
         taxBreakdown: [],
-        byPaymentMethod: [],
+        byPaymentMethod: Array.from(byPaymentMethod.entries()).map(([method, data]) => ({
+          method,
+          amount: data.amount,
+          taxAmount: data.taxAmount,
+        })),
       },
       userData: {
         totalUsers: customers?.length || 0,
@@ -307,8 +341,8 @@ export async function GET(request: NextRequest) {
           count,
         })),
         salaryExpense: totalSalaryExpense,
-        totalCharges: 0,
-        outstandingCharges: 0,
+        totalCharges: Math.round(totalCharges * 100) / 100, // Convert to decimal
+        outstandingCharges: Math.round(outstandingCharges * 100) / 100,
         topEarners: [],
       },
       discountData: {
