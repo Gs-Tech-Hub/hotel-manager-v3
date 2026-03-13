@@ -13,6 +13,8 @@ type StatsType = {
   fulfillmentRate: number
   cashAmount?: number  // Amount paid via cash (requires backend implementation)
   cardAmount?: number  // Amount paid via card (requires backend implementation)
+  bankAmount?: number  // Amount paid via bank transfer
+  chargesAmount?: number  // Amount paid via employee charges
 }
 
 type OrderStatsCardProps = {
@@ -61,6 +63,8 @@ export default function OrderStatsCard({
     const owedAmount = unpaidStats?.totalAmount || 0
     const cashAmount = paidStats?.cashAmount || 0
     const cardAmount = paidStats?.cardAmount || 0
+    const bankAmount = paidStats?.bankAmount || 0
+    const chargesAmount = paidStats?.chargesAmount || 0
 
     // ORDER FULFILLMENT (operational dimension - independent of payment)
     // Use aggregated counts if available
@@ -105,6 +109,22 @@ export default function OrderStatsCard({
                   <td className="px-4 py-3 text-gray-600 text-xs">🏦 Card Payments</td>
                   <td className="px-4 py-3 text-right text-xs"></td>
                   <td className="px-4 py-3 text-right font-medium text-blue-600 text-xs">{formatTablePrice(cardAmount)}</td>
+                  <td className="px-4 py-3 text-right text-xs"></td>
+                </tr>
+              )}
+              {bankAmount > 0 && (
+                <tr className="border-b border-gray-100 hover:bg-indigo-50/20">
+                  <td className="px-4 py-3 text-gray-600 text-xs">🏛️ Bank Transfer</td>
+                  <td className="px-4 py-3 text-right text-xs"></td>
+                  <td className="px-4 py-3 text-right font-medium text-indigo-600 text-xs">{formatTablePrice(bankAmount)}</td>
+                  <td className="px-4 py-3 text-right text-xs"></td>
+                </tr>
+              )}
+              {chargesAmount > 0 && (
+                <tr className="border-b border-gray-100 hover:bg-orange-50/20">
+                  <td className="px-4 py-3 text-gray-600 text-xs">💳 Employee Charges</td>
+                  <td className="px-4 py-3 text-right text-xs"></td>
+                  <td className="px-4 py-3 text-right font-medium text-orange-600 text-xs">{formatTablePrice(chargesAmount)}</td>
                   <td className="px-4 py-3 text-right text-xs"></td>
                 </tr>
               )}

@@ -110,6 +110,10 @@ export async function GET(
     // Calculate SECTION-SPECIFIC stats (not full order totals)
     let totalPaidAmount = 0
     let totalUnpaidAmount = 0
+    let cashAmount = 0
+    let cardAmount = 0
+    let bankAmount = 0
+    let chargesAmount = 0
     let paidOrderCount = 0
     let unpaidOrderCount = 0
     let paidPendingOrders = 0
@@ -162,6 +166,26 @@ export async function GET(
       }, 0)
       
       const sectionPaymentAllocated = Math.round(sectionProportion * totalOrderPaid)
+      
+      // Track payment method breakdown for paid section amount
+      if (sectionPaymentAllocated > 0) {
+        for (const payment of order.payments) {
+          if (payment.paymentStatus === 'completed') {
+            const paymentAmt = payment.amount || 0
+            const sectionPaymentPortion = Math.round(sectionProportion * paymentAmt)
+            
+            if (payment.paymentMethod === 'cash') {
+              cashAmount += sectionPaymentPortion
+            } else if (payment.paymentMethod === 'card' || payment.paymentMethod === 'debit' || payment.paymentMethod === 'credit') {
+              cardAmount += sectionPaymentPortion
+            } else if (payment.paymentMethod === 'bank_transfer' || payment.paymentMethod === 'bank') {
+              bankAmount += sectionPaymentPortion
+            } else if (payment.paymentMethod === 'charges' || payment.paymentMethod === 'employee_charge') {
+              chargesAmount += sectionPaymentPortion
+            }
+          }
+        }
+      }
       
       const sectionOwedAmount = Math.max(0, sectionFinalAmount - sectionPaymentAllocated)
       
@@ -281,6 +305,12 @@ export async function GET(
             return sum + sectionFinalAmount
           }, 0),
         fulfillmentRate: paidTotalUnits > 0 ? Math.round((paidFulfilledUnits / paidTotalUnits) * 100) : 0,
+        paymentMethods: {
+          cash: cashAmount,
+          card: cardAmount,
+          bank: bankAmount,
+          charges: chargesAmount,
+        },
         updatedAt: new Date()
       },
       aggregated: {
@@ -291,6 +321,12 @@ export async function GET(
         totalUnits: unpaidTotalUnits + paidTotalUnits,
         totalFulfilledUnits: unpaidFulfilledUnits + paidFulfilledUnits,
         totalAmount: totalUnpaidAmount + totalPaidAmount,
+        totalByPaymentMethod: {
+          cash: cashAmount,
+          card: cardAmount,
+          bank: bankAmount,
+          charges: chargesAmount,
+        },
         updatedAt: new Date()
       },
       updatedAt: new Date()

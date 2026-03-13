@@ -71,7 +71,8 @@ export function EmployeeDetail({ employeeId }: EmployeeDetailProps) {
             )}
           </div>
         </CardHeader>
-        <CardContent>
+        <CardContent className="space-y-4">
+          {/* Basic Info */}
           <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
             <div>
               <p className="text-sm text-muted-foreground">Position</p>
@@ -86,8 +87,54 @@ export function EmployeeDetail({ employeeId }: EmployeeDetailProps) {
               <p className="font-medium">${employee.employment?.salary || '0'}</p>
             </div>
             <div>
-              <p className="text-sm text-muted-foreground">Total Debt</p>
-              <p className="font-medium text-red-600">${employee.statistics?.totalDebt || '0'}</p>
+              <p className="text-sm text-muted-foreground">Total Charges</p>
+              <p className="font-medium text-orange-600">${employee.employment?.totalCharges || '0'}</p>
+            </div>
+          </div>
+
+          {/* Salary Payment Flow */}
+          <div className="border-t pt-4">
+            <h4 className="font-semibold mb-3 text-sm">Salary Payment</h4>
+            <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+              <div className="p-3 bg-blue-50 rounded-lg">
+                <p className="text-xs text-muted-foreground">Salary Frequency</p>
+                <p className="font-medium text-sm">{employee.employment?.salaryFrequency || 'Monthly'}</p>
+              </div>
+              <div className="p-3 bg-green-50 rounded-lg">
+                <p className="text-xs text-muted-foreground">Last Payment</p>
+                <p className="font-medium text-sm">{employee.employment?.lastPaymentDate ? new Date(employee.employment.lastPaymentDate).toLocaleDateString() : 'N/A'}</p>
+              </div>
+              <div className="p-3 bg-purple-50 rounded-lg">
+                <p className="text-xs text-muted-foreground">Next Payment Due</p>
+                <p className="font-medium text-sm">{employee.employment?.nextPaymentDate ? new Date(employee.employment.nextPaymentDate).toLocaleDateString() : 'Pending'}</p>
+              </div>
+              <div className="p-3 bg-red-50 rounded-lg">
+                <p className="text-xs text-muted-foreground">Outstanding Charges</p>
+                <p className="font-medium text-sm text-red-600">${employee.employment?.outstandingCharges || '0'}</p>
+              </div>
+            </div>
+          </div>
+
+          {/* Leave Summary */}
+          <div className="border-t pt-4">
+            <h4 className="font-semibold mb-3 text-sm">Leave Status</h4>
+            <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+              <div className="p-3 bg-yellow-50 rounded-lg">
+                <p className="text-xs text-muted-foreground">Annual Leave Balance</p>
+                <p className="font-medium text-sm">{employee.employment?.annualLeaveBalance || '0'} days</p>
+              </div>
+              <div className="p-3 bg-orange-50 rounded-lg">
+                <p className="text-xs text-muted-foreground">Pending Leaves</p>
+                <p className="font-medium text-sm">{employee.statistics?.pendingLeaves || '0'}</p>
+              </div>
+              <div className="p-3 bg-green-50 rounded-lg">
+                <p className="text-xs text-muted-foreground">Approved Leaves</p>
+                <p className="font-medium text-sm">{employee.statistics?.approvedLeaves || '0'}</p>
+              </div>
+              <div className="p-3 bg-gray-50 rounded-lg">
+                <p className="text-xs text-muted-foreground">Total Leaves Used</p>
+                <p className="font-medium text-sm">{employee.statistics?.totalLeavesUsed || '0'} days</p>
+              </div>
             </div>
           </div>
         </CardContent>

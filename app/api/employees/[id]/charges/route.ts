@@ -149,6 +149,7 @@ export async function POST(
       reason,
       date,
       dueDate,
+      status = 'pending',
     } = body;
 
     // Validate required fields
@@ -181,7 +182,7 @@ export async function POST(
         reason: reason || null,
         date: new Date(date),
         dueDate: dueDate ? new Date(dueDate) : null,
-        status: 'pending',
+        status: status || 'pending',
       },
       include: {
         employmentData: {

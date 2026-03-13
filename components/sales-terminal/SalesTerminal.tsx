@@ -737,6 +737,7 @@ export default function SalesTerminal() {
               description: `Sales Terminal Order ${orderId} - ${isChargesPayment ? 'Employee Charge Payment' : 'Employee Discount Charge'}`,
               reason: isChargesPayment ? 'Employee charge payment from Sales Terminal' : 'Employee discount auto-charge from Sales Terminal',
               date: new Date().toISOString(),
+              status: 'pending', // Always start with pending status
             }),
           })
           

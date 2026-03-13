@@ -75,6 +75,7 @@ export function EmployeeChargesList({ employeeId }: EmployeeChargesListProps) {
         description: formData.description || undefined,
         reason: formData.reason || undefined,
         dueDate: formData.dueDate ? new Date(formData.dueDate).toISOString() : undefined,
+        status: 'pending', // Always create charges in pending status
       };
 
       const response = await fetch(`/api/employees/${employeeId}/charges`, {
@@ -86,7 +87,7 @@ export function EmployeeChargesList({ employeeId }: EmployeeChargesListProps) {
       const data = await response.json();
 
       if (data.success) {
-        toast({ title: 'Success', description: 'Charge added' });
+        toast({ title: 'Success', description: 'Charge added (Status: Pending)' });
         setFormData({
           chargeType: 'debt',
           amount: '',
@@ -122,14 +123,15 @@ export function EmployeeChargesList({ employeeId }: EmployeeChargesListProps) {
   };
 
   const getStatusBadge = (status: string) => {
-    const variants: Record<string, 'default' | 'secondary' | 'destructive' | 'outline'> = {
-      pending: 'outline',
-      paid: 'default',
-      partially_paid: 'secondary',
-      waived: 'secondary',
-      cancelled: 'destructive',
+    const statusDisplay: Record<string, { label: string; variant: 'default' | 'secondary' | 'destructive' | 'outline' }> = {
+      pending: { label: 'Pending', variant: 'outline' },
+      paid: { label: 'Paid', variant: 'default' },
+      partially_paid: { label: 'Partially Paid', variant: 'secondary' },
+      waived: { label: 'Waived', variant: 'secondary' },
+      cancelled: { label: 'Cancelled', variant: 'destructive' },
     };
-    return <Badge variant={variants[status] || 'secondary'}>{status}</Badge>;
+    const display = statusDisplay[status] || { label: status, variant: 'secondary' };
+    return <Badge variant={display.variant}>{display.label}</Badge>;
   };
 
   return (
@@ -138,7 +140,9 @@ export function EmployeeChargesList({ employeeId }: EmployeeChargesListProps) {
         <div className="flex items-center justify-between">
           <div>
             <CardTitle>Charges & Debts</CardTitle>
-            <CardDescription>Track employee charges, fines, and debts</CardDescription>
+            <CardDescription>
+              All new charges start in <span className="font-semibold text-orange-600">Pending</span> status and are deducted from salary on the next payment cycle
+            </CardDescription>
           </div>
           <Button onClick={() => setShowForm(!showForm)} size="sm" disabled={submitting}>
             <Plus className="mr-2 h-4 w-4" />
@@ -147,6 +151,13 @@ export function EmployeeChargesList({ employeeId }: EmployeeChargesListProps) {
         </div>
       </CardHeader>
       <CardContent className="space-y-4">
+        {/* Info Banner */}
+        <div className="p-3 bg-blue-50 border border-blue-200 rounded-lg text-sm">
+          <p className="text-blue-900">
+            <strong>📌 Status Explanation:</strong> Charges marked as <span className="font-semibold">Pending</span> are awaiting deduction from the employee&apos;s next salary payment. Once deducted, the status will be updated to <span className="font-semibold">Paid</span>.
+          </p>
+        </div>
+
         {/* Statistics */}
         {stats && (
           <div className="grid grid-cols-2 md:grid-cols-4 gap-2 p-3 bg-muted rounded-lg">
@@ -268,38 +279,85 @@ export function EmployeeChargesList({ employeeId }: EmployeeChargesListProps) {
         ) : charges.length === 0 ? (
           <div className="text-center py-8 text-muted-foreground">No charges</div>
         ) : (
-          <Table>
-            <TableHeader>
-              <TableRow>
-                <TableHead>Type</TableHead>
-                <TableHead>Amount</TableHead>
-                <TableHead>Paid</TableHead>
-                <TableHead>Date</TableHead>
-                <TableHead>Status</TableHead>
-                <TableHead>Actions</TableHead>
-              </TableRow>
-            </TableHeader>
-            <TableBody>
-              {charges.map((charge) => (
-                <TableRow key={charge.id}>
-                  <TableCell className="font-medium">{charge.chargeType}</TableCell>
-                  <TableCell>${charge.amount}</TableCell>
-                  <TableCell>${charge.paidAmount}</TableCell>
-                  <TableCell>{new Date(charge.date).toLocaleDateString()}</TableCell>
-                  <TableCell>{getStatusBadge(charge.status)}</TableCell>
-                  <TableCell>
-                    <Button
-                      size="sm"
-                      variant="destructive"
-                      onClick={() => deleteCharge(charge.id)}
-                    >
-                      <Trash2 className="h-4 w-4" />
-                    </Button>
-                  </TableCell>
-                </TableRow>
-              ))}
-            </TableBody>
-          </Table>
+          <div className="space-y-4">
+            {/* Pending Charges Section */}
+            {charges.filter(c => c.status === 'pending').length > 0 && (
+              <div className="space-y-2">
+                <h4 className="font-semibold text-sm text-orange-600">📋 Pending Charges (Awaiting Deduction)</h4>
+                <Table>
+                  <TableHeader>
+                    <TableRow className="bg-orange-50">
+                      <TableHead>Type</TableHead>
+                      <TableHead>Amount</TableHead>
+                      <TableHead>Paid</TableHead>
+                      <TableHead>Date</TableHead>
+                      <TableHead>Status</TableHead>
+                      <TableHead>Actions</TableHead>
+                    </TableRow>
+                  </TableHeader>
+                  <TableBody>
+                    {charges.filter(c => c.status === 'pending').map((charge) => (
+                      <TableRow key={charge.id} className="hover:bg-orange-50">
+                        <TableCell className="font-medium">{charge.chargeType}</TableCell>
+                        <TableCell className="font-semibold">${charge.amount}</TableCell>
+                        <TableCell>${charge.paidAmount}</TableCell>
+                        <TableCell>{new Date(charge.date).toLocaleDateString()}</TableCell>
+                        <TableCell>{getStatusBadge(charge.status)}</TableCell>
+                        <TableCell>
+                          <Button
+                            size="sm"
+                            variant="destructive"
+                            onClick={() => deleteCharge(charge.id)}
+                          >
+                            <Trash2 className="h-4 w-4" />
+                          </Button>
+                        </TableCell>
+                      </TableRow>
+                    ))}
+                  </TableBody>
+                </Table>
+              </div>
+            )}
+
+            {/* Processed Charges Section */}
+            {charges.filter(c => c.status !== 'pending').length > 0 && (
+              <div className="space-y-2">
+                <h4 className="font-semibold text-sm text-gray-600">✓ Processed Charges</h4>
+                <Table>
+                  <TableHeader>
+                    <TableRow>
+                      <TableHead>Type</TableHead>
+                      <TableHead>Amount</TableHead>
+                      <TableHead>Paid</TableHead>
+                      <TableHead>Date</TableHead>
+                      <TableHead>Status</TableHead>
+                      <TableHead>Actions</TableHead>
+                    </TableRow>
+                  </TableHeader>
+                  <TableBody>
+                    {charges.filter(c => c.status !== 'pending').map((charge) => (
+                      <TableRow key={charge.id}>
+                        <TableCell className="font-medium">{charge.chargeType}</TableCell>
+                        <TableCell>${charge.amount}</TableCell>
+                        <TableCell>${charge.paidAmount}</TableCell>
+                        <TableCell>{new Date(charge.date).toLocaleDateString()}</TableCell>
+                        <TableCell>{getStatusBadge(charge.status)}</TableCell>
+                        <TableCell>
+                          <Button
+                            size="sm"
+                            variant="destructive"
+                            onClick={() => deleteCharge(charge.id)}
+                          >
+                            <Trash2 className="h-4 w-4" />
+                          </Button>
+                        </TableCell>
+                      </TableRow>
+                    ))}
+                  </TableBody>
+                </Table>
+              </div>
+            )}
+          </div>
         )}
       </CardContent>
     </Card>
