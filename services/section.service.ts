@@ -88,107 +88,87 @@ export class SectionService {
       return { items: [], total: 0, page, pageSize }
     }
 
+    // ALL PRODUCTS - Return mixed types (drinks, food, inventory items, extras)
+    // Used for transfer panel "All Products" filter
+    if (type === 'all') {
+      const allItems: any[] = []
+      
+      // Get all drinks
+      const drinks = await prisma.drink.findMany({
+        skip,
+        take: pageSize,
+        where: search ? { name: { contains: search, mode: 'insensitive' } } : {},
+        orderBy: { name: 'asc' }
+      })
+      const drinkBalances = await stockService.getBalances('drink', drinks.map(d => d.id), dept.id, resolvedSectionId)
+      allItems.push(...drinks.map((d: any) => ({ 
+        id: d.id, 
+        name: d.name, 
+        type: 'drink', 
+        available: drinkBalances.get(d.id) ?? 0, 
+        unitPrice: Math.round(Number(d.price) * 100) 
+      })))
+      
+      // Get all food items
+      const foods = await prisma.foodItem.findMany({
+        skip,
+        take: pageSize,
+        where: search ? { name: { contains: search, mode: 'insensitive' } } : {},
+        orderBy: { name: 'asc' }
+      })
+      const foodBalances = await stockService.getBalances('food', foods.map(f => f.id), dept.id, resolvedSectionId)
+      allItems.push(...foods.map((f: any) => ({ 
+        id: f.id, 
+        name: f.name, 
+        type: 'food', 
+        available: foodBalances.get(f.id) ?? 0, 
+        unitPrice: Math.round(Number(f.price) * 100) 
+      })))
+      
+      // Get all inventory items
+      const inventoryItems = await prisma.inventoryItem.findMany({
+        skip,
+        take: pageSize,
+        where: search ? { name: { contains: search, mode: 'insensitive' } } : {},
+        orderBy: { name: 'asc' }
+      })
+      const invBalances = await stockService.getBalances('inventoryItem', inventoryItems.map(i => i.id), dept.id, resolvedSectionId)
+      allItems.push(...inventoryItems.map((i: any) => ({ 
+        id: i.id, 
+        name: i.name, 
+        type: i.category, // Use actual category: food, drinks, supplies, etc.
+        available: invBalances.get(i.id) ?? 0, 
+        unitPrice: Math.round(Number(i.unitPrice) * 100),
+        category: i.category,
+        sku: i.sku
+      })))
+      
+      // Get all extras
+      const extras = await prisma.extra.findMany({
+        skip,
+        take: pageSize,
+        where: search ? { name: { contains: search, mode: 'insensitive' } } : {},
+        orderBy: { name: 'asc' }
+      })
+      allItems.push(...extras.map((e: any) => ({
+        id: e.id,
+        name: e.name,
+        type: 'extra',
+        available: 1,
+        unitPrice: Math.round(Number(e.pricePerCount || e.pricePerMinute || 0) * 100),
+      })))
+      
+      return { 
+        items: allItems.slice(0, pageSize), 
+        total: allItems.length, 
+        page, 
+        pageSize 
+      }
+    }
+
     // UNIFIED INVENTORY SYSTEM: All items (drinks, food, inventory) are discoverable by any department
     // Drinks - available to any department (not just BarAndClub)
     if (type === 'drink') {
-      // For sections, only get drinks that have been transferred to that section
-      if (resolvedSectionId) {
-        // Get total count of transferred drinks for this section (before pagination)
-        const totalTransferred = await prisma.departmentInventory.count({
-          where: {
-            departmentId: dept.id,
-            sectionId: resolvedSectionId,
-            quantity: { gt: 0 },
-          },
-        })
-
-        if (totalTransferred === 0) {
-          // No transferred drinks for this section
-          return { items: [], total: 0, page, pageSize }
-        }
-
-        // Query paginated transferred drinks for section
-        const sectionInventories = await prisma.departmentInventory.findMany({
-          where: {
-            departmentId: dept.id,
-            sectionId: resolvedSectionId,
-            quantity: { gt: 0 },
-          },
-          select: { inventoryItemId: true },
-          skip,
-          take: pageSize,
-          orderBy: { createdAt: 'desc' }, // Consistent ordering
-        })
-
-        const drinkIds = sectionInventories.map((si) => si.inventoryItemId)
-
-        // Get drinks matching the transferred IDs (no pagination here - IDs already paginated)
-        const where: any = { id: { in: drinkIds } }
-        if (search) where.name = { contains: search, mode: 'insensitive' }
-
-        const items = await prisma.drink.findMany({ 
-          where,
-          orderBy: { name: 'asc' }
-        })
-
-        const drinkBalances = await stockService.getBalances('drink', items.map(d => d.id), dept.id, resolvedSectionId)
-        let mapped = items.map((d: any) => ({ id: d.id, name: d.name, type: 'drink', available: drinkBalances.get(d.id) ?? 0, unitPrice: Math.round(Number(d.price) * 100) }))
-
-        if (includeDetails && mapped.length > 0) {
-          const ids = mapped.map((m: any) => m.id)
-          const allPossibleIds = [...ids, ...ids.map((id) => `menu-${id}`)]
-
-          // Build date filter - use today if no dates provided
-          let dateWhere = buildDateFilter(params.fromDate, params.toDate)
-          if (!params.fromDate && !params.toDate) {
-            const today = getTodayDate()
-            dateWhere = buildDateFilter(today, today)
-          }
-
-          const soldGroups = await prisma.orderLine.groupBy({
-            by: ['productId'],
-            where: {
-              productId: { in: allPossibleIds },
-              status: 'fulfilled',
-              orderHeader: { 
-                status: { in: ['processing', 'fulfilled', 'completed'] },
-                paymentStatus: { in: ['paid', 'partial'] },
-                ...dateWhere,
-              },
-              ...(resolvedSectionId ? { departmentSectionId: resolvedSectionId } : {}),
-            },
-            _sum: { quantity: true, lineTotal: true },
-          })
-
-          const pendingGroups = await prisma.orderLine.groupBy({
-            by: ['productId'],
-            where: {
-              productId: { in: allPossibleIds },
-              status: { in: ['pending', 'processing'] },
-              orderHeader: { status: { not: 'cancelled' }, ...dateWhere },
-              ...(resolvedSectionId ? { departmentSectionId: resolvedSectionId } : {}),
-            },
-            _sum: { quantity: true },
-          })
-
-          const soldMap = new Map(soldGroups.map((g: any) => [g.productId, g._sum]))
-          const pendingMap = new Map(pendingGroups.map((g: any) => [g.productId, g._sum]))
-
-          mapped = mapped.map((m: any) => {
-            const sold = (soldMap.get(m.id) as any) || (soldMap.get(`menu-${m.id}`) as any)
-            return {
-              ...m,
-              unitsSold: sold?.quantity || 0,
-              amountSold: (m.unitPrice * (sold?.quantity || 0)),
-              pendingQuantity: (pendingMap.get(m.id) as any)?.quantity || (pendingMap.get(`menu-${m.id}`) as any)?.quantity || 0,
-            }
-          })
-        }
-
-        return { items: mapped, total: totalTransferred, page, pageSize }
-      }
-
-      // For parent departments (no section filter), get all drinks available
       const where: any = {}
       if (search) where.name = { contains: search, mode: 'insensitive' }
       const [items, total] = await Promise.all([
@@ -196,9 +176,9 @@ export class SectionService {
         prisma.drink.count({ where }),
       ])
 
-      // Use stockService for all drink balances - single source of truth
+      // Use stockService for drink balances
       const drinkIds = items.map((d: any) => d.id)
-      const drinkBalances = await stockService.getBalances('drink', drinkIds, dept.id)
+      const drinkBalances = await stockService.getBalances('drink', drinkIds, dept.id, resolvedSectionId)
 
       let mapped = items.map((d: any) => ({ id: d.id, name: d.name, type: 'drink', available: drinkBalances.get(d.id) ?? 0, unitPrice: Math.round(Number(d.price) * 100) }))
 
@@ -206,7 +186,6 @@ export class SectionService {
         const ids = mapped.map((m: any) => m.id)
         const allPossibleIds = [...ids, ...ids.map((id) => `menu-${id}`)]
 
-        // Build date filter - use today if no dates provided
         let dateWhere = buildDateFilter(params.fromDate, params.toDate)
         if (!params.fromDate && !params.toDate) {
           const today = getTodayDate()
@@ -223,7 +202,7 @@ export class SectionService {
               paymentStatus: { in: ['paid', 'partial'] },
               ...dateWhere,
             },
-            ...(sectionFilter ? { departmentSectionId: sectionFilter } : {}),
+            ...(resolvedSectionId ? { departmentSectionId: resolvedSectionId } : {}),
           },
           _sum: { quantity: true, lineTotal: true },
         })
@@ -234,7 +213,7 @@ export class SectionService {
             productId: { in: allPossibleIds },
             status: { in: ['pending', 'processing'] },
             orderHeader: { status: { not: 'cancelled' }, ...dateWhere },
-            ...(sectionFilter ? { departmentSectionId: sectionFilter } : {}),
+            ...(resolvedSectionId ? { departmentSectionId: resolvedSectionId } : {}),
           },
           _sum: { quantity: true },
         })
@@ -258,101 +237,6 @@ export class SectionService {
 
     // Food - available to any department (not just Restaurant)
     if (type === 'food') {
-      // For sections, only get food items that have been transferred to that section
-      if (resolvedSectionId) {
-        // Get total count of transferred food items for this section (before pagination)
-        const totalTransferred = await prisma.departmentInventory.count({
-          where: {
-            departmentId: dept.id,
-            sectionId: resolvedSectionId,
-            quantity: { gt: 0 },
-          },
-        })
-
-        if (totalTransferred === 0) {
-          // No transferred food items for this section
-          return { items: [], total: 0, page, pageSize }
-        }
-
-        // Query paginated transferred food items for section
-        const sectionInventories = await prisma.departmentInventory.findMany({
-          where: {
-            departmentId: dept.id,
-            sectionId: resolvedSectionId,
-            quantity: { gt: 0 },
-          },
-          select: { inventoryItemId: true },
-          skip,
-          take: pageSize,
-          orderBy: { createdAt: 'desc' }, // Consistent ordering
-        })
-
-        const foodIds = sectionInventories.map((si) => si.inventoryItemId)
-
-        // Get food items matching the transferred IDs (no pagination here - IDs already paginated)
-        // CHANGED: Remove restaurantId filter - food is now universally accessible
-        const where: any = { id: { in: foodIds } }
-        if (search) where.name = { contains: search, mode: 'insensitive' }
-
-        const items = await prisma.foodItem.findMany({ 
-          where,
-          orderBy: { name: 'asc' }
-        })
-
-        const foodBalances = await stockService.getBalances('food', items.map(f => f.id), dept.id, resolvedSectionId)
-        let mapped = items.map((f: any) => ({ id: f.id, name: f.name, type: 'food', available: foodBalances.get(f.id) ?? 0, unitPrice: Math.round(Number(f.price) * 100) }))
-
-        if (includeDetails && mapped.length > 0) {
-          const ids = mapped.map((m: any) => m.id)
-          const allPossibleIds = [...ids, ...ids.map((id) => `menu-${id}`)]
-
-          const dateWhere = buildDateFilter(params.fromDate, params.toDate)
-
-          const soldGroups = await prisma.orderLine.groupBy({
-            by: ['productId'],
-            where: {
-              productId: { in: allPossibleIds },
-              status: 'fulfilled',
-              orderHeader: { 
-                status: { in: ['fulfilled', 'completed'] },
-                paymentStatus: { in: ['paid', 'partial'] },
-                ...dateWhere,
-              },
-              ...(resolvedSectionId ? { departmentSectionId: resolvedSectionId } : {}),
-            },
-            _sum: { quantity: true, lineTotal: true },
-          })
-
-          const pendingGroups = await prisma.orderLine.groupBy({
-            by: ['productId'],
-            where: {
-              productId: { in: allPossibleIds },
-              status: { in: ['pending', 'processing'] },
-              orderHeader: { status: { not: 'cancelled' }, ...dateWhere },
-              ...(resolvedSectionId ? { departmentSectionId: resolvedSectionId } : {}),
-            },
-            _sum: { quantity: true },
-          })
-
-          const soldMap = new Map(soldGroups.map((g: any) => [g.productId, g._sum]))
-          const pendingMap = new Map(pendingGroups.map((g: any) => [g.productId, g._sum]))
-
-          mapped = mapped.map((m: any) => {
-            const sold = (soldMap.get(m.id) as any) || (soldMap.get(`menu-${m.id}`) as any)
-            return {
-              ...m,
-              unitsSold: sold?.quantity || 0,
-              amountSold: (m.unitPrice * (sold?.quantity || 0)),
-              pendingQuantity: (pendingMap.get(m.id) as any)?.quantity || (pendingMap.get(`menu-${m.id}`) as any)?.quantity || 0,
-            }
-          })
-        }
-
-        return { items: mapped, total: totalTransferred, page, pageSize }
-      }
-
-      // For parent departments (no section filter), get all food items available
-      // CHANGED: Remove restaurantId filter - food is now universally accessible
       const where: any = {}
       if (search) where.name = { contains: search, mode: 'insensitive' }
       const [items, total] = await Promise.all([
@@ -360,9 +244,9 @@ export class SectionService {
         prisma.foodItem.count({ where }),
       ])
 
-      // Use stockService for all food balances - single source of truth
+      // Use stockService for food balances
       const foodIds = items.map((f: any) => f.id)
-      const foodBalances = await stockService.getBalances('food', foodIds, dept.id)
+      const foodBalances = await stockService.getBalances('food', foodIds, dept.id, resolvedSectionId)
 
       let mapped = items.map((f: any) => ({ id: f.id, name: f.name, type: 'food', available: foodBalances.get(f.id) ?? 0, unitPrice: Math.round(Number(f.price) * 100) }))
 
@@ -370,11 +254,6 @@ export class SectionService {
         const ids = mapped.map((m: any) => m.id)
         const allPossibleIds = [...ids, ...ids.map((id) => `menu-${id}`)]
 
-        // Only count items as sold if:
-        // 1. Line status is 'fulfilled' (fulfillment requirement)
-        // 2. Order header status is 'fulfilled' or 'completed'
-        // 3. Payment status is 'paid' or 'partial' (payment was made)
-        // 4. Order created within date range (by default today)
         let dateWhere = buildDateFilter(params.fromDate, params.toDate)
         if (!params.fromDate && !params.toDate) {
           const today = getTodayDate()
@@ -424,62 +303,8 @@ export class SectionService {
       return { items: mapped, total, page, pageSize }
     }
 
-    // Extras - available to any department
+    // Extras/Services - available to any department
     if (type === 'extra') {
-      // For sections, only get extras that have been transferred to that section
-      if (resolvedSectionId) {
-        // Get total count of transferred extras for this section (before pagination)
-        const totalTransferred = await prisma.departmentInventory.count({
-          where: {
-            departmentId: dept.id,
-            sectionId: resolvedSectionId,
-            quantity: { gt: 0 },
-          },
-        })
-
-        if (totalTransferred === 0) {
-          // No transferred extras for this section
-          return { items: [], total: 0, page, pageSize }
-        }
-
-        // Query paginated transferred extras for section - get from Extra table
-        const sectionInventories = await prisma.departmentInventory.findMany({
-          where: {
-            departmentId: dept.id,
-            sectionId: resolvedSectionId,
-            quantity: { gt: 0 },
-          },
-          select: { inventoryItemId: true },
-          skip,
-          take: pageSize,
-          orderBy: { createdAt: 'desc' },
-        })
-
-        const extraIds = sectionInventories.map((si) => si.inventoryItemId)
-
-        // Get extras matching the transferred IDs
-        const where: any = { id: { in: extraIds } }
-        if (search) where.name = { contains: search, mode: 'insensitive' }
-
-        const items = await prisma.extra.findMany({ 
-          where,
-          orderBy: { name: 'asc' }
-        })
-
-        // Extras use departmentExtras for pricing/availability tracking
-        let mapped = items.map((e: any) => ({
-          id: e.id,
-          name: e.name,
-          type: 'extra',
-          available: 1, // Extras are typically all-or-nothing
-          unitPrice: Math.round(Number(e.pricePerCount || e.pricePerMinute || 0) * 100),
-          unit: e.unit || 'portion',
-        }))
-
-        return { items: mapped, total: totalTransferred, page, pageSize }
-      }
-
-      // For parent departments (no section filter), get all extras available
       const where: any = {}
       if (search) where.name = { contains: search, mode: 'insensitive' }
       const [items, total] = await Promise.all([
@@ -491,9 +316,8 @@ export class SectionService {
         id: e.id,
         name: e.name,
         type: 'extra',
-        available: 1, // Extras are typically all-or-nothing
+        available: 1,
         unitPrice: Math.round(Number(e.pricePerCount || e.pricePerMinute || 0) * 100),
-        unit: e.unit || 'portion',
       }))
 
       return { items: mapped, total, page, pageSize }
@@ -676,7 +500,15 @@ export class SectionService {
       const itemIds = items.map((i: any) => i.id)
       const balances = await stockService.getBalances('inventoryItem', itemIds, dept.id, resolvedSectionId)
 
-      let mapped = items.map((it: any) => ({ id: it.id, name: it.name, type: 'inventoryItem', available: balances.get(it.id) ?? 0, unitPrice: Math.round(Number(it.unitPrice) * 100) }))
+      let mapped = items.map((it: any) => ({ 
+        id: it.id, 
+        name: it.name, 
+        type: it.category,  // Use actual category: food, drinks, supplies, etc.
+        available: balances.get(it.id) ?? 0, 
+        unitPrice: Math.round(Number(it.unitPrice) * 100),
+        category: it.category,
+        sku: it.sku
+      }))
 
       if (includeDetails && mapped.length > 0) {
         const ids = mapped.map((m: any) => m.id)

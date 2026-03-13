@@ -362,33 +362,55 @@ export async function PUT(
 
       // If fulfilled AND inventory item, deduct inventory within transaction
       if (status === 'fulfilled' && deptId && ['inventoryItem', 'food', 'drink'].includes(lineItem.productType)) {
-        const inventoryWhere: any = {
-          departmentId: deptId,
-          inventoryItemId: lineItem.productId,
-        };
+        // IMPORTANT: Always try section-level first if section exists, then fallback to department-level in SAME transaction
+        // This ensures inventory is deducted from the correct location without race conditions
         
+        let sectionDeducted = false;
+        
+        // Step 1: If there's a section ID, try to deduct from section inventory
         if (lineItem.departmentSectionId) {
-          inventoryWhere.sectionId = lineItem.departmentSectionId;
-        } else {
-          inventoryWhere.sectionId = null;
+          console.log(`[FULFILLMENT] [TX] Attempting section-level deduction for sectionId=${lineItem.departmentSectionId}`);
+          
+          const sectionResult = await tx.departmentInventory.updateMany({
+            where: {
+              departmentId: deptId,
+              inventoryItemId: lineItem.productId,
+              sectionId: lineItem.departmentSectionId,
+            },
+            data: { quantity: { decrement: fulfilledQty } },
+          });
+          
+          sectionDeducted = sectionResult.count > 0;
+          console.log(`[FULFILLMENT] [TX] Section deduction result: count=${sectionResult.count}`);
+          
+          if (sectionDeducted) {
+            inventoryDeducted = true;
+            console.log(`[FULFILLMENT] [TX] ✅ Section inventory deducted successfully (${fulfilledQty} units)`);
+          }
         }
         
-        console.log(`[FULFILLMENT] [TX] About to decrement inventory: ${JSON.stringify(inventoryWhere)} by ${fulfilledQty}`);
-        
-        // Single updateMany call - no fallback logic in transaction
-        const invResult = await tx.departmentInventory.updateMany({
-          where: inventoryWhere,
-          data: { quantity: { decrement: fulfilledQty } },
-        });
-        
-        console.log(`[FULFILLMENT] [TX] updateMany result: count=${invResult.count}`);
-        
-        inventoryDeducted = invResult.count > 0;
-        
-        if (inventoryDeducted) {
-          console.log(`[FULFILLMENT] [TX] ✅ Inventory deducted successfully (${fulfilledQty} units)`);
-        } else {
-          console.log(`[FULFILLMENT] [TX] ❌ No inventory records updated (count=0)`);
+        // Step 2: If section deduction wasn't successful or no section, try department-level
+        if (!sectionDeducted) {
+          console.log(`[FULFILLMENT] [TX] Attempting department-level deduction`);
+          
+          const deptResult = await tx.departmentInventory.updateMany({
+            where: {
+              departmentId: deptId,
+              inventoryItemId: lineItem.productId,
+              sectionId: null,
+            },
+            data: { quantity: { decrement: fulfilledQty } },
+          });
+          
+          console.log(`[FULFILLMENT] [TX] Department deduction result: count=${deptResult.count}`);
+          
+          inventoryDeducted = deptResult.count > 0;
+          
+          if (inventoryDeducted) {
+            console.log(`[FULFILLMENT] [TX] ✅ Department-level inventory deducted successfully (${fulfilledQty} units)`);
+          } else {
+            console.log(`[FULFILLMENT] [TX] ❌ No inventory records updated at either section or department level (count=0)`);
+          }
         }
       } else {
         console.log(`[FULFILLMENT] [TX] Skipping inventory deduction: status=${status}, deptId=${deptId}, productType=${lineItem.productType}`);
@@ -397,34 +419,8 @@ export async function PUT(
     
     console.log(`[FULFILLMENT] Transaction complete - inventoryDeducted: ${inventoryDeducted}`);
     
-    // Step 2: FALLBACK - If inventory deduction failed in section, try department-level OUTSIDE transaction
-    if (!inventoryDeducted && status === 'fulfilled' && deptId && ['inventoryItem', 'food', 'drink'].includes(lineItem.productType)) {
-      console.log(`[FULFILLMENT] [FALLBACK] Inventory not deducted in transaction, trying department-level...`);
-      
-      try {
-        console.log(`[FULFILLMENT] [FALLBACK] Attempting dept-level deduction: deptId=${deptId}, productId=${lineItem.productId}, qty=${fulfilledQty}`);
-        
-        const deptLevelResult = await prisma.departmentInventory.updateMany({
-          where: {
-            departmentId: deptId,
-            inventoryItemId: lineItem.productId,
-            sectionId: null,
-          },
-          data: { quantity: { decrement: fulfilledQty } },
-        });
-        
-        console.log(`[FULFILLMENT] [FALLBACK] Department-level updateMany result: count=${deptLevelResult.count}`);
-        
-        inventoryDeducted = deptLevelResult.count > 0;
-        if (inventoryDeducted) {
-          console.log(`[FULFILLMENT] [FALLBACK] ✅ Department-level inventory deducted (fallback)`);
-        } else {
-          console.log(`[FULFILLMENT] [FALLBACK] ❌ No department-level inventory found (count=0)`);
-        }
-      } catch (e) {
-        console.error(`[FULFILLMENT] [FALLBACK] ❌ Fallback inventory deduction failed:`, e);
-      }
-    }
+    // Note: Both section-level and department-level inventory deduction is now handled
+    // within the transaction to prevent race conditions
     
     // Step 3: BATCH OPERATION - Fetch all required data for post-fulfillment operations in parallel
     let shouldUpdateOrderStatus = false;
