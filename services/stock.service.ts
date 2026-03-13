@@ -238,25 +238,35 @@ export class StockService {
                 createData.unitPrice = new Decimal(Math.round(Number(drink.price) * 100) / 100)
               }
 
-              await (prisma as any).departmentInventory.upsert({
+              // Avoid composite-key upsert issues with nullable sectionId by
+              // doing an explicit lookup and then update/create.
+              const existing = await prisma.departmentInventory.findFirst({
                 where: {
-                  departmentId_sectionId_inventoryItemId: {
-                    departmentId,
-                    sectionId: null,
-                    inventoryItemId: drink.id,
-                  },
+                  departmentId,
+                  inventoryItemId: drink.id,
+                  sectionId: null,
                 },
-                update: { quantity: legacyBalance },
-                create: createData,
               })
+
+              if (existing) {
+                await prisma.departmentInventory.update({
+                  where: { id: existing.id },
+                  data: { quantity: legacyBalance },
+                })
+              } else {
+                await prisma.departmentInventory.create({
+                  data: createData,
+                })
+              }
             } catch (e) {
               // Initialization failed, continue
             }
           }
         }
       } else if (productType === 'inventoryItem') {
+        // Only consider active inventory items when falling back to legacy table
         const items = await prisma.inventoryItem.findMany({
-          where: { id: { in: missingIds } },
+          where: { id: { in: missingIds }, isActive: true },
         })
 
         for (const item of items) {
@@ -275,17 +285,26 @@ export class StockService {
                 createData.unitPrice = item.unitPrice
               }
 
-              await (prisma as any).departmentInventory.upsert({
+              // Avoid composite-key upsert issues with nullable sectionId by
+              // doing an explicit lookup and then update/create.
+              const existing = await prisma.departmentInventory.findFirst({
                 where: {
-                  departmentId_sectionId_inventoryItemId: {
-                    departmentId,
-                    sectionId: null,
-                    inventoryItemId: item.id,
-                  },
+                  departmentId,
+                  inventoryItemId: item.id,
+                  sectionId: null,
                 },
-                update: { quantity: legacyBalance },
-                create: createData,
               })
+
+              if (existing) {
+                await prisma.departmentInventory.update({
+                  where: { id: existing.id },
+                  data: { quantity: legacyBalance },
+                })
+              } else {
+                await prisma.departmentInventory.create({
+                  data: createData,
+                })
+              }
             } catch (e) {
               // Initialization failed, continue
             }

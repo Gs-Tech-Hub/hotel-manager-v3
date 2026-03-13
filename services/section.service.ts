@@ -125,11 +125,14 @@ export class SectionService {
         unitPrice: Math.round(Number(f.price) * 100) 
       })))
       
-      // Get all inventory items
+      // Get all inventory items (exclude soft-deleted)
       const inventoryItems = await prisma.inventoryItem.findMany({
         skip,
         take: pageSize,
-        where: search ? { name: { contains: search, mode: 'insensitive' } } : {},
+        where: {
+          isActive: true,
+          ...(search ? { name: { contains: search, mode: 'insensitive' } } : {}),
+        },
         orderBy: { name: 'asc' }
       })
       const invBalances = await stockService.getBalances('inventoryItem', inventoryItems.map(i => i.id), dept.id, resolvedSectionId)
@@ -169,7 +172,7 @@ export class SectionService {
     // UNIFIED INVENTORY SYSTEM: All items (drinks, food, inventory) are discoverable by any department
     // Drinks - available to any department (not just BarAndClub)
     if (type === 'drink') {
-      const where: any = {}
+      const where: any = { isActive: true }
       if (search) where.name = { contains: search, mode: 'insensitive' }
       const [items, total] = await Promise.all([
         prisma.drink.findMany({ where, skip, take: pageSize, orderBy: { name: 'asc' } }),
