@@ -276,15 +276,6 @@ export default function OrderDetailPage() {
                             Cancel Order
                         </Button>
                     )}
-                    {canRefund && (
-                        <Button 
-                            variant="outline"
-                            onClick={() => setRefundDialogOpen(true)}
-                            disabled={isUpdating}
-                        >
-                            Refund
-                        </Button>
-                    )}
                 </div>
             </div>
 
