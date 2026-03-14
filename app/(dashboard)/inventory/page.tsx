@@ -53,6 +53,7 @@ export default function InventoryPage() {
   const [extras, setExtras] = useState<Extra[]>([])
   const [departments, setDepartments] = useState<Department[]>([])
   const [selectedDept, setSelectedDept] = useState<string | undefined>(undefined)
+  const [categoryFilter, setCategoryFilter] = useState<string>('')
   const [sections, setSections] = useState<Array<{ id: string; name: string }>>([])
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
@@ -267,6 +268,16 @@ export default function InventoryPage() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [selectedDept])
 
+  const categoryOptions = Array.from(
+    new Set(
+      items
+        .map((it) => it.category)
+        .filter((c): c is string => Boolean(c))
+    )
+  )
+
+  const filteredItems = items.filter((it) => !categoryFilter || it.category === categoryFilter)
+
   // Initialize selected department from the URL query (so returning from a transfer keeps the selection)
   useEffect(() => {
     try {
@@ -395,16 +406,37 @@ export default function InventoryPage() {
       </div>
 
       {/* Department Filter - Available for all tabs */}
-      <div className="flex items-center gap-4">
+      <div className="flex flex-wrap items-center gap-4">
         <div>
           <label className="text-sm mr-2">Filter by department</label>
-          <select value={selectedDept ?? ''} onChange={(e) => setSelectedDept(e.target.value || undefined)} className="border px-2 py-1">
+          <select
+            value={selectedDept ?? ''}
+            onChange={(e) => setSelectedDept(e.target.value || undefined)}
+            className="border px-2 py-1"
+          >
             <option value="">All Departments</option>
             {departments
               .filter((d) => !String(d.code).includes(':')) // only top-level departments
               .map((d) => (
-                <option key={d.code} value={d.code}>{d.name} ({d.code})</option>
+                <option key={d.code} value={d.code}>
+                  {d.name} ({d.code})
+                </option>
               ))}
+          </select>
+        </div>
+        <div>
+          <label className="text-sm mr-2">Filter by category</label>
+          <select
+            value={categoryFilter}
+            onChange={(e) => setCategoryFilter(e.target.value)}
+            className="border px-2 py-1"
+          >
+            <option value="">All Categories</option>
+            {categoryOptions.map((c) => (
+              <option key={c} value={c}>
+                {c}
+              </option>
+            ))}
           </select>
         </div>
       </div>
@@ -538,7 +570,7 @@ export default function InventoryPage() {
                 </tr>
               </thead>
               <tbody>
-                {items.map((it) => (
+                {filteredItems.map((it) => (
                   <tr key={it.id} className="border-t hover:bg-gray-50">
                     <td className="p-2">
                       <div className="font-medium">{it.name}</div>
