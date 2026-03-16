@@ -341,6 +341,22 @@ export class OrderService extends BaseService<IOrderHeader> {
         if (b.length) await prisma.orderDepartment.createMany({ data: b })
       }
 
+      // If this order contains ONLY service lines, fulfillment is instantaneous.
+      // Mark the order + department rows as fulfilled so it doesn't remain pending in tables/stats.
+      const isServiceOnlyOrder = linesData.length > 0 && linesData.every((l: any) => l.productType === 'service');
+      if (isServiceOnlyOrder) {
+        await Promise.all([
+          prisma.orderHeader.update({
+            where: { id: header.id },
+            data: { status: 'fulfilled' },
+          }),
+          prisma.orderDepartment.updateMany({
+            where: { orderHeaderId: header.id },
+            data: { status: 'fulfilled' },
+          }),
+        ]);
+      }
+
       const order = header
 
       // Recalculate and persist section stats for involved department sections
@@ -723,6 +739,24 @@ export class OrderService extends BaseService<IOrderHeader> {
         where: { id: orderId },
         data: { subtotal: newSubtotal, total: newSubtotal - order.discountTotal + order.tax },
       });
+
+      // If the order is now service-only, fulfillment is instantaneous.
+      // Ensure the order header + department rows are marked fulfilled so it doesn't linger as pending.
+      if (isService) {
+        const isServiceOnlyOrder = allLines.length > 0 && allLines.every((l: any) => l.productType === 'service');
+        if (isServiceOnlyOrder) {
+          await Promise.all([
+            (prisma as any).orderHeader.update({
+              where: { id: orderId },
+              data: { status: 'fulfilled' },
+            }),
+            (prisma as any).orderDepartment.updateMany({
+              where: { orderHeaderId: orderId },
+              data: { status: 'fulfilled' },
+            }),
+          ]);
+        }
+      }
 
       // Recalculate section stats for the affected department
       try {

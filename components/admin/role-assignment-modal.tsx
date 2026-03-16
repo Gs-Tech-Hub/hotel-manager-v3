@@ -52,7 +52,9 @@ export function RoleAssignmentModal({
       }
 
       const data = await response.json();
-      setRoles(data.roles || []);
+      // API returns { success: true, data: Role[] } (new shape).
+      // Keep a fallback to older shapes to avoid empty dropdowns.
+      setRoles(data?.data || data?.roles || []);
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Failed to fetch roles');
     } finally {

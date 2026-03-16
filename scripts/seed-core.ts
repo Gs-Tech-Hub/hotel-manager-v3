@@ -333,6 +333,11 @@ async function seedPermissions(roles: Record<string, any>) {
       { action: 'employees.create', subject: null },
       { action: 'employees.update', subject: null },
       { action: 'employees.delete', subject: null },
+      // Roles & permissions management
+      { action: 'roles.read', subject: null },
+      { action: 'roles.create', subject: null },
+      { action: 'roles.update', subject: null },
+      { action: 'roles.delete', subject: null },
       // Reports
       { action: 'reports.read', subject: null },
       { action: 'reports.generate', subject: null },
@@ -398,6 +403,8 @@ async function seedPermissions(roles: Record<string, any>) {
       { action: 'employees.create', subject: null },
       { action: 'employees.update', subject: null },
       { action: 'employees.delete', subject: null },
+      // Roles & permissions management (needed for employee create/edit role assignment UI)
+      { action: 'roles.read', subject: null },
       { action: 'reports.read', subject: null },
       { action: 'reports.generate', subject: null },
       { action: 'reports.export', subject: null },
@@ -795,11 +802,13 @@ async function seedPermissions(roles: Record<string, any>) {
       // First, get or create the permission (unique by action+subject)
       const permission = await withRetries(() =>
         prisma.permission.upsert({
-          where: { action_subject: { action: perm.action, subject: perm.subject || '' } },
+          // Prisma's compound unique input for nullable fields can be typed as string in some client versions.
+          // Cast to allow null for subject-less permissions.
+          where: { action_subject: { action: perm.action, subject: (perm.subject ?? null) as any } },
           update: {},
           create: {
             action: perm.action,
-            subject: perm.subject || null,
+            subject: perm.subject ?? null,
           },
         })
       );

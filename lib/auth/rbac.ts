@@ -101,6 +101,12 @@ export async function checkPermission(
                 console.log('[RBAC] ✓ Permission granted (admin wildcard)');
                 return true;
               }
+              // Legacy wildcard variant used by older seed scripts:
+              // action='manage' subject='*' should also grant full access.
+              if (p.action === 'manage' && p.subject === '*') {
+                console.log('[RBAC] ✓ Permission granted (admin legacy manage:*)');
+                return true;
+              }
             }
           }
 

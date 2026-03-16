@@ -108,7 +108,18 @@ export default function EmployeeEditPage() {
       }
 
       setEmployee(found)
-      setUserRoles(found.userRoles || found.roles?.map((r: any) => ({ id: '', roleId: '', roleName: r.roleName, departmentName: r.departmentName })) || [])
+      // `/api/employees` returns `roles` in the shape:
+      // { roleId, roleName, departmentId?, departmentName? }
+      // Normalize into our `UserRole` UI shape for display + editing.
+      setUserRoles(
+        (found.roles || []).map((r: any) => ({
+          id: `${r.roleId}:${r.departmentId || ''}`,
+          roleId: r.roleId,
+          roleName: r.roleName,
+          departmentId: r.departmentId,
+          departmentName: r.departmentName,
+        }))
+      )
       setFormData({
         firstname: found.firstname || '',
         lastname: found.lastname || '',
@@ -133,7 +144,8 @@ export default function EmployeeEditPage() {
       if (!res.ok) throw new Error('Failed to fetch roles')
       
       const json = await res.json()
-      setAvailableRoles(json.roles || [])
+      // API returns { success: true, data: Role[] }. Keep fallback for older shapes.
+      setAvailableRoles(json?.data || json?.roles || [])
     } catch (err: any) {
       console.error('Failed to load roles:', err)
     } finally {
@@ -149,23 +161,34 @@ export default function EmployeeEditPage() {
 
     setAssigningRole(true)
     try {
-      const res = await fetch(`/api/users/${employeeId}/roles`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          roleCode: selectedRoleId,
-          departmentId: selectedDepartmentId || undefined,
-        }),
-      })
-
-      if (!res.ok) {
-        const json = await res.json()
-        throw new Error(json.error || 'Failed to assign role')
+      const role = availableRoles.find((r) => r.id === selectedRoleId)
+      if (!role) {
+        throw new Error('Selected role not found')
       }
+
+      const deptId = selectedDepartmentId.trim() || undefined
+      const compositeId = `${role.id}:${deptId || ''}`
+
+      // Prevent duplicates (same role + same department scope)
+      const alreadyAdded = userRoles.some((ur) => (ur.id || `${ur.roleId}:${ur.departmentId || ''}`) === compositeId)
+      if (alreadyAdded) {
+        throw new Error('This role is already assigned in the selected scope')
+      }
+
+      // Local-only update; actual persistence happens on Save Changes
+      setUserRoles((prev) => [
+        ...prev,
+        {
+          id: compositeId,
+          roleId: role.id,
+          roleName: role.name,
+          roleCode: role.code,
+          departmentId: deptId,
+        },
+      ])
 
       setSelectedRoleId('')
       setSelectedDepartmentId('')
-      await fetchEmployee()
     } catch (err: any) {
       setError(err?.message || 'Failed to assign role')
     } finally {
@@ -173,19 +196,11 @@ export default function EmployeeEditPage() {
     }
   }
 
-  const handleRemoveRole = async (roleId: string) => {
-    setRemovingRoleId(roleId)
+  const handleRemoveRole = async (userRoleKey: string) => {
+    setRemovingRoleId(userRoleKey)
     try {
-      const res = await fetch(`/api/users/${employeeId}/roles/${roleId}`, {
-        method: 'DELETE',
-      })
-
-      if (!res.ok) {
-        const json = await res.json()
-        throw new Error(json.error || 'Failed to remove role')
-      }
-
-      await fetchEmployee()
+      // Local-only update; actual persistence happens on Save Changes
+      setUserRoles((prev) => prev.filter((r) => (r.id || `${r.roleId}:${r.departmentId || ''}`) !== userRoleKey))
     } catch (err: any) {
       setError(err?.message || 'Failed to remove role')
     } finally {
@@ -204,15 +219,19 @@ export default function EmployeeEditPage() {
         method: 'PUT',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          firstname: formData.firstname,
-          lastname: formData.lastname,
+          // API expects these keys at the top-level (not nested under `employmentData`)
+          firstName: formData.firstname,
+          lastName: formData.lastname,
           blocked: formData.blocked,
-          employmentData: {
-            position: formData.position,
-            department: formData.department,
-            salary: formData.salary,
-            employmentStatus: formData.salaryStatus,
-          },
+          position: formData.position,
+          department: formData.department,
+          salary: formData.salary,
+          employmentStatus: formData.salaryStatus,
+          // Persist roles in one shot (supports adding multiple roles before saving)
+          roles: userRoles.map((r) => ({
+            roleId: r.roleId,
+            departmentId: r.departmentId || undefined,
+          })),
         }),
       })
 
@@ -433,8 +452,8 @@ export default function EmployeeEditPage() {
                       )}
                     </div>
                     <button
-                      onClick={() => handleRemoveRole(userRole.id)}
-                      disabled={removingRoleId === userRole.id}
+                      onClick={() => handleRemoveRole(userRole.id || `${userRole.roleId}:${userRole.departmentId || ''}`)}
+                      disabled={removingRoleId === (userRole.id || `${userRole.roleId}:${userRole.departmentId || ''}`)}
                       className="p-2 text-red-600 hover:bg-red-50 rounded-lg transition disabled:opacity-50 disabled:cursor-not-allowed"
                       title="Remove role"
                     >
@@ -463,7 +482,7 @@ export default function EmployeeEditPage() {
                   >
                     <option value="">-- Select a role --</option>
                     {availableRoles.map((role) => (
-                      <option key={role.id} value={role.code}>
+                      <option key={role.id} value={role.id}>
                         {role.name} ({role.code})
                       </option>
                     ))}
