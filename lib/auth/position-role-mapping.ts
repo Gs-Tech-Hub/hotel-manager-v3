@@ -50,6 +50,9 @@ export const STANDARDIZED_POSITIONS: Position[] = [
   { id: "pos_operator", name: "POS Operator", roleCode: "pos_staff", description: "Point of Sale Operator" },
   { id: "pos_manager", name: "POS Manager", roleCode: "pos_manager", description: "POS Manager / POS Supervisor" },
   { id: "terminal_operator", name: "Terminal Operator", roleCode: "terminal_operator", description: "POS Terminal Operator" },
+
+  // Games
+  { id: "games_attendant", name: "Games Attendant", roleCode: "games_staff", description: "Games/Arcade attendant" },
   
   // Inventory
   { id: "inventory_manager", name: "Inventory Manager", roleCode: "inventory_staff", description: "Inventory Manager" },

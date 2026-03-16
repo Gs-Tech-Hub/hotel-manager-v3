@@ -29,6 +29,7 @@ const CANONICAL_MAPPINGS: DepartmentRoleMapping[] = [
   { departmentCode: "service", defaultRole: "pos_staff" },
   { departmentCode: "reception", defaultRole: "front_desk" },
   { departmentCode: "housekeeping", defaultRole: "housekeeping_staff" },
+  { departmentCode: "games", defaultRole: "games_staff" },
 ];
 
 /**

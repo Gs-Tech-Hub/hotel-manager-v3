@@ -185,6 +185,7 @@ async function seedRoles() {
     { code: 'housekeeping_staff', name: 'Housekeeping Staff', description: 'Room cleaning and maintenance' },
     { code: 'front_desk', name: 'Front Desk Staff', description: 'Guest check-in/check-out and room management' },
     { code: 'customer_service', name: 'Customer Service Representative', description: 'Manages bookings and customer inquiries' },
+    { code: 'games_staff', name: 'Games Staff', description: 'Games operations (sessions, checkout) and related orders' },
     
     // Legacy/compatibility
     { code: 'receptionist', name: 'Receptionist', description: 'Receptionist (legacy name, same as Front Desk)' },
@@ -606,6 +607,23 @@ async function seedPermissions(roles: Record<string, any>) {
       { action: 'services.read', subject: null },
     ],
 
+    // ==================== GAMES STAFF ====================
+    // Full permissions for: games sessions + checkout + related orders
+    games_staff: [
+      { action: 'orders.read', subject: null },
+      { action: 'orders.create', subject: null },
+      { action: 'orders.update', subject: null },
+      { action: 'payments.read', subject: null },
+      { action: 'payments.process', subject: null },
+      { action: 'departments.read', subject: null },
+      { action: 'department_sections.read', subject: null },
+      { action: 'services.read', subject: null },
+      { action: 'games.read', subject: null },
+      { action: 'games.create', subject: null },
+      { action: 'games.update', subject: null },
+      { action: 'games.checkout', subject: null },
+    ],
+
     // ==================== POS STAFF ====================
     // Full permissions for: /pos, /pos/orders, /pos/food, /pos/drinks
     pos_staff: [
@@ -800,15 +818,16 @@ async function seedPermissions(roles: Record<string, any>) {
 
     for (const perm of permissions) {
       // First, get or create the permission (unique by action+subject)
+      const subject = (perm.subject ?? '') as string;
       const permission = await withRetries(() =>
         prisma.permission.upsert({
-          // Prisma's compound unique input for nullable fields can be typed as string in some client versions.
-          // Cast to allow null for subject-less permissions.
-          where: { action_subject: { action: perm.action, subject: (perm.subject ?? null) as any } },
+          // NOTE: Some environments have Permission.subject as NOT NULL in DB / generated client.
+          // Use empty string to represent "no subject" consistently.
+          where: { action_subject: { action: perm.action, subject } },
           update: {},
           create: {
             action: perm.action,
-            subject: perm.subject ?? null,
+            subject,
           },
         })
       );

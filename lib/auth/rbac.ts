@@ -129,11 +129,18 @@ export async function checkPermission(
     // Normalize all possible permission variants for action/subject
     function getPermissionVariants(action: string, subject?: string | null) {
       const variants: { action: string; subject: string | null }[] = [];
+      // Some deployments store "no subject" as empty string, others as NULL.
+      // We'll generate variants for BOTH so permission checks work across schemas.
       const sub = subject || null;
+      const emptySubjectVariants: Array<string | null> = [null, ""];
       // Add original action/subject pair
-      variants.push({ action, subject: sub });
+      if (sub) {
+        variants.push({ action, subject: sub });
+      } else {
+        emptySubjectVariants.forEach((s) => variants.push({ action, subject: s }));
+      }
       // Add action with no subject
-      variants.push({ action, subject: null });
+      emptySubjectVariants.forEach((s) => variants.push({ action, subject: s }));
 
       // If subject is present, add dot/colon variants
       if (sub) {
@@ -157,16 +164,16 @@ export async function checkPermission(
         const [a, s] = action.split('.');
         if (s) {
           variants.push({ action: a, subject: s });
-          variants.push({ action: `${a}.${s}`, subject: null });
-          variants.push({ action: `${a}:${s}`, subject: null });
+          emptySubjectVariants.forEach((subj) => variants.push({ action: `${a}.${s}`, subject: subj }));
+          emptySubjectVariants.forEach((subj) => variants.push({ action: `${a}:${s}`, subject: subj }));
         }
       }
       if (action.includes(':')) {
         const [a, s] = action.split(':');
         if (s) {
           variants.push({ action: a, subject: s });
-          variants.push({ action: `${a}:${s}`, subject: null });
-          variants.push({ action: `${a}.${s}`, subject: null });
+          emptySubjectVariants.forEach((subj) => variants.push({ action: `${a}:${s}`, subject: subj }));
+          emptySubjectVariants.forEach((subj) => variants.push({ action: `${a}.${s}`, subject: subj }));
         }
       }
 

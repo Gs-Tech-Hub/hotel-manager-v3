@@ -22,6 +22,7 @@ interface Department {
   id: string;
   code: string;
   name: string;
+  metadata?: any;
 }
 
 interface EmployeeFormProps {
@@ -81,6 +82,44 @@ export function EmployeeForm({
   >([]);
 
   const isEditMode = !!employeeId;
+
+  const getRecommendedRoleCodesForDepartmentCode = (departmentCode?: string) => {
+    const code = (departmentCode || '').trim().toLowerCase();
+    const map: Record<string, string[]> = {
+      restaurant: ['kitchen_staff', 'pos_staff', 'inventory_staff', 'manager', 'staff', 'employee'],
+      bar: ['bar_staff', 'pos_staff', 'cashier', 'inventory_staff', 'manager', 'staff', 'employee'],
+      service: ['pos_staff', 'cashier', 'manager', 'staff', 'employee'],
+      reception: ['front_desk', 'customer_service', 'manager', 'staff', 'employee'],
+      housekeeping: ['housekeeping_staff', 'manager', 'staff', 'employee'],
+      games: ['games_staff', 'pos_staff', 'cashier', 'manager', 'staff', 'employee'],
+    };
+    return map[code] || [];
+  };
+
+  const getOrderedRolesForDepartment = (departmentId?: string) => {
+    const dept = departments.find((d) => d.id === departmentId);
+    const availableFromMetadata =
+      dept?.metadata &&
+      typeof dept.metadata === 'object' &&
+      Array.isArray((dept.metadata as any).availableRoleCodes)
+        ? ((dept.metadata as any).availableRoleCodes as string[]).filter(Boolean)
+        : [];
+
+    const recommended =
+      availableFromMetadata.length > 0
+        ? availableFromMetadata
+        : getRecommendedRoleCodesForDepartmentCode(dept?.code);
+
+    const rank = new Map<string, number>();
+    recommended.forEach((rc, idx) => rank.set(rc, idx));
+
+    return [...roles].sort((a, b) => {
+      const ra = rank.has(a.code) ? rank.get(a.code)! : Number.POSITIVE_INFINITY;
+      const rb = rank.has(b.code) ? rank.get(b.code)! : Number.POSITIVE_INFINITY;
+      if (ra !== rb) return ra - rb;
+      return a.name.localeCompare(b.name);
+    });
+  };
 
   // Load roles and departments on mount
   useEffect(() => {
@@ -625,7 +664,7 @@ export function EmployeeForm({
                           required
                         >
                           <option value="">-- Select a role --</option>
-                          {roles.map((role) => (
+                          {getOrderedRolesForDepartment(roleAssignment.departmentId).map((role) => (
                             <option key={role.id} value={role.id}>
                               {role.name} ({role.code})
                             </option>
