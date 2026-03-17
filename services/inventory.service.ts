@@ -464,13 +464,41 @@ export class InventoryItemService extends BaseService<IInventoryItem> {
         where: { orderHeaderId: orderId, status: 'confirmed' },
       });
 
-        for (const reservation of reservations) {
+      // Get restaurant department for DepartmentInventory tracking
+      const restaurantDept = await prisma.department.findFirst({
+        where: { code: 'restaurant' }
+      });
+
+      if (!restaurantDept) {
+        console.error('Restaurant department not found for inventory consumption');
+        return { success: false, message: 'Restaurant department not found' };
+      }
+
+      for (const reservation of reservations) {
         await prisma.$transaction(async (tx: any) => {
           // Deduct from inventory
           await tx.inventoryItem.update({
             where: { id: reservation.inventoryItemId },
             data: { quantity: { decrement: reservation.quantity } },
           });
+
+          // Update DepartmentInventory (authoritative stock source)
+          const deptInv = await tx.departmentInventory.findFirst({
+            where: {
+              inventoryItemId: reservation.inventoryItemId,
+              departmentId: restaurantDept.id,
+              sectionId: null
+            }
+          });
+
+          if (deptInv) {
+            await tx.departmentInventory.update({
+              where: { id: deptInv.id },
+              data: {
+                quantity: Math.max(0, deptInv.quantity - reservation.quantity)
+              }
+            });
+          }
 
           // Mark as consumed
           await (tx as any).inventoryReservation.update({
@@ -664,6 +692,12 @@ export class InventoryMovementService extends BaseService<IInventoryMovement> {
     reference?: string
   ): Promise<IInventoryMovement | null> {
     try {
+      // Validate quantity is non-zero
+      if (quantity === 0) {
+        console.error('Movement quantity cannot be zero');
+        return null;
+      }
+
       // Get the restaurant department
       const restaurantDept = await prisma.department.findFirst({
         where: { code: 'restaurant' },
@@ -674,19 +708,32 @@ export class InventoryMovementService extends BaseService<IInventoryMovement> {
         return null;
       }
 
+      // Normalize movement: ensure movementType and quantity sign are consistent
+      // - Positive quantity with 'in' = add stock
+      // - Positive quantity with 'out' = remove stock
+      // - Negative quantity automatically flips the type and uses absolute value
+      let normalizedType = movementType;
+      let normalizedQuantity = Math.abs(quantity);
+
+      if (quantity < 0) {
+        // Negative quantity means decrement - flip the type
+        normalizedType = (movementType === 'in' || movementType === 'adjustment') ? 'out' : 'in';
+        // Now use absolute value
+      }
+
       // Record the movement (for audit trail)
       const row = await prisma.inventoryMovement.create({
         data: {
-          movementType,
-          quantity,
+          movementType: normalizedType,
+          quantity: normalizedQuantity,
           reason,
           reference,
           inventoryItemId: itemId,
         },
       });
 
-      // Update DepartmentInventory based on movement type
-      const delta = movementType === 'in' || movementType === 'adjustment' ? quantity : -quantity;
+      // Update DepartmentInventory based on normalized movement type
+      const delta = normalizedType === 'in' || normalizedType === 'adjustment' ? normalizedQuantity : -normalizedQuantity;
       
       const existing = await prisma.departmentInventory.findFirst({
         where: {

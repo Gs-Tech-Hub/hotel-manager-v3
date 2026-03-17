@@ -62,7 +62,7 @@ export default function InventoryDetail(...args: any[]) {
 
   const handleEditClick = () => {
     if (item) {
-      setEditForm({ name: item.name, unitPrice: String(item.unitPrice || 0), quantity: String(item.quantity || 0) })
+      setEditForm({ name: item.name, unitPrice: String(item.unitPrice || 0), quantity: '' })
       setIsEditing(true)
       setEditError(null)
     }
@@ -84,7 +84,7 @@ export default function InventoryDetail(...args: any[]) {
         body: JSON.stringify({
           name: editForm.name,
           unitPrice: Number(editForm.unitPrice),
-          quantity: Number(editForm.quantity),
+          // Quantity must be changed through /api/inventory/movements only
         }),
       })
 
@@ -132,25 +132,28 @@ export default function InventoryDetail(...args: any[]) {
   const submitRestock = async (e: React.FormEvent) => {
     e.preventDefault()
     if (!item) return
-    if (!restockQty || Number(restockQty) <= 0) {
-      setError('Restock quantity must be greater than zero')
+    if (!restockQty || Number(restockQty) === 0) {
+      setError('Quantity must not be zero (positive to add stock, negative to reduce stock)')
       return
     }
 
     try {
-      // Prefer recording a movement for auditability
+      const quantity = Number(restockQty)
+      const movementType = quantity > 0 ? 'in' : 'out'
+      
+      // Record movement with signed quantity (positive/negative) or absolute value with type
       const res = await fetch(`/api/inventory/movements`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           itemId: id,
-          movementType: 'in',
-          quantity: Number(restockQty),
-          reason: 'Restock (admin)',
+          movementType: movementType,
+          quantity: Math.abs(quantity), // API expects positive value, type determines direction
+          reason: quantity > 0 ? 'Restock (admin)' : 'Stock reduction (admin)',
         }),
       })
 
-      if (!res.ok) throw new Error(`Failed to record restock (${res.status})`)
+      if (!res.ok) throw new Error(`Failed to record movement (${res.status})`)
       const json = await res.json()
       if (!json?.success) throw new Error(json?.error || 'Invalid response')
 
@@ -158,8 +161,8 @@ export default function InventoryDetail(...args: any[]) {
       await fetchItem()
       setRestockQty(0)
     } catch (err: any) {
-      console.error('Failed to restock', err)
-      setError(err?.message || 'Failed to restock')
+      console.error('Failed to process inventory adjustment', err)
+      setError(err?.message || 'Failed to process adjustment')
     }
   }
 
@@ -201,8 +204,9 @@ export default function InventoryDetail(...args: any[]) {
         <div className="border rounded p-4 bg-white">
           <form onSubmit={submitRestock} className="space-y-2">
             <div>
-              <label className="block text-sm">Restock quantity</label>
-              <input type="number" value={restockQty} onChange={(e) => setRestockQty(Number(e.target.value))} className="border px-2 py-1 w-full" />
+              <label className="block text-sm"><strong>Adjust Stock Quantity</strong></label>
+              <p className="text-xs text-gray-600 mb-2">Enter positive number to add, negative to reduce (e.g., -5 to decrease by 5)</p>
+              <input type="number" value={restockQty} onChange={(e) => setRestockQty(Number(e.target.value))} className="border px-2 py-1 w-full" placeholder="Enter quantity change" />
             </div>
             <div className="flex gap-2">
               <button type="submit" className="px-3 py-1 bg-green-600 text-white rounded">Apply</button>
@@ -235,15 +239,7 @@ export default function InventoryDetail(...args: any[]) {
                 className="border px-2 py-1 w-full rounded"
               />
             </div>
-            <div>
-              <label className="block text-sm font-medium">Quantity</label>
-              <input
-              type="number"
-              value={editForm.quantity}
-              onChange={(e) => setEditForm({ ...editForm, quantity: e.target.value })}
-              className="border px-2 py-1 w-full rounded"
-            />  
-            </div>
+            <p className="text-xs text-gray-500 italics">To adjust stock quantity, use the &quot;Adjust Stock Quantity&quot; section below.</p>
             <div className="flex gap-2">
               <button type="submit" disabled={editLoading} className="px-3 py-1 bg-blue-600 text-white rounded text-sm hover:bg-blue-700 disabled:opacity-50">
                 {editLoading ? 'Saving...' : 'Save'}

@@ -90,10 +90,18 @@ export async function POST(req: NextRequest) {
       );
     }
 
+    // Validate quantity is a non-zero number (can be positive for restock/in, negative for decrements/out)
+    if (typeof body.quantity !== 'number' || body.quantity === 0) {
+      return sendError(
+        ErrorCodes.BAD_REQUEST,
+        'quantity must be non-zero: positive for restock (increase), negative for reduction (decrease)'
+      );
+    }
+
     const movement = await inventoryMovementService.recordMovement(
       body.itemId,
       body.movementType,
-      body.quantity,
+      body.quantity, // Can be positive or negative
       body.reason,
       body.reference
     );
@@ -105,7 +113,7 @@ export async function POST(req: NextRequest) {
       );
     }
 
-    return sendSuccess(movement, 'Movement recorded successfully', 201);
+    return sendSuccess(movement, 'Movement recorded successfully (positive increases stock, negative decreases stock)', 201);
   } catch (error) {
     const message = error instanceof Error ? error.message : 'Failed to record movement';
     return sendError(ErrorCodes.INTERNAL_ERROR, message);

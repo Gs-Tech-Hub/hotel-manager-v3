@@ -9,6 +9,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import { prisma } from '@/lib/auth/prisma'
 import { extractUserContext, loadUserWithRoles, hasAnyRole } from '@/lib/user-context'
 import { successResponse, errorResponse, ErrorCodes } from '@/lib/api-response'
+import { inventoryMovementService } from '@/services/inventory.service'
 
 export async function POST(
   request: NextRequest,
@@ -63,6 +64,40 @@ export async function POST(
         quantity: newQuantity
       }
     })
+
+    // Get restaurant department for DepartmentInventory tracking
+    const restaurantDept = await prisma.department.findFirst({
+      where: { code: 'restaurant' }
+    })
+
+    // Update DepartmentInventory (authoritative stock source)
+    if (restaurantDept) {
+      const existingDeptInv = await prisma.departmentInventory.findFirst({
+        where: {
+          inventoryItemId: id,
+          departmentId: restaurantDept.id,
+          sectionId: null
+        }
+      })
+
+      if (existingDeptInv) {
+        await prisma.departmentInventory.update({
+          where: { id: existingDeptInv.id },
+          data: {
+            quantity: Math.max(0, existingDeptInv.quantity - quantity)
+          }
+        })
+      }
+
+      // Log inventory movement for audit trail
+      await inventoryMovementService.create({
+        inventoryItemId: id,
+        movementType: 'out',
+        quantity: quantity,
+        reason: `Manual inventory reduction by admin`,
+        reference: `reduction-${ctx.userId}`
+      })
+    }
 
     return NextResponse.json(
       successResponse({

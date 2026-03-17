@@ -109,7 +109,15 @@ export async function PUT(
 
     const body = await req.json();
 
-    const item = await inventoryItemService.update(id, body);
+    // Only allow updating name and unitPrice through PUT
+    // Quantity changes must go through /api/inventory/movements for audit trail
+    const updateData: any = {};
+    if (body.name !== undefined) updateData.name = body.name;
+    if (body.unitPrice !== undefined) updateData.unitPrice = body.unitPrice;
+    // Explicitly ignore quantity field if provided
+    delete body.quantity;
+
+    const item = await inventoryItemService.update(id, updateData);
 
     if (!item) {
       return sendError(
@@ -196,7 +204,7 @@ export async function PATCH(
     }
 
     const body = await req.json();
-    const { name, unitPrice, quantity } = body;
+    const { name, unitPrice } = body;
 
     // Get current item
     const currentItem = await inventoryItemService.findById(id);
@@ -205,7 +213,7 @@ export async function PATCH(
       return sendError(ErrorCodes.NOT_FOUND, 'Inventory item not found');
     }
 
-    // Build update data for item metadata
+    // Build update data for item metadata only (name, unitPrice)
     const updateData: any = {};
     if (name !== undefined) updateData.name = name;
     if (unitPrice !== undefined) updateData.unitPrice = unitPrice;
@@ -215,59 +223,6 @@ export async function PATCH(
 
     if (!updated) {
       return sendError(ErrorCodes.INTERNAL_ERROR, 'Failed to update inventory item');
-    }
-
-    // Handle quantity update separately if provided
-    if (quantity !== undefined && quantity !== currentItem.quantity) {
-      // Get or create restaurant department for inventory tracking
-      const restaurantDept = await prisma.department.findFirst({
-        where: { code: 'restaurant' }
-      });
-
-      if (!restaurantDept) {
-        return sendError(ErrorCodes.INTERNAL_ERROR, 'Restaurant department not found');
-      }
-
-      // Calculate quantity difference for movement tracking
-      const quantityDifference = quantity - currentItem.quantity;
-
-      // Find existing DepartmentInventory record
-      const existingDeptInv = await prisma.departmentInventory.findFirst({
-        where: {
-          inventoryItemId: id,
-          departmentId: restaurantDept.id,
-          sectionId: null
-        }
-      });
-
-      // Update or create DepartmentInventory (the authoritative source)
-      if (existingDeptInv) {
-        await prisma.departmentInventory.update({
-          where: { id: existingDeptInv.id },
-          data: { quantity: quantity }
-        });
-      } else {
-        await prisma.departmentInventory.create({
-          data: {
-            inventoryItemId: id,
-            departmentId: restaurantDept.id,
-            quantity: quantity,
-            sectionId: null
-          }
-        });
-      }
-
-      // Log inventory movement for audit trail
-      if (quantityDifference !== 0) {
-        const movementType = quantityDifference > 0 ? 'in' : 'out';
-        await inventoryMovementService.create({
-          inventoryItemId: id,
-          movementType: movementType,
-          quantity: Math.abs(quantityDifference),
-          reason: `Manual adjustment: ${currentItem.quantity} → ${quantity}`,
-          reference: `admin-edit-${ctx.userId}`
-        });
-      }
     }
 
     return sendSuccess(updated, 'Product updated successfully');
