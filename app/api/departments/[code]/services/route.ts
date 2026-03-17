@@ -70,7 +70,10 @@ export async function GET(
 
     // Fetch services
     const services = await prisma.serviceInventory.findMany({
-      where: whereClause,
+      where: {
+        ...whereClause,
+        isActive: true,
+      },
       include: {
         section: {
           select: { id: true, name: true },

@@ -150,7 +150,10 @@ export class SectionService {
       const extras = await prisma.extra.findMany({
         skip,
         take: pageSize,
-        where: search ? { name: { contains: search, mode: 'insensitive' } } : {},
+        where: {
+          isActive: true,
+          ...(search ? { name: { contains: search, mode: 'insensitive' } } : {}),
+        },
         orderBy: { name: 'asc' }
       })
       allItems.push(...extras.map((e: any) => ({
@@ -308,7 +311,7 @@ export class SectionService {
 
     // Extras/Services - available to any department
     if (type === 'extra') {
-      const where: any = {}
+      const where: any = { isActive: true }
       if (search) where.name = { contains: search, mode: 'insensitive' }
       const [items, total] = await Promise.all([
         prisma.extra.findMany({ where, skip, take: pageSize, orderBy: { name: 'asc' } }),
@@ -335,6 +338,7 @@ export class SectionService {
         const services = await prisma.serviceInventory.findMany({
           where: {
             sectionId: resolvedSectionId,
+            isActive: true,
             ...(search ? { name: { contains: search, mode: 'insensitive' } } : {}),
           },
           skip,
@@ -345,6 +349,7 @@ export class SectionService {
         const total = await prisma.serviceInventory.count({
           where: {
             sectionId: resolvedSectionId,
+            isActive: true,
             ...(search ? { name: { contains: search, mode: 'insensitive' } } : {}),
           },
         })
@@ -378,6 +383,7 @@ export class SectionService {
         where: {
           departmentId: dept.id,
           sectionId: null, // Only department-level services
+          isActive: true,
           ...(search ? { name: { contains: search, mode: 'insensitive' } } : {}),
         },
         skip,
@@ -389,6 +395,7 @@ export class SectionService {
         where: {
           departmentId: dept.id,
           sectionId: null,
+          isActive: true,
           ...(search ? { name: { contains: search, mode: 'insensitive' } } : {}),
         },
       })
@@ -419,7 +426,7 @@ export class SectionService {
 
     // Generic inventory fallback - includes services if items are empty
     {
-      const where: any = {}
+      const where: any = { isActive: true }
       if (search) where.name = { contains: search, mode: 'insensitive' }
 
       const deptToCategoryMap: Record<string, string> = {
@@ -479,7 +486,7 @@ export class SectionService {
 
           // Fetch the actual inventory items (no pagination - IDs already paginated)
           items = await prisma.inventoryItem.findMany({
-            where: { ...where, id: { in: inventoryItemIds } },
+            where: { ...where, isActive: true, id: { in: inventoryItemIds } },
             orderBy: { name: 'asc' },
           })
           total = totalInSection

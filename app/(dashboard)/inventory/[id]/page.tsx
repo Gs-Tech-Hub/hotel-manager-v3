@@ -5,6 +5,7 @@ import { useRouter } from 'next/navigation'
 import { getDisplayUnit, formatQuantityWithUnit } from '@/lib/unit-mapper'
 import { formatPrice } from '@/lib/price'
 import { Trash2, Edit2 } from 'lucide-react'
+import { formatTablePrice } from '@/lib/formatters'
 
 type Movement = {
   id: string
@@ -35,7 +36,7 @@ export default function InventoryDetail(...args: any[]) {
   const [error, setError] = useState<string | null>(null)
   const [restockQty, setRestockQty] = useState<number>(0)
   const [isEditing, setIsEditing] = useState(false)
-  const [editForm, setEditForm] = useState({ name: '', unitPrice: '' })
+  const [editForm, setEditForm] = useState({ name: '', unitPrice: '', quantity: '' })
   const [editLoading, setEditLoading] = useState(false)
   const [editError, setEditError] = useState<string | null>(null)
   const router = useRouter()
@@ -61,7 +62,7 @@ export default function InventoryDetail(...args: any[]) {
 
   const handleEditClick = () => {
     if (item) {
-      setEditForm({ name: item.name, unitPrice: String(item.unitPrice || 0) })
+      setEditForm({ name: item.name, unitPrice: String(item.unitPrice || 0), quantity: String(item.quantity || 0) })
       setIsEditing(true)
       setEditError(null)
     }
@@ -83,6 +84,7 @@ export default function InventoryDetail(...args: any[]) {
         body: JSON.stringify({
           name: editForm.name,
           unitPrice: Number(editForm.unitPrice),
+          quantity: Number(editForm.quantity),
         }),
       })
 
@@ -193,7 +195,7 @@ export default function InventoryDetail(...args: any[]) {
           <div><strong>SKU:</strong> {item.sku}</div>
           <div><strong>Category:</strong> {item.category}</div>
           <div><strong>Quantity:</strong> {formatQuantityWithUnit(item.quantity, getDisplayUnit(item.category, item.itemType))}</div>
-          <div><strong>Unit price:</strong> {formatPrice(item.unitPrice)}</div>
+          <div><strong>Unit price:</strong> {formatTablePrice(item.unitPrice)}</div>
         </div>
 
         <div className="border rounded p-4 bg-white">
@@ -232,6 +234,15 @@ export default function InventoryDetail(...args: any[]) {
                 onChange={(e) => setEditForm({ ...editForm, unitPrice: e.target.value })}
                 className="border px-2 py-1 w-full rounded"
               />
+            </div>
+            <div>
+              <label className="block text-sm font-medium">Quantity</label>
+              <input
+              type="number"
+              value={editForm.quantity}
+              onChange={(e) => setEditForm({ ...editForm, quantity: e.target.value })}
+              className="border px-2 py-1 w-full rounded"
+            />  
             </div>
             <div className="flex gap-2">
               <button type="submit" disabled={editLoading} className="px-3 py-1 bg-blue-600 text-white rounded text-sm hover:bg-blue-700 disabled:opacity-50">

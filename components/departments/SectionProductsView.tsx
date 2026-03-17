@@ -1,7 +1,4 @@
 "use client"
-
-import { useState, useEffect } from 'react'
-
 type SectionProductsViewProps = {
   code: string
   departmentCode: string
@@ -11,10 +8,6 @@ type SectionProductsViewProps = {
 }
 
 export default function SectionProductsView({
-  code,
-  departmentCode,
-  defaultFromDate,
-  defaultToDate,
   children,
 }: SectionProductsViewProps) {
   return (

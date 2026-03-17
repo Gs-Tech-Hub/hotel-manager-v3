@@ -140,8 +140,8 @@ export async function DELETE(
     }
 
     const userWithRoles = await loadUserWithRoles(ctx.userId);
-    if (!userWithRoles || !hasAnyRole(userWithRoles, ["admin", "manager"])) {
-      return NextResponse.json(errorResponse(ErrorCodes.FORBIDDEN, "Insufficient permissions"), { status: 403 });
+    if (!userWithRoles || !hasAnyRole(userWithRoles, ["admin"])) {
+      return NextResponse.json(errorResponse(ErrorCodes.FORBIDDEN, "Only admin can delete services"), { status: 403 });
     }
 
     const { id } = await params;

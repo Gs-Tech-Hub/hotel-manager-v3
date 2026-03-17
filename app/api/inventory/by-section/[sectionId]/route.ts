@@ -68,6 +68,7 @@ export async function GET(
     if (['all', 'services'].includes(typeFilter)) {
       const services = await prisma.serviceInventory.findMany({
         where: {
+          isActive: true,
           sectionId: sectionId,
           departmentId: section.departmentId
         },

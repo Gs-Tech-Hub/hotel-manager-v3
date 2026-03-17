@@ -31,6 +31,7 @@ export async function GET(
     // Get services: section-scoped first, then department-wide
     const services = await prisma.serviceInventory.findMany({
       where: {
+        isActive: true,
         departmentId: section.departmentId,
         OR: [
           { sectionId: sectionId },      // Section-specific

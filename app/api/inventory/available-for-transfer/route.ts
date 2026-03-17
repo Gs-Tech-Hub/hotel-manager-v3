@@ -61,6 +61,7 @@ export async function GET(request: NextRequest) {
     // Get all services in all sections
     const services = await prisma.serviceInventory.findMany({
       where: {
+        isActive: true,
         sectionId: { in: sectionIds }
       },
       include: {

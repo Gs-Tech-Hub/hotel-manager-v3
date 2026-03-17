@@ -4,6 +4,7 @@ import Link from 'next/link'
 import { formatTablePrice } from '@/lib/formatters'
 import { getDisplayUnit, formatQuantityWithUnit } from '@/lib/unit-mapper'
 import { useEffect, useState } from 'react'
+import { useAuth } from '@/components/auth-context'
 
 type Props = {
   products?: any[] | null
@@ -16,6 +17,9 @@ type Props = {
 }
 
 export default function SectionProductsTable({ products: initialProducts, departmentCode, sectionCode, pageSize = 20, onDateChange, dateFromFilter, dateToFilter }: Props) {
+  const { user } = useAuth()
+  const isAdmin = user?.userType === 'admin' || user?.roles?.includes('admin')
+
   const [products, setProducts] = useState<any[] | null>(initialProducts ?? null)
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
@@ -49,8 +53,8 @@ export default function SectionProductsTable({ products: initialProducts, depart
     const ps = Math.min(MAX_PAGE_SIZE, Math.max(5, pageSizeState || 20))
 
     const fetchProducts = async () => {
-      // If we have initial products AND no date filtering, use them
-      if (initialProducts && !fromDate && !toDate) {
+      // Only use initialProducts if provided and no filtering/refresh needed
+      if (initialProducts && !fromDate && !toDate && mutateTick === 0) {
         setProducts(initialProducts)
         setTotalCount(initialProducts.length)
         setTotalPages(Math.max(1, Math.ceil(initialProducts.length / ps)))
@@ -112,6 +116,9 @@ export default function SectionProductsTable({ products: initialProducts, depart
       const res = await fetch(`/api/services/${encodeURIComponent(serviceId)}`, { method: 'DELETE' })
       const j = await res.json().catch(() => null)
       if (!res.ok || !j?.success) {
+        if (res.status === 403) {
+          throw new Error('Only admin can delete services')
+        }
         throw new Error(j?.error?.message || 'Failed to delete service')
       }
       setMutateTick((v) => v + 1)
@@ -120,48 +127,53 @@ export default function SectionProductsTable({ products: initialProducts, depart
     }
   }
 
-  const editService = async (p: any) => {
-    const nextName = prompt('Service name', p?.name || '')?.trim()
-    if (!nextName) return
-
-    const model = p?.pricingModel as 'per_count' | 'per_time' | undefined
-    let nextPrice: number | null = null
-    if (model === 'per_count') {
-      const v = prompt('Price per count (e.g. 5)', String((p?.unitPrice ?? 0) / 100))
-      if (v === null) return
-      nextPrice = Number(v)
-      if (!Number.isFinite(nextPrice) || nextPrice <= 0) {
-        alert('Invalid price')
-        return
-      }
-    } else if (model === 'per_time') {
-      const v = prompt('Price per minute (e.g. 0.5)', String((p?.unitPrice ?? 0) / 100))
-      if (v === null) return
-      nextPrice = Number(v)
-      if (!Number.isFinite(nextPrice) || nextPrice <= 0) {
-        alert('Invalid price')
-        return
-      }
-    }
-
+  const deleteProduct = async (productId: string, productName: string) => {
+    if (!confirm(`Delete ${productName} from inventory?`)) return
     try {
-      const payload: any = { name: nextName }
-      if (model === 'per_count') payload.pricePerCount = nextPrice
-      if (model === 'per_time') payload.pricePerMinute = nextPrice
-      const res = await fetch(`/api/services/${encodeURIComponent(p.id)}`, {
-        method: 'PATCH',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(payload),
-      })
+      const res = await fetch(`/api/inventory/products/${encodeURIComponent(productId)}`, { method: 'DELETE' })
       const j = await res.json().catch(() => null)
       if (!res.ok || !j?.success) {
-        throw new Error(j?.error?.message || 'Failed to update service')
+        if (res.status === 403) {
+          throw new Error('Only admin can delete products')
+        }
+        throw new Error(j?.error?.message || 'Failed to delete product')
       }
       setMutateTick((v) => v + 1)
     } catch (e: any) {
-      alert(e?.message || 'Failed to update service')
+      alert(e?.message || 'Failed to delete product')
     }
   }
+
+  const reduceQuantity = async (productId: string, productName: string) => {
+    const amount = prompt(`Reduce quantity for ${productName} by how much?`, '1')
+    if (!amount) return
+
+    const quantity = Number(amount)
+    if (!Number.isFinite(quantity) || quantity <= 0) {
+      alert('Please enter a valid positive number')
+      return
+    }
+
+    try {
+      const res = await fetch(`/api/inventory/products/${encodeURIComponent(productId)}/reduce`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ quantity }),
+      })
+      const j = await res.json().catch(() => null)
+      if (!res.ok || !j?.success) {
+        if (res.status === 403) {
+          throw new Error('Only admin can reduce inventory')
+        }
+        throw new Error(j?.error?.message || 'Failed to reduce quantity')
+      }
+      setMutateTick((v) => v + 1)
+    } catch (e: any) {
+      alert(e?.message || 'Failed to reduce quantity')
+    }
+  }
+
+
 
   // Debug: log prices
   useEffect(() => {
@@ -201,7 +213,7 @@ export default function SectionProductsTable({ products: initialProducts, depart
             return (
               <tr 
                 key={p.id} 
-                className={`border-t hover:bg-muted/50 ${
+                className={`border-t hover:bg-muted/50 group ${
                   isService ? 'bg-gradient-to-r from-purple-50/50 to-pink-50/50' : ''
                 }`}
               >
@@ -237,26 +249,37 @@ export default function SectionProductsTable({ products: initialProducts, depart
                 <td className="text-right py-2 px-2">
                   {isService ? '—' : (p.pendingQuantity ?? 0)}
                 </td>
-                <td className="text-right py-2 px-2">
+                <td className="text-right py-2 px-2 opacity-0 group-hover:opacity-100 transition-opacity">
                   {isService ? (
-                    <div className="flex items-center justify-end gap-2">
+                    <button
+                      type="button"
+                      onClick={() => deleteService(p.id)}
+                      className="text-xs text-gray-500 hover:text-red-600"
+                      title="Delete service"
+                    >
+                      ✕
+                    </button>
+                  ) : isAdmin ? (
+                    <div className="flex items-center justify-end gap-1">
                       <button
                         type="button"
-                        onClick={() => editService(p)}
-                        className="text-xs text-sky-700 hover:text-sky-900"
+                        onClick={() => reduceQuantity(p.id, p.name)}
+                        className="text-xs text-gray-500 hover:text-blue-600"
+                        title="Reduce quantity"
                       >
-                        Edit
+                        −
                       </button>
                       <button
                         type="button"
-                        onClick={() => deleteService(p.id)}
-                        className="text-xs text-red-600 hover:text-red-800"
+                        onClick={() => deleteProduct(p.id, p.name)}
+                        className="text-xs text-gray-500 hover:text-red-600"
+                        title="Delete product"
                       >
-                        Delete
+                        ✕
                       </button>
                     </div>
                   ) : (
-                    <Link href={p.posLink || `/inventory/${p.inventoryId || p.id}`} prefetch={false} className="text-sky-600 hover:text-sky-700 text-xs">View</Link>
+                    <span className="text-xs text-gray-300">—</span>
                   )}
                 </td>
               </tr>

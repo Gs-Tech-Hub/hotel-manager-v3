@@ -13,7 +13,7 @@
  * Delete an inventory item
  */
 
-import { NextRequest } from 'next/server';
+import { NextRequest, NextResponse } from 'next/server';
 import { inventoryItemService, inventoryMovementService } from '@/services/inventory.service';
 import { sendSuccess, sendError } from '@/lib/api-handler';
 import { ErrorCodes } from '@/lib/api-response';
@@ -167,6 +167,112 @@ export async function DELETE(
     return sendSuccess(null, 'Inventory item deleted successfully');
   } catch (error) {
     const message = error instanceof Error ? error.message : 'Failed to delete inventory item';
+    return sendError(ErrorCodes.INTERNAL_ERROR, message);
+  }
+}
+
+export async function PATCH(
+  req: NextRequest,
+  { params }: { params: Promise<{ id: string }> }
+) {
+  try {
+    const { id } = await params;
+    
+    // Check authentication
+    const ctx = await extractUserContext(req);
+    if (!ctx.userId) {
+      return sendError(ErrorCodes.UNAUTHORIZED, 'Not authenticated');
+    }
+
+    // Load user roles
+    const userWithRoles = await loadUserWithRoles(ctx.userId);
+    if (!userWithRoles) {
+      return sendError(ErrorCodes.FORBIDDEN, 'User not found');
+    }
+
+    // Admin-only for editing
+    if (!userWithRoles.isAdmin) {
+      return sendError(ErrorCodes.FORBIDDEN, 'Only admin can edit products');
+    }
+
+    const body = await req.json();
+    const { name, unitPrice, quantity } = body;
+
+    // Get current item
+    const currentItem = await inventoryItemService.findById(id);
+
+    if (!currentItem) {
+      return sendError(ErrorCodes.NOT_FOUND, 'Inventory item not found');
+    }
+
+    // Build update data for item metadata
+    const updateData: any = {};
+    if (name !== undefined) updateData.name = name;
+    if (unitPrice !== undefined) updateData.unitPrice = unitPrice;
+
+    // Update item metadata
+    const updated = await inventoryItemService.update(id, updateData);
+
+    if (!updated) {
+      return sendError(ErrorCodes.INTERNAL_ERROR, 'Failed to update inventory item');
+    }
+
+    // Handle quantity update separately if provided
+    if (quantity !== undefined && quantity !== currentItem.quantity) {
+      // Get or create restaurant department for inventory tracking
+      const restaurantDept = await prisma.department.findFirst({
+        where: { code: 'restaurant' }
+      });
+
+      if (!restaurantDept) {
+        return sendError(ErrorCodes.INTERNAL_ERROR, 'Restaurant department not found');
+      }
+
+      // Calculate quantity difference for movement tracking
+      const quantityDifference = quantity - currentItem.quantity;
+
+      // Find existing DepartmentInventory record
+      const existingDeptInv = await prisma.departmentInventory.findFirst({
+        where: {
+          inventoryItemId: id,
+          departmentId: restaurantDept.id,
+          sectionId: null
+        }
+      });
+
+      // Update or create DepartmentInventory (the authoritative source)
+      if (existingDeptInv) {
+        await prisma.departmentInventory.update({
+          where: { id: existingDeptInv.id },
+          data: { quantity: quantity }
+        });
+      } else {
+        await prisma.departmentInventory.create({
+          data: {
+            inventoryItemId: id,
+            departmentId: restaurantDept.id,
+            quantity: quantity,
+            sectionId: null
+          }
+        });
+      }
+
+      // Log inventory movement for audit trail
+      if (quantityDifference !== 0) {
+        const movementType = quantityDifference > 0 ? 'in' : 'out';
+        await inventoryMovementService.create({
+          inventoryItemId: id,
+          movementType: movementType,
+          quantity: Math.abs(quantityDifference),
+          reason: `Manual adjustment: ${currentItem.quantity} → ${quantity}`,
+          reference: `admin-edit-${ctx.userId}`
+        });
+      }
+    }
+
+    return sendSuccess(updated, 'Product updated successfully');
+  } catch (error) {
+    const message = error instanceof Error ? error.message : 'Failed to update product';
     return sendError(ErrorCodes.INTERNAL_ERROR, message);
   }
 }

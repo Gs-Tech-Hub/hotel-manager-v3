@@ -120,13 +120,14 @@ export async function PATCH(
     const body = await request.json();
     const { action, gameCount, status } = body;
 
-    // Decrement is admin-only
-    if (action === 'decrement_game') {
+    // Admin-only actions: decrement game count or cancel session
+    if (action === 'decrement_game' || action === 'cancel_session') {
       const userWithRoles = await loadUserWithRoles(ctx.userId);
-      const isAdmin = userWithRoles?.userType === 'admin' || userWithRoles?.userRoles?.includes('admin');
+      const isAdmin = userWithRoles?.userType === 'admin' || userWithRoles?.userRoles?.some((r: any) => r.roleCode === 'admin');
       if (!isAdmin) {
+        const actionLabel = action === 'decrement_game' ? 'decrement game count' : 'cancel game sessions';
         return NextResponse.json(
-          errorResponse(ErrorCodes.FORBIDDEN, 'Only admin can decrement game count'),
+          errorResponse(ErrorCodes.FORBIDDEN, `Only admin can ${actionLabel}`),
           { status: 403 }
         );
       }
@@ -344,6 +345,20 @@ export async function PATCH(
         where: { id },
         data: {
           status: 'completed',
+          endedAt: new Date(),
+        },
+        include: {
+          customer: true,
+          gameType: true,
+          orderHeader: true,
+        },
+      });
+    } else if (action === 'cancel_session') {
+      // Cancel session (admin-only) - delete or mark cancelled
+      updatedSession = await prisma.gameSession.update({
+        where: { id },
+        data: {
+          status: 'cancelled',
           endedAt: new Date(),
         },
         include: {

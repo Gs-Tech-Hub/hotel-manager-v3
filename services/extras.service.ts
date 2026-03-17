@@ -145,15 +145,21 @@ export class ExtrasService extends BaseService<any> {
   }
 
   /**
-   * Get single extra by ID
+   * Get single extra by ID (global registry)
+   * Includes department allocations via departmentExtras
    */
   async getExtra(extraId: string) {
     try {
       const extra = await prisma.extra.findUnique({
         where: { id: extraId },
         include: {
-          departmentSection: true,
-          product: true
+          product: true,
+          departmentExtras: {
+            include: {
+              department: true,
+              section: true
+            }
+          }
         }
       });
 
@@ -168,14 +174,15 @@ export class ExtrasService extends BaseService<any> {
   }
 
   /**
-   * Update an extra
+   * Update an extra (global registry)
+   * Only updates core extra properties, not department allocations
+   * Use DepartmentExtrasService or /api/extras/transfer for allocation changes
    */
   async updateExtra(extraId: string, data: Partial<{
     name: string;
     description: string;
     unit: string;
     price: number;
-    departmentSectionId: string;
     isActive: boolean;
   }>) {
     try {
@@ -192,22 +199,17 @@ export class ExtrasService extends BaseService<any> {
         data.price = normalizedPrice;
       }
 
-      // Validate departmentSectionId if provided
-      if (data.departmentSectionId) {
-        const section = await prisma.departmentSection.findUnique({
-          where: { id: data.departmentSectionId }
-        });
-        if (!section) {
-          return errorResponse(ErrorCodes.NOT_FOUND, 'Department section not found');
-        }
-      }
-
       const updated = await prisma.extra.update({
         where: { id: extraId },
         data,
         include: {
-          departmentSection: true,
-          product: true
+          product: true,
+          departmentExtras: {
+            include: {
+              department: true,
+              section: true
+            }
+          }
         }
       });
 
@@ -218,7 +220,8 @@ export class ExtrasService extends BaseService<any> {
   }
 
   /**
-   * Delete an extra (soft delete via isActive)
+   * Delete an extra (soft delete via isActive) from global registry
+   * Removes all department allocations when deactivated
    */
   async deleteExtra(extraId: string) {
     try {
@@ -231,8 +234,13 @@ export class ExtrasService extends BaseService<any> {
         where: { id: extraId },
         data: { isActive: false },
         include: {
-          departmentSection: true,
-          product: true
+          product: true,
+          departmentExtras: {
+            include: {
+              department: true,
+              section: true
+            }
+          }
         }
       });
 
