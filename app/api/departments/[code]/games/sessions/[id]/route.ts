@@ -2,7 +2,8 @@ import { NextRequest, NextResponse } from 'next/server';
 import { Decimal } from '@prisma/client/runtime/library';
 import { prisma } from '@/lib/auth/prisma';
 import { successResponse, errorResponse, ErrorCodes } from '@/lib/api-response';
-import { extractUserContext } from '@/lib/user-context';
+import { extractUserContext, loadUserWithRoles } from '@/lib/user-context';
+import { isGamesStaffForDepartment } from '@/lib/auth/games-access';
 
 /**
  * GET /api/departments/[code]/games/sessions/[id]
@@ -32,6 +33,15 @@ export async function GET(
       return NextResponse.json(
         errorResponse(ErrorCodes.NOT_FOUND, 'Department not found'),
         { status: 404 }
+      );
+    }
+
+    // Games access is department-scoped: only games_staff for this department
+    const canAccessGames = await isGamesStaffForDepartment(ctx.userId, department.id);
+    if (!canAccessGames) {
+      return NextResponse.json(
+        errorResponse(ErrorCodes.FORBIDDEN, 'Games access is restricted to Games department users'),
+        { status: 403 }
       );
     }
 
@@ -98,8 +108,29 @@ export async function PATCH(
       );
     }
 
+    // Games access is department-scoped: only games_staff for this department
+    const canAccessGames = await isGamesStaffForDepartment(ctx.userId, department.id);
+    if (!canAccessGames) {
+      return NextResponse.json(
+        errorResponse(ErrorCodes.FORBIDDEN, 'Games access is restricted to Games department users'),
+        { status: 403 }
+      );
+    }
+
     const body = await request.json();
     const { action, gameCount, status } = body;
+
+    // Decrement is admin-only
+    if (action === 'decrement_game') {
+      const userWithRoles = await loadUserWithRoles(ctx.userId);
+      const isAdmin = userWithRoles?.userType === 'admin' || userWithRoles?.userRoles?.includes('admin');
+      if (!isAdmin) {
+        return NextResponse.json(
+          errorResponse(ErrorCodes.FORBIDDEN, 'Only admin can decrement game count'),
+          { status: 403 }
+        );
+      }
+    }
 
     // Get the session
     const session = await prisma.gameSession.findFirst({
@@ -207,6 +238,95 @@ export async function PATCH(
           });
 
           // Update fulfillment record with new quantity
+          await prisma.orderFulfillment.updateMany({
+            where: {
+              orderLineId: orderLine.id,
+              status: 'fulfilled',
+            },
+            data: {
+              fulfilledQuantity: newGameCount,
+            },
+          });
+        }
+      }
+    } else if (action === 'decrement_game') {
+      // Decrement game count (clamp at 1)
+      const newGameCount = Math.max(1, session.gameCount - 1);
+
+      // Calculate new price based on service pricing model
+      let newTotalAmount = new Decimal(session.totalAmount || 0);
+      if (session.service) {
+        if (session.service.pricingModel === 'per_count' && session.service.pricePerCount) {
+          newTotalAmount = new Decimal(session.service.pricePerCount).times(newGameCount);
+        } else if (session.service.pricingModel === 'per_time' && session.service.pricePerMinute) {
+          const minutesPerGame = 15;
+          const totalMinutes = newGameCount * minutesPerGame;
+          newTotalAmount = new Decimal(session.service.pricePerMinute).times(totalMinutes);
+        }
+      }
+
+      updatedSession = await prisma.gameSession.update({
+        where: { id },
+        data: {
+          gameCount: newGameCount,
+          totalAmount: newTotalAmount,
+        },
+        include: {
+          customer: true,
+          gameType: true,
+          service: true,
+          section: true,
+        },
+      });
+
+      // Update associated order header if exists
+      const orderHeader = await prisma.orderHeader.findFirst({
+        where: {
+          customerId: session.customerId,
+          notes: { contains: 'Game session started' },
+        },
+      });
+
+      if (orderHeader) {
+        const totalInCents = Math.round(newTotalAmount.toNumber() * 100);
+
+        // Recalculate tax
+        let taxRate = 0;
+        try {
+          const taxSettings = await (prisma as any).taxSettings.findFirst();
+          if (taxSettings) {
+            taxRate = taxSettings.taxRate ?? 0;
+          }
+        } catch (err) {
+          console.warn('TaxSettings fetch failed, using default tax rate');
+        }
+
+        const taxCents = Math.round(totalInCents * (taxRate / 100));
+        const finalTotalCents = totalInCents + taxCents;
+
+        await prisma.orderHeader.update({
+          where: { id: orderHeader.id },
+          data: {
+            subtotal: totalInCents,
+            tax: taxCents,
+            total: finalTotalCents,
+          },
+        });
+
+        const orderLine = await prisma.orderLine.findFirst({
+          where: { orderHeaderId: orderHeader.id },
+        });
+
+        if (orderLine) {
+          await prisma.orderLine.update({
+            where: { id: orderLine.id },
+            data: {
+              unitPrice: totalInCents,
+              lineTotal: totalInCents,
+              quantity: newGameCount,
+            },
+          });
+
           await prisma.orderFulfillment.updateMany({
             where: {
               orderLineId: orderLine.id,

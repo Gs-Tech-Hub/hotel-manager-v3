@@ -186,6 +186,23 @@ export class TransferService {
               validationError = `Service does not belong to source department`
               break
             }
+
+            // Destination duplicate check (we CLONE services into destination scope)
+            const toSectionId = (toDept as any).isSection ? (toDept as any).id : null
+            const targetDeptId = (toDept as any).isSection ? (toDept as any).parentDeptId : toDept.id
+            const existingInDest = await prisma.serviceInventory.findFirst({
+              where: {
+                name: service.name,
+                departmentId: targetDeptId,
+                sectionId: toSectionId,
+                isActive: true,
+              },
+              select: { id: true },
+            })
+            if (existingInDest) {
+              validationError = `Service already exists in destination`
+              break
+            }
           } else {
             // For drinks and inventory, use stockService (which properly checks department-level stock)
             const check = await stockService.checkAvailability(it.productType, it.productId, transfer.fromDepartmentId, it.quantity)
@@ -214,7 +231,7 @@ export class TransferService {
 
         for (const it of transfer.items) {
           if (it.productType === 'service') {
-            // Services: update departmentId and sectionId to destination
+            // Services: CLONE into destination scope (keep original)
             const toSectionId = (toDept as any).isSection ? (toDept as any).id : null
             const targetDeptId = (toDept as any).isSection ? (toDept as any).parentDeptId : toDept.id
             servicesToTransfer.push({
@@ -326,9 +343,31 @@ export class TransferService {
 
             // 5) update service department/section assignments
             for (const serviceTransfer of servicesToTransfer) {
-              await tx.serviceInventory.update({
+              const source = await tx.serviceInventory.findUnique({
                 where: { id: serviceTransfer.serviceId },
+                select: {
+                  name: true,
+                  serviceType: true,
+                  pricingModel: true,
+                  pricePerCount: true,
+                  pricePerMinute: true,
+                  description: true,
+                  isActive: true,
+                },
+              })
+              if (!source) {
+                throw new Error(`Service not found: ${serviceTransfer.serviceId}`)
+              }
+
+              await tx.serviceInventory.create({
                 data: {
+                  name: source.name,
+                  serviceType: source.serviceType,
+                  pricingModel: source.pricingModel,
+                  pricePerCount: source.pricePerCount,
+                  pricePerMinute: source.pricePerMinute,
+                  description: source.description,
+                  isActive: source.isActive,
                   departmentId: serviceTransfer.targetDepartmentId,
                   sectionId: serviceTransfer.targetSectionId,
                 }
@@ -356,24 +395,6 @@ export class TransferService {
             } catch (e: any) {
               // Log the error but continue - we don't want one extra failure to block the whole transfer
               console.warn(`Failed to transfer extra ${extra.extraId}: ${e?.message}`)
-            }
-          }
-
-          // Transfer services to destination department/section
-          const toSectionId = (toDept as any).isSection ? (toDept as any).id : null
-          for (const it of transfer.items) {
-            if (it.productType === 'service') {
-              try {
-                await prisma.serviceInventory.update({
-                  where: { id: it.productId },
-                  data: {
-                    departmentId: transfer.toDepartmentId,
-                    sectionId: toSectionId || null
-                  }
-                })
-              } catch (e: any) {
-                console.warn(`Failed to transfer service ${it.productId}: ${e?.message}`)
-              }
             }
           }
 

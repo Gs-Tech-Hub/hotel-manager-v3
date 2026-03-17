@@ -13,9 +13,10 @@ import {
   TableRow,
 } from '@/components/ui/table';
 import { Badge } from '@/components/ui/badge';
-import { Plus, ChevronDown, ChevronUp } from 'lucide-react';
+import { Minus, Plus, ChevronDown, ChevronUp } from 'lucide-react';
 import { toast } from 'sonner';
 import { formatTablePrice } from '@/lib/formatters';
+import { useAuth } from '@/components/auth-context';
 import { RegisterPlayer } from './register-player';
 import { StartGame } from './start-game';
 import { GameCheckout } from './game-checkout';
@@ -26,6 +27,7 @@ interface DepartmentGamesProps {
 }
 
 export function DepartmentGames({ departmentCode, departmentId }: DepartmentGamesProps) {
+  const { user } = useAuth();
   const [customers, setCustomers] = useState<any[]>([]);
   const [gameTypes, setGameTypes] = useState<any[]>([]); // Now holds sections
   const [activeSessions, setActiveSessions] = useState<any[]>([]);
@@ -33,6 +35,7 @@ export function DepartmentGames({ departmentCode, departmentId }: DepartmentGame
   const [activeSection, setActiveSection] = useState<any>(null);
   const [searchQuery, setSearchQuery] = useState('');
   const [loading, setLoading] = useState(true);
+  const [forbidden, setForbidden] = useState(false);
   const [checkoutOpen, setCheckoutOpen] = useState(false);
   const [selectedSession, setSelectedSession] = useState<any>(null);
   const [registerOpen, setRegisterOpen] = useState(false);
@@ -46,12 +49,20 @@ export function DepartmentGames({ departmentCode, departmentId }: DepartmentGame
   const fetchData = async () => {
     try {
       setLoading(true);
+      setForbidden(false);
 
       const [customersRes, sessionsRes, sectionRes] = await Promise.all([
         fetch(`${apiBase}/players`),
         fetch(`${apiBase}/sessions?status=active`),
         fetch(`/api/departments/${departmentCode}/section`),
       ]);
+
+      if (customersRes.status === 403 || sessionsRes.status === 403) {
+        setForbidden(true);
+        setCustomers([]);
+        setActiveSessions([]);
+        return;
+      }
 
       if (customersRes.ok) {
         const data = await customersRes.json();
@@ -151,6 +162,14 @@ export function DepartmentGames({ departmentCode, departmentId }: DepartmentGame
     return <div className="flex justify-center items-center h-64">Loading...</div>;
   }
 
+  if (forbidden) {
+    return (
+      <div className="rounded border border-amber-200 bg-amber-50 p-6 text-sm text-amber-800">
+        You don’t have access to the Games module for this department.
+      </div>
+    );
+  }
+
   return (
     <div className="space-y-6">
       {/* Header with Action Buttons */}
@@ -238,6 +257,43 @@ export function DepartmentGames({ departmentCode, departmentId }: DepartmentGame
                           <div className="flex items-center gap-2">
                             <Badge variant="outline">{session.gameCount}</Badge>
                             {session.service && (
+                              <>
+                                {user?.userType === 'admin' && (
+                                  <Button
+                                    size="sm"
+                                    variant="ghost"
+                                    onClick={async () => {
+                                      try {
+                                        const response = await fetch(
+                                          `/api/departments/${departmentCode}/games/sessions/${session.id}`,
+                                          {
+                                            method: 'PATCH',
+                                            headers: { 'Content-Type': 'application/json' },
+                                            body: JSON.stringify({ action: 'decrement_game' }),
+                                          }
+                                        );
+                                        if (response.ok) {
+                                          const data = await response.json();
+                                          setActiveSessions(
+                                            activeSessions.map((s) =>
+                                              s.id === session.id ? data.data.session : s
+                                            )
+                                          );
+                                          toast.success('Count decremented');
+                                        } else {
+                                          toast.error('Failed to decrement count');
+                                        }
+                                      } catch (error) {
+                                        console.error('Error decrementing count:', error);
+                                        toast.error('Error decrementing count');
+                                      }
+                                    }}
+                                    className="h-6 w-6 p-0"
+                                    disabled={session.gameCount <= 1}
+                                  >
+                                    <Minus className="h-3 w-3" />
+                                  </Button>
+                                )}
                               <Button
                                 size="sm"
                                 variant="ghost"
@@ -271,6 +327,7 @@ export function DepartmentGames({ departmentCode, departmentId }: DepartmentGame
                               >
                                 <Plus className="h-3 w-3" />
                               </Button>
+                              </>
                             )}
                           </div>
                         </TableCell>

@@ -126,6 +126,9 @@ export async function checkPermission(
       }
     }
 
+    // Admin users always have all permissions (applies even if legacy tables are missing).
+    if (ctx.userType === "admin") return true;
+
     // Normalize all possible permission variants for action/subject
     function getPermissionVariants(action: string, subject?: string | null) {
       const variants: { action: string; subject: string | null }[] = [];

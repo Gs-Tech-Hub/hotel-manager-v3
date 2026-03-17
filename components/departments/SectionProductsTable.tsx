@@ -23,6 +23,7 @@ export default function SectionProductsTable({ products: initialProducts, depart
   const [totalCount, setTotalCount] = useState<number>(0)
   const [totalPages, setTotalPages] = useState<number>(1)
   const [pageSizeState, setPageSizeState] = useState<number>(pageSize)
+  const [mutateTick, setMutateTick] = useState(0)
   
   // Helper to get today's date in YYYY-MM-DD format
   const getTodayDate = () => {
@@ -103,7 +104,64 @@ export default function SectionProductsTable({ products: initialProducts, depart
 
     fetchProducts()
     return () => { mounted = false }
-  }, [initialProducts, sectionCode, pageSizeState, page, fromDate, toDate])
+  }, [initialProducts, sectionCode, pageSizeState, page, fromDate, toDate, mutateTick])
+
+  const deleteService = async (serviceId: string) => {
+    if (!confirm('Delete this service from this section?')) return
+    try {
+      const res = await fetch(`/api/services/${encodeURIComponent(serviceId)}`, { method: 'DELETE' })
+      const j = await res.json().catch(() => null)
+      if (!res.ok || !j?.success) {
+        throw new Error(j?.error?.message || 'Failed to delete service')
+      }
+      setMutateTick((v) => v + 1)
+    } catch (e: any) {
+      alert(e?.message || 'Failed to delete service')
+    }
+  }
+
+  const editService = async (p: any) => {
+    const nextName = prompt('Service name', p?.name || '')?.trim()
+    if (!nextName) return
+
+    const model = p?.pricingModel as 'per_count' | 'per_time' | undefined
+    let nextPrice: number | null = null
+    if (model === 'per_count') {
+      const v = prompt('Price per count (e.g. 5)', String((p?.unitPrice ?? 0) / 100))
+      if (v === null) return
+      nextPrice = Number(v)
+      if (!Number.isFinite(nextPrice) || nextPrice <= 0) {
+        alert('Invalid price')
+        return
+      }
+    } else if (model === 'per_time') {
+      const v = prompt('Price per minute (e.g. 0.5)', String((p?.unitPrice ?? 0) / 100))
+      if (v === null) return
+      nextPrice = Number(v)
+      if (!Number.isFinite(nextPrice) || nextPrice <= 0) {
+        alert('Invalid price')
+        return
+      }
+    }
+
+    try {
+      const payload: any = { name: nextName }
+      if (model === 'per_count') payload.pricePerCount = nextPrice
+      if (model === 'per_time') payload.pricePerMinute = nextPrice
+      const res = await fetch(`/api/services/${encodeURIComponent(p.id)}`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(payload),
+      })
+      const j = await res.json().catch(() => null)
+      if (!res.ok || !j?.success) {
+        throw new Error(j?.error?.message || 'Failed to update service')
+      }
+      setMutateTick((v) => v + 1)
+    } catch (e: any) {
+      alert(e?.message || 'Failed to update service')
+    }
+  }
 
   // Debug: log prices
   useEffect(() => {
@@ -180,7 +238,26 @@ export default function SectionProductsTable({ products: initialProducts, depart
                   {isService ? '—' : (p.pendingQuantity ?? 0)}
                 </td>
                 <td className="text-right py-2 px-2">
-                  <Link href={p.posLink || `/inventory/${p.inventoryId || p.id}`} prefetch={false} className="text-sky-600 hover:text-sky-700 text-xs">View</Link>
+                  {isService ? (
+                    <div className="flex items-center justify-end gap-2">
+                      <button
+                        type="button"
+                        onClick={() => editService(p)}
+                        className="text-xs text-sky-700 hover:text-sky-900"
+                      >
+                        Edit
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => deleteService(p.id)}
+                        className="text-xs text-red-600 hover:text-red-800"
+                      >
+                        Delete
+                      </button>
+                    </div>
+                  ) : (
+                    <Link href={p.posLink || `/inventory/${p.inventoryId || p.id}`} prefetch={false} className="text-sky-600 hover:text-sky-700 text-xs">View</Link>
+                  )}
                 </td>
               </tr>
             )

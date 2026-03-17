@@ -36,8 +36,8 @@ export function ServiceList({ departmentId, departmentCode, onDeleteSuccess }: S
   const fetchServices = async () => {
     setLoading(true)
     try {
-      // Fetch all global services (not department-scoped)
-      const response = await fetch('/api/services/list?scope=global')
+      // Fetch all services (global + scoped). Assigned services should remain manageable.
+      const response = await fetch('/api/services/list')
       if (response.ok) {
         const data = await response.json()
         setServices(data.data?.services || [])

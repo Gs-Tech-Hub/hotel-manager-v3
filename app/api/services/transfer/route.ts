@@ -130,14 +130,21 @@ export async function POST(request: NextRequest) {
       }
     }
 
-    // Transfer the service
-    const updated = await prisma.serviceInventory.update({
-      where: { id: serviceId },
+    // Create a scoped copy in the destination (do NOT move the original).
+    // This keeps the source service available for other departments/sections.
+    const created = await prisma.serviceInventory.create({
       data: {
+        name: service.name,
+        serviceType: service.serviceType,
+        pricingModel: service.pricingModel,
+        pricePerCount: service.pricePerCount,
+        pricePerMinute: service.pricePerMinute,
+        description: service.description,
+        isActive: service.isActive,
         departmentId: toDepartmentId,
-        sectionId: toSectionId || null
+        sectionId: toSectionId || null,
       },
-      include: { department: true, section: true }
+      include: { department: true, section: true },
     });
 
     // Determine source location
@@ -158,8 +165,8 @@ export async function POST(request: NextRequest) {
         data: {
           message: 'Service transferred successfully',
           transfer: {
-            serviceId: updated.id,
-            serviceName: updated.name,
+            serviceId: created.id,
+            serviceName: created.name,
             from: sourceLocation,
             to: destLocation,
             type: 'service_transfer'

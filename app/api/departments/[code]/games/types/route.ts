@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { prisma } from '@/lib/auth/prisma';
 import { successResponse, errorResponse, ErrorCodes } from '@/lib/api-response';
 import { extractUserContext } from '@/lib/user-context';
+import { isGamesStaffForDepartment } from '@/lib/auth/games-access';
 
 /**
  * GET /api/departments/[code]/games/types
@@ -44,6 +45,15 @@ export async function GET(
       return NextResponse.json(
         errorResponse(ErrorCodes.NOT_FOUND, 'Department not found'),
         { status: 404 }
+      );
+    }
+
+    // Games access is department-scoped: only games_staff for this department
+    const canAccessGames = await isGamesStaffForDepartment(ctx.userId, department.id);
+    if (!canAccessGames) {
+      return NextResponse.json(
+        errorResponse(ErrorCodes.FORBIDDEN, 'Games access is restricted to Games department users'),
+        { status: 403 }
       );
     }
 
@@ -96,6 +106,15 @@ export async function POST(
       return NextResponse.json(
         errorResponse(ErrorCodes.NOT_FOUND, 'Department not found'),
         { status: 404 }
+      );
+    }
+
+    // Games access is department-scoped: only games_staff for this department
+    const canAccessGames = await isGamesStaffForDepartment(ctx.userId, department.id);
+    if (!canAccessGames) {
+      return NextResponse.json(
+        errorResponse(ErrorCodes.FORBIDDEN, 'Games access is restricted to Games department users'),
+        { status: 403 }
       );
     }
 

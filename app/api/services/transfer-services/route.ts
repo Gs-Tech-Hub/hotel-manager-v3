@@ -81,24 +81,28 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    // Transfer service in transaction
-    const result = await prisma.$transaction([
-      // Update source service to new section
-      prisma.serviceInventory.update({
-        where: { id: serviceId },
-        data: {
-          sectionId: toSectionId
-        }
-      })
-    ]);
+    // Create a scoped copy in the destination (do NOT move the original)
+    const created = await prisma.serviceInventory.create({
+      data: {
+        name: service.name,
+        serviceType: service.serviceType,
+        pricingModel: service.pricingModel,
+        pricePerCount: service.pricePerCount,
+        pricePerMinute: service.pricePerMinute,
+        description: service.description,
+        isActive: service.isActive,
+        departmentId: toSection.departmentId,
+        sectionId: toSectionId,
+      }
+    });
 
     return NextResponse.json(
       successResponse({
         data: {
           message: 'Service transferred',
           service: {
-            id: service.id,
-            name: service.name,
+            id: created.id,
+            name: created.name,
             fromSection: fromSection.name,
             toSection: toSection.name
           }

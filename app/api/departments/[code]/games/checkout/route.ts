@@ -3,6 +3,7 @@ import { Decimal } from '@prisma/client/runtime/library';
 import { prisma } from '@/lib/auth/prisma';
 import { successResponse, errorResponse, ErrorCodes } from '@/lib/api-response';
 import { extractUserContext } from '@/lib/user-context';
+import { isGamesStaffForDepartment } from '@/lib/auth/games-access';
 
 /**
  * POST /api/departments/[code]/games/checkout
@@ -46,6 +47,15 @@ export async function POST(
       return NextResponse.json(
         errorResponse(ErrorCodes.NOT_FOUND, 'Department not found'),
         { status: 404 }
+      );
+    }
+
+    // Games access is department-scoped: only games_staff for this department
+    const canAccessGames = await isGamesStaffForDepartment(ctx.userId, department.id);
+    if (!canAccessGames) {
+      return NextResponse.json(
+        errorResponse(ErrorCodes.FORBIDDEN, 'Games access is restricted to Games department users'),
+        { status: 403 }
       );
     }
 

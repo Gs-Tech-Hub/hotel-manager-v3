@@ -59,7 +59,10 @@ export async function GET(request: NextRequest) {
     }
 
     const services = await prisma.serviceInventory.findMany({
-      where,
+      where: {
+        ...where,
+        isActive: true,
+      },
       include: {
         department: { select: { id: true, name: true, code: true } },
         section: { select: { id: true, name: true } }

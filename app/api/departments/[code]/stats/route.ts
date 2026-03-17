@@ -3,6 +3,7 @@ import { extractUserContext } from '@/lib/user-context'
 import { ErrorCodes, errorResponse, successResponse } from '@/lib/api-response'
 import { DepartmentService } from '@/services/department.service'
 import { prisma } from '@/lib/auth/prisma'
+import { isGamesStaffForDepartment } from '@/lib/auth/games-access'
 
 const departmentService = new DepartmentService()
 
@@ -60,6 +61,13 @@ export async function GET(request: NextRequest, { params }: { params: Promise<{ 
 
     // If games department, use game stats endpoint logic
     if (parentDept.type === 'games') {
+      const canAccessGames = await isGamesStaffForDepartment(ctx.userId, parentDept.id)
+      if (!canAccessGames) {
+        return NextResponse.json(
+          errorResponse(ErrorCodes.FORBIDDEN, 'Games access is restricted to Games department users'),
+          { status: 403 }
+        )
+      }
       return getGameStats(decodedCode, isSectionCode, fromDate, toDate)
     }
     
@@ -162,9 +170,15 @@ async function getGameStats(decodedCode: string, isSectionCode: boolean, fromDat
           payments: true
         }
       },
+      customer: {
+        select: { id: true, firstName: true, lastName: true, phone: true }
+      },
       section: {
         select: { id: true, name: true }
-      }
+      },
+      service: {
+        select: { id: true, name: true, pricingModel: true }
+      },
     }
   })
 
@@ -175,26 +189,104 @@ async function getGameStats(decodedCode: string, isSectionCode: boolean, fromDat
   let totalRevenue = 0
   let pendingRevenue = 0
 
+  // Section summary: sessions + games played (sum of gameCount) + revenue
+  const sectionSummaryMap = new Map<
+    string,
+    {
+      sectionId: string
+      sectionName: string
+      sessions: number
+      gamesPlayed: number
+      completedSessions: number
+      pendingSessions: number
+      revenueCollected: number
+      revenuePending: number
+    }
+  >()
+
+  const paidGames: Array<{
+    sessionId: string
+    startedAt: Date | null
+    endedAt: Date | null
+    sectionId: string
+    sectionName: string
+    customerId: string | null
+    customerName: string
+    customerPhone: string | null
+    serviceId: string | null
+    serviceName: string
+    gameCount: number
+    orderId: string | null
+    orderNumber: string | null
+    subtotal: number
+    tax: number
+    total: number
+    paymentStatus: string | null
+  }> = []
+
   for (const session of gameSessions) {
     totalGames += 1
 
+    const sectionId = session.sectionId
+    const sectionName = session.section?.name || 'Unknown'
+    if (!sectionSummaryMap.has(sectionId)) {
+      sectionSummaryMap.set(sectionId, {
+        sectionId,
+        sectionName,
+        sessions: 0,
+        gamesPlayed: 0,
+        completedSessions: 0,
+        pendingSessions: 0,
+        revenueCollected: 0,
+        revenuePending: 0,
+      })
+    }
+    const ss = sectionSummaryMap.get(sectionId)!
+    ss.sessions += 1
+    ss.gamesPlayed += Number((session as any).gameCount ?? 0)
+
+    const isSessionClosed = (session as any).status === 'closed'
+
     if (session.orderHeader) {
       const orderTotal = Number(session.orderHeader.total) || 0
-      let totalPaid = 0
-      if (session.orderHeader.payments && session.orderHeader.payments.length > 0) {
-        totalPaid = session.orderHeader.payments.reduce((sum: number, p: any) => sum + Number(p.total ?? 0), 0)
-      }
-      const isPaid = totalPaid >= orderTotal && orderTotal > 0
+      const isPaid = (session as any).orderHeader?.paymentStatus === 'paid'
 
-      if (isPaid) {
+      if (isPaid && isSessionClosed) {
         completedGames += 1
         totalRevenue += orderTotal
+        ss.completedSessions += 1
+        ss.revenueCollected += orderTotal
+
+        paidGames.push({
+          sessionId: session.id,
+          startedAt: (session as any).startedAt ?? null,
+          endedAt: (session as any).endedAt ?? null,
+          sectionId,
+          sectionName,
+          customerId: (session as any).customer?.id ?? null,
+          customerName: (session as any).customer
+            ? `${(session as any).customer.firstName || ''} ${(session as any).customer.lastName || ''}`.trim() || 'Guest'
+            : 'Guest',
+          customerPhone: (session as any).customer?.phone ?? null,
+          serviceId: (session as any).service?.id ?? null,
+          serviceName: (session as any).service?.name || sectionName,
+          gameCount: Number((session as any).gameCount ?? 0),
+          orderId: (session as any).orderHeader?.id ?? null,
+          orderNumber: (session as any).orderHeader?.orderNumber ?? null,
+          subtotal: Number((session as any).orderHeader?.subtotal ?? 0),
+          tax: Number((session as any).orderHeader?.tax ?? 0),
+          total: Number((session as any).orderHeader?.total ?? 0),
+          paymentStatus: (session as any).orderHeader?.paymentStatus ?? null,
+        })
       } else {
         pendingGames += 1
         pendingRevenue += orderTotal
+        ss.pendingSessions += 1
+        ss.revenuePending += orderTotal
       }
     } else {
       pendingGames += 1
+      ss.pendingSessions += 1
     }
   }
 
@@ -204,7 +296,15 @@ async function getGameStats(decodedCode: string, isSectionCode: boolean, fromDat
     pendingGames,
     totalRevenue,
     pendingRevenue,
-    completionRate: totalGames > 0 ? Math.round((completedGames / totalGames) * 100) : 0
+    completionRate: totalGames > 0 ? Math.round((completedGames / totalGames) * 100) : 0,
+    sectionSummary: Array.from(sectionSummaryMap.values()).sort((a, b) =>
+      a.sectionName.localeCompare(b.sectionName)
+    ),
+    paidGames: paidGames.sort((a, b) => {
+      const at = a.startedAt ? new Date(a.startedAt).getTime() : 0
+      const bt = b.startedAt ? new Date(b.startedAt).getTime() : 0
+      return bt - at
+    }),
   }
 
   return NextResponse.json(successResponse({ data: { stats } }), { status: 200 })
