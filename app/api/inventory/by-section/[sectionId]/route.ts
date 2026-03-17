@@ -42,7 +42,10 @@ export async function GET(
       const items = await prisma.departmentInventory.findMany({
         where: {
           sectionId: sectionId,
-          departmentId: section.departmentId
+          departmentId: section.departmentId,
+          inventoryItem: {
+            isActive: true
+          }
         },
         include: {
           inventoryItem: true

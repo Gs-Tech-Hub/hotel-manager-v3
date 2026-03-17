@@ -46,7 +46,10 @@ export async function GET(request: NextRequest) {
     const items = await prisma.departmentInventory.findMany({
       where: {
         sectionId: { in: sectionIds },
-        quantity: { gt: 0 }  // Only available items
+        quantity: { gt: 0 },  // Only available items
+        inventoryItem: {
+          isActive: true
+        }
       },
       include: {
         inventoryItem: true,
