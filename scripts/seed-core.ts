@@ -323,12 +323,44 @@ async function seedPermissions(roles: Record<string, any>) {
       { action: 'extras.delete', subject: null },
       { action: 'extras.allocate', subject: null },
       { action: 'extras.transfer', subject: null },
-      // Games
+      // Department-specific Operations
+      // Games Department
       { action: 'games.read', subject: null },
       { action: 'games.create', subject: null },
       { action: 'games.update', subject: null },
       { action: 'games.delete', subject: null },
       { action: 'games.checkout', subject: null },
+      { action: 'games.manage', subject: null },
+      // Restaurant Department
+      { action: 'restaurant.read', subject: null },
+      { action: 'restaurant.create', subject: null },
+      { action: 'restaurant.update', subject: null },
+      { action: 'restaurant.delete', subject: null },
+      { action: 'restaurant.manage', subject: null },
+      // Bar Department
+      { action: 'bar.read', subject: null },
+      { action: 'bar.create', subject: null },
+      { action: 'bar.update', subject: null },
+      { action: 'bar.delete', subject: null },
+      { action: 'bar.manage', subject: null },
+      // Service Department
+      { action: 'service.read', subject: null },
+      { action: 'service.create', subject: null },
+      { action: 'service.update', subject: null },
+      { action: 'service.delete', subject: null },
+      { action: 'service.manage', subject: null },
+      // Reception Department
+      { action: 'reception.read', subject: null },
+      { action: 'reception.create', subject: null },
+      { action: 'reception.update', subject: null },
+      { action: 'reception.delete', subject: null },
+      { action: 'reception.manage', subject: null },
+      // Housekeeping Department
+      { action: 'housekeeping.read', subject: null },
+      { action: 'housekeeping.create', subject: null },
+      { action: 'housekeeping.update', subject: null },
+      { action: 'housekeeping.delete', subject: null },
+      { action: 'housekeeping.manage', subject: null },
       // Employees
       { action: 'employees.read', subject: null },
       { action: 'employees.create', subject: null },
@@ -415,6 +447,19 @@ async function seedPermissions(roles: Record<string, any>) {
       { action: 'department_sections.create', subject: null },
       { action: 'department_sections.update', subject: null },
       { action: 'department_sections.delete', subject: null },
+      // All Department-specific permissions
+      { action: 'restaurant.read', subject: null },
+      { action: 'restaurant.manage', subject: null },
+      { action: 'bar.read', subject: null },
+      { action: 'bar.manage', subject: null },
+      { action: 'games.read', subject: null },
+      { action: 'games.manage', subject: null },
+      { action: 'service.read', subject: null },
+      { action: 'service.manage', subject: null },
+      { action: 'reception.read', subject: null },
+      { action: 'reception.manage', subject: null },
+      { action: 'housekeeping.read', subject: null },
+      { action: 'housekeeping.manage', subject: null },
     ],
 
     // ==================== POS MANAGER ====================
@@ -575,7 +620,7 @@ async function seedPermissions(roles: Record<string, any>) {
     ],
 
     // ==================== KITCHEN STAFF ====================
-    // Full permissions for: /departments/kitchen operations
+    // Full permissions for: /departments/restaurant operations
     kitchen_staff: [
       { action: 'orders.read', subject: null },
       { action: 'orders.update', subject: null },
@@ -584,6 +629,9 @@ async function seedPermissions(roles: Record<string, any>) {
       { action: 'department_sections.read', subject: null },
       { action: 'department_sections.update', subject: null },
       { action: 'services.read', subject: null },
+      // Restaurant-specific permissions
+      { action: 'restaurant.read', subject: null },
+      { action: 'restaurant.manage', subject: null },
     ],
 
     // ==================== BAR STAFF ====================
@@ -597,6 +645,9 @@ async function seedPermissions(roles: Record<string, any>) {
       { action: 'department_sections.update', subject: null },
       { action: 'departments.update', subject: null },
       { action: 'services.read', subject: null },
+      // Bar-specific permissions
+      { action: 'bar.read', subject: null },
+      { action: 'bar.manage', subject: null },
     ],
 
     // ==================== GAMES STAFF ====================
@@ -610,10 +661,12 @@ async function seedPermissions(roles: Record<string, any>) {
       { action: 'departments.read', subject: null },
       { action: 'department_sections.read', subject: null },
       { action: 'services.read', subject: null },
+      // Games department-specific permissions
       { action: 'games.read', subject: null },
       { action: 'games.create', subject: null },
       { action: 'games.update', subject: null },
       { action: 'games.checkout', subject: null },
+      { action: 'games.manage', subject: null },
     ],
 
     // ==================== POS STAFF ====================
@@ -649,6 +702,9 @@ async function seedPermissions(roles: Record<string, any>) {
       { action: 'departments.read', subject: null },
       { action: 'department_sections.read', subject: null },
       { action: 'services.read', subject: null },
+      // Housekeeping department-specific permissions
+      { action: 'housekeeping.read', subject: null },
+      { action: 'housekeeping.manage', subject: null },
     ],
 
     // ==================== FRONT DESK ====================
@@ -679,6 +735,9 @@ async function seedPermissions(roles: Record<string, any>) {
       { action: 'services.update', subject: null },
       { action: 'discounts.read', subject: null },
       { action: 'discounts.apply', subject: null },
+      // Reception department-specific permissions
+      { action: 'reception.read', subject: null },
+      { action: 'reception.manage', subject: null },
     ],
 
     // ==================== CUSTOMER SERVICE ====================
@@ -700,6 +759,9 @@ async function seedPermissions(roles: Record<string, any>) {
       { action: 'department_sections.read', subject: null },
       { action: 'discounts.read', subject: null },
       { action: 'discounts.apply', subject: null },
+      // Service department-specific permissions
+      { action: 'service.read', subject: null },
+      { action: 'service.manage', subject: null },
     ],
 
     // ==================== RECEPTIONIST (legacy, same as front_desk) ====================
@@ -723,6 +785,9 @@ async function seedPermissions(roles: Record<string, any>) {
       { action: 'services.read', subject: null },
       { action: 'services.create', subject: null },
       { action: 'services.update', subject: null },
+      // Reception department-specific permissions
+      { action: 'reception.read', subject: null },
+      { action: 'reception.manage', subject: null },
     ],
 
     // ==================== TERMINAL OPERATOR ====================
