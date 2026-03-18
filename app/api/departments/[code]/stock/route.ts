@@ -40,7 +40,12 @@ export async function GET(request: NextRequest, { params }: { params: Promise<{ 
 
       // Get section-specific inventory
       const inventories = await prisma.departmentInventory.findMany({
-        where: { sectionId: section.id },
+        where: {
+          sectionId: section.id,
+          inventoryItem: {
+            isActive: true
+          }
+        },
         include: { inventoryItem: true }
       })
 

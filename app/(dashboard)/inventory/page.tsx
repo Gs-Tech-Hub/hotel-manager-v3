@@ -68,6 +68,10 @@ export default function InventoryPage() {
   const [activeTab, setActiveTab] = useState<'items' | 'extras' | 'services'>('items')
   const [showExtraTransferPanel, setShowExtraTransferPanel] = useState(false)
   const [showServiceTransferPanel, setShowServiceTransferPanel] = useState(false)
+  const [searchQuery, setSearchQuery] = useState<string>('')
+  const [searchPage, setSearchPage] = useState<number>(1)
+  const [searchTotal, setSearchTotal] = useState<number>(0)
+  const [isSearching, setIsSearching] = useState<boolean>(false)
 
   const generateSku = (cat: string) => {
     if (!cat) return ''
@@ -82,7 +86,7 @@ export default function InventoryPage() {
   }
   
 
-  const fetchItems = async (dept?: string) => {
+  const fetchItems = async (dept?: string, search: string = '', page: number = 1) => {
     setLoading(true)
     setError(null)
     try {
@@ -92,8 +96,14 @@ export default function InventoryPage() {
       if (dept) {
         url = `/api/departments/${encodeURIComponent(dept)}/items`
       } else {
-        // Otherwise fetch global inventory
-        url = new URL('/api/inventory', window.location.origin).toString()
+        // Otherwise fetch global inventory with search and pagination
+        const urlObj = new URL('/api/inventory', window.location.origin)
+        if (search) {
+          urlObj.searchParams.set('search', search)
+        }
+        urlObj.searchParams.set('page', page.toString())
+        urlObj.searchParams.set('limit', '100')
+        url = urlObj.toString()
       }
       
       const res = await fetch(url)
@@ -108,9 +118,12 @@ export default function InventoryPage() {
       if (dept) {
         // Show all items - inventory and extras
         setItems(fetched)
+        setSearchTotal(0)
       } else {
         // Global inventory: only show items with quantity > 0
         setItems(fetched.filter((it) => Number(it?.quantity ?? 0) > 0))
+        // Update search total from response metadata
+        setSearchTotal(json.data?.total || fetched.length)
       }
     } catch (err: any) {
       console.error('Failed to load inventory', err)
@@ -303,6 +316,27 @@ export default function InventoryPage() {
     }
   }, [selectedDept])
 
+  // Handle search with debouncing
+  useEffect(() => {
+    const timer = setTimeout(() => {
+      if (!selectedDept) {
+        // Only perform global search when no department is selected
+        setSearchPage(1)
+        if (searchQuery.trim()) {
+          setIsSearching(true)
+          fetchItems(undefined, searchQuery.trim(), 1)
+            .finally(() => setIsSearching(false))
+        } else {
+          // Reset to normal list when search is cleared
+          fetchItems(undefined, '', 1)
+        }
+      }
+    }, 300) // 300ms debounce
+
+    return () => clearTimeout(timer)
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [searchQuery, selectedDept])
+
   return (
     <div className="space-y-6">
       <div className="flex items-center justify-between">
@@ -338,7 +372,16 @@ export default function InventoryPage() {
             </button>
           )}
           <button onClick={() => {
-            if (activeTab === 'items') fetchItems(selectedDept)
+            if (activeTab === 'items') {
+              if (searchQuery && !selectedDept) {
+                // Refresh search results
+                setSearchPage(1)
+                fetchItems(undefined, searchQuery.trim(), 1)
+              } else {
+                // Refresh normal items
+                fetchItems(selectedDept)
+              }
+            }
           }} className="px-3 py-1 border rounded text-sm mr-2">Refresh</button>
           {activeTab === 'items' && (
             <>
@@ -439,6 +482,25 @@ export default function InventoryPage() {
             ))}
           </select>
         </div>
+        {!selectedDept && activeTab === 'items' && (
+          <div className="flex-1 min-w-[300px]">
+            <label className="text-sm mr-2">Search inventory</label>
+            <input
+              type="text"
+              placeholder="Search by name, SKU, or description..."
+              value={searchQuery}
+              onChange={(e) => setSearchQuery(e.target.value)}
+              className="w-full border px-3 py-1 rounded"
+              disabled={isSearching}
+            />
+            {searchQuery && !isSearching && searchTotal > 0 && (
+              <div className="text-xs text-gray-600 mt-1">Found {searchTotal} item{searchTotal !== 1 ? 's' : ''}</div>
+            )}
+            {isSearching && (
+              <div className="text-xs text-gray-500 mt-1">Searching...</div>
+            )}
+          </div>
+        )}
       </div>
 
       {showForm && hasPermission('inventory_items.create') && activeTab === 'items' && (

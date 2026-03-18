@@ -43,8 +43,13 @@ export async function GET(
       );
     }
 
-    // Fetch inventory items
-    const invWhere: any = { departmentId: dept.id };
+    // Fetch inventory items (only active)
+    const invWhere: any = { 
+      departmentId: dept.id,
+      inventoryItem: {
+        isActive: true
+      }
+    };
     if (sectionId) {
       invWhere.sectionId = sectionId;
     } else {
@@ -65,8 +70,13 @@ export async function GET(
       },
     });
 
-    // Fetch extras
-    const extrasWhere: any = { departmentId: dept.id };
+    // Fetch extras (only active)
+    const extrasWhere: any = { 
+      departmentId: dept.id,
+      extra: {
+        isActive: true
+      }
+    };
     if (sectionId) {
       extrasWhere.sectionId = sectionId;
     } else {

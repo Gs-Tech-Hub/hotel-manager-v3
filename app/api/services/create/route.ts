@@ -95,7 +95,8 @@ export async function POST(request: NextRequest) {
         where: {
           name: name,
           departmentId: departmentId,
-          sectionId: sectionId || null
+          sectionId: sectionId || null,
+          isActive: true
         }
       });
 
@@ -116,7 +117,8 @@ export async function POST(request: NextRequest) {
         where: {
           name: name,
           departmentId: null,
-          sectionId: null
+          sectionId: null,
+          isActive: true
         }
       });
 

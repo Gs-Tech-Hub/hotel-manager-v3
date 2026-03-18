@@ -14,8 +14,11 @@ export async function GET(request: NextRequest) {
     const checkin = request.nextUrl.searchParams.get('checkin');
     const checkout = request.nextUrl.searchParams.get('checkout');
 
-    // Get all rooms
+    // Get all rooms (excluding deleted ones marked as BLOCKED)
     const units = await prisma.unit.findMany({
+      where: {
+        status: { not: 'BLOCKED' }
+      },
       select: {
         id: true,
         roomNumber: true,

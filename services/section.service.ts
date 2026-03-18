@@ -663,6 +663,7 @@ export class SectionService {
         where: {
           departmentId: deptId,
           sectionId: null,
+          isActive: true,
           ...(search ? { name: { contains: search, mode: 'insensitive' } } : {}),
         },
         orderBy: { name: 'asc' },
@@ -672,6 +673,7 @@ export class SectionService {
         where: {
           departmentId: deptId,
           sectionId: null,
+          isActive: true,
           ...(search ? { name: { contains: search, mode: 'insensitive' } } : {}),
         },
       });
@@ -711,6 +713,7 @@ export class SectionService {
     const services = await prisma.serviceInventory.findMany({
       where: {
         sectionId: resolvedSectionId,
+        isActive: true,
         ...(search ? { name: { contains: search, mode: 'insensitive' } } : {}),
       },
       orderBy: { name: 'asc' },
@@ -719,6 +722,7 @@ export class SectionService {
     const total = await prisma.serviceInventory.count({
       where: {
         sectionId: resolvedSectionId,
+        isActive: true,
         ...(search ? { name: { contains: search, mode: 'insensitive' } } : {}),
       },
     });

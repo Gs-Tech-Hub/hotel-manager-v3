@@ -407,6 +407,8 @@ export class RoomService {
         status: filters?.status,
         roomTypeId: filters?.roomTypeId,
         departmentId: filters?.departmentId,
+        // Always exclude BLOCKED rooms (soft-deleted)
+        ...(filters?.status === undefined && { status: { not: 'BLOCKED' } })
       },
       include: {
         roomType: true,

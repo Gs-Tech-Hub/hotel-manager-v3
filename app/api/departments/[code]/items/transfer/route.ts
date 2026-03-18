@@ -85,6 +85,14 @@ export async function POST(
         );
       }
 
+      // Always reactivate inventory item when transferred (whether same section or different)
+      if (!invItem.isActive) {
+        await prisma.inventoryItem.update({
+          where: { id: itemId },
+          data: { isActive: true }
+        });
+      }
+
       // Get source allocation
       const source = await prisma.departmentInventory.findFirst({
         where: {

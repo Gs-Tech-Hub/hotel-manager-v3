@@ -53,7 +53,7 @@ export async function GET(req: NextRequest) {
 
     const { searchParams } = new URL(req.url);
     const page = parseInt(searchParams.get('page') || '1');
-    const limit = parseInt(searchParams.get('limit') || '10');
+    const limit = Math.min(parseInt(searchParams.get('limit') || '100'), 500);  // Default 100, max 500
     const inventoryTypeId = searchParams.get('inventoryTypeId') || undefined;
     const category = searchParams.get('category') || undefined;
     const itemType = searchParams.get('itemType') || undefined;
@@ -75,7 +75,26 @@ export async function GET(req: NextRequest) {
     let items: any[] = [];
 
     if (search) {
-      items = await inventoryItemService.search(search);
+      // Search across all items regardless of department
+      // Search by name, SKU, or description (case-insensitive)
+      items = await prisma.inventoryItem.findMany({
+        where: {
+          isActive: true,
+          OR: [
+            { name: { contains: search, mode: 'insensitive' } },
+            { sku: { contains: search, mode: 'insensitive' } },
+            { description: { contains: search, mode: 'insensitive' } },
+          ],
+        },
+        include: { 
+          inventoryType: true,
+          usedAsExtras: {
+            select: { id: true }
+          },
+          departmentInventories: true,  // Include all department allocations
+        },
+        orderBy: { name: 'asc' },
+      });
     } else if (lowStock) {
       items = await inventoryItemService.getLowStockItems();
     } else if (expired) {

@@ -55,9 +55,9 @@ export async function POST(request: NextRequest) {
       include: { department: true, section: true }
     });
 
-    if (!service) {
+    if (!service || !service.isActive) {
       return NextResponse.json(
-        errorResponse(ErrorCodes.NOT_FOUND, 'Service not found'),
+        errorResponse(ErrorCodes.NOT_FOUND, 'Service not found or is inactive'),
         { status: 404 }
       );
     }
@@ -132,6 +132,7 @@ export async function POST(request: NextRequest) {
 
     // Create a scoped copy in the destination (do NOT move the original).
     // This keeps the source service available for other departments/sections.
+    // Always reactivate when transferring (whether same or different section)
     const created = await prisma.serviceInventory.create({
       data: {
         name: service.name,
@@ -140,7 +141,7 @@ export async function POST(request: NextRequest) {
         pricePerCount: service.pricePerCount,
         pricePerMinute: service.pricePerMinute,
         description: service.description,
-        isActive: service.isActive,
+        isActive: true,  // Always reactivate on transfer
         departmentId: toDepartmentId,
         sectionId: toSectionId || null,
       },

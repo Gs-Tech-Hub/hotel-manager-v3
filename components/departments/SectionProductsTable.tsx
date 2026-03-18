@@ -112,35 +112,45 @@ export default function SectionProductsTable({ products: initialProducts, depart
 
   const deleteService = async (serviceId: string) => {
     if (!confirm('Delete this service from this section?')) return
+    if (!sectionCode) {
+      alert('Section code not available')
+      return
+    }
     try {
-      const res = await fetch(`/api/services/${encodeURIComponent(serviceId)}`, { method: 'DELETE' })
+      // Delete only from this section, not globally
+      const res = await fetch(`/api/departments/${encodeURIComponent(sectionCode)}/section/services/${encodeURIComponent(serviceId)}`, { method: 'DELETE' })
       const j = await res.json().catch(() => null)
       if (!res.ok || !j?.success) {
         if (res.status === 403) {
           throw new Error('Only admin can delete services')
         }
-        throw new Error(j?.error?.message || 'Failed to delete service')
+        throw new Error(j?.error?.message || 'Failed to remove service from section')
       }
       setMutateTick((v) => v + 1)
     } catch (e: any) {
-      alert(e?.message || 'Failed to delete service')
+      alert(e?.message || 'Failed to remove service from section')
     }
   }
 
   const deleteProduct = async (productId: string, productName: string) => {
-    if (!confirm(`Delete ${productName} from inventory?`)) return
+    if (!confirm(`Remove ${productName} from this section?`)) return
+    if (!sectionCode) {
+      alert('Section code not available')
+      return
+    }
     try {
-      const res = await fetch(`/api/inventory/products/${encodeURIComponent(productId)}`, { method: 'DELETE' })
+      // Delete only from this section, not from global inventory
+      const res = await fetch(`/api/departments/${encodeURIComponent(sectionCode)}/section/inventory/${encodeURIComponent(productId)}`, { method: 'DELETE' })
       const j = await res.json().catch(() => null)
       if (!res.ok || !j?.success) {
         if (res.status === 403) {
-          throw new Error('Only admin can delete products')
+          throw new Error('Only admin can remove products')
         }
-        throw new Error(j?.error?.message || 'Failed to delete product')
+        throw new Error(j?.error?.message || 'Failed to remove product from section')
       }
       setMutateTick((v) => v + 1)
     } catch (e: any) {
-      alert(e?.message || 'Failed to delete product')
+      alert(e?.message || 'Failed to remove product from section')
     }
   }
 

@@ -45,10 +45,13 @@ export class SectionInventoryService {
         return { success: false, message: 'Section not found' }
       }
 
-      // Get all inventory records for this section
+      // Get all inventory records for this section (only active items)
       const inventories = await prisma.departmentInventory.findMany({
         where: { 
-          sectionId: section.id
+          sectionId: section.id,
+          inventoryItem: {
+            isActive: true
+          }
         },
         include: {
           inventoryItem: true

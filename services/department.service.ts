@@ -1122,11 +1122,12 @@ export class DepartmentService extends BaseService<IDepartment> {
         return errorResponse(ErrorCodes.NOT_FOUND, `Section '${sectionSlugOrId}' not found or is inactive`);
       }
 
-      // Get section-specific inventory
+      // Get section-specific inventory with active items only
       const inventories = await (prisma as any).departmentInventory.findMany({
         where: {
           sectionId: section.id,
           inventoryItem: {
+            isActive: true,
             category: category
           }
         },

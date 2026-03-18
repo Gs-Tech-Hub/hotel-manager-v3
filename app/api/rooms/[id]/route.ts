@@ -37,6 +37,14 @@ export async function GET(
       );
     }
 
+    // Exclude accessing deleted (BLOCKED) rooms
+    if (unit.status === 'BLOCKED') {
+      return sendError(
+        ErrorCodes.NOT_FOUND,
+        'Room not found'
+      );
+    }
+
     return sendSuccess(unit, 'Room details retrieved');
   } catch (error) {
     const message = error instanceof Error ? error.message : 'Failed to fetch room';
@@ -95,102 +103,43 @@ export async function DELETE(
 
     const { id } = await params;
 
-    // Check for active bookings
-    const activeBookings = await prisma.booking.findMany({
-      where: {
-        unitId: id,
-        bookingStatus: { not: 'cancelled' },
-      },
-    });
-
-    if (activeBookings.length > 0) {
-      return sendError(
-        ErrorCodes.CONFLICT,
-        `Cannot delete room with active bookings (${activeBookings.length} found). Please cancel or complete all bookings first.`
-      );
-    }
-
-    // Check for active reservations
-    const activeReservations = await prisma.reservation.findMany({
-      where: {
-        unitId: id,
-        status: { in: ['PENDING', 'CONFIRMED', 'CHECKED_IN'] },
-      },
-    });
-
-    if (activeReservations.length > 0) {
-      return sendError(
-        ErrorCodes.CONFLICT,
-        `Cannot delete room with active reservations (${activeReservations.length} found). Please cancel or complete all reservations first.`
-      );
-    }
-
-    // Check for active cleaning tasks
-    const activeCleaningTasks = await prisma.cleaningTask.findMany({
-      where: {
-        unitId: id,
-        status: { in: ['PENDING', 'IN_PROGRESS'] },
-      },
-    });
-
-    if (activeCleaningTasks.length > 0) {
-      return sendError(
-        ErrorCodes.CONFLICT,
-        `Cannot delete room with active cleaning tasks (${activeCleaningTasks.length} found). Please complete all tasks first.`
-      );
-    }
-
-    // Check for active maintenance requests
-    const activeMaintenanceRequests = await prisma.maintenanceRequest.findMany({
-      where: {
-        unitId: id,
-        status: { in: ['OPEN', 'ASSIGNED', 'IN_PROGRESS'] },
-      },
-    });
-
-    if (activeMaintenanceRequests.length > 0) {
-      return sendError(
-        ErrorCodes.CONFLICT,
-        `Cannot delete room with active maintenance requests (${activeMaintenanceRequests.length} found). Please complete all requests first.`
-      );
-    }
-
-    // Proceed with deletion - delete related records first
-    // Delete status history
-    await prisma.unitStatusHistory.deleteMany({
-      where: { unitId: id },
-    });
-
-    // Delete cancelled bookings and completed cleaning/maintenance
-    await prisma.booking.deleteMany({
-      where: {
-        unitId: id,
-        bookingStatus: 'cancelled',
-      },
-    });
-
-    await prisma.cleaningTask.deleteMany({
-      where: {
-        unitId: id,
-        status: { in: ['COMPLETED', 'INSPECTED', 'REJECTED', 'CANCELLED'] },
-      },
-    });
-
-    await prisma.maintenanceRequest.deleteMany({
-      where: {
-        unitId: id,
-        status: { in: ['COMPLETED', 'VERIFIED', 'CANCELLED'] },
-      },
-    });
-
-    // Finally, delete the unit
-    await prisma.unit.delete({
+    // Proceed with soft deletion - set status to BLOCKED instead of hard delete
+    // Get current status for history
+    const unit = await prisma.unit.findUnique({
       where: { id },
+      select: { status: true },
     });
 
-    return sendSuccess(null, 'Room deleted successfully');
+    if (!unit) {
+      return sendError(ErrorCodes.NOT_FOUND, 'Room not found');
+    }
+
+    const previousStatus = unit.status || 'AVAILABLE';
+
+    // Soft delete: set status to BLOCKED
+    const blockedUnit = await prisma.unit.update({
+      where: { id },
+      data: {
+        status: 'BLOCKED',
+        statusUpdatedAt: new Date(),
+      },
+    });
+
+    // Log status change
+    await prisma.unitStatusHistory.create({
+      data: {
+        unitId: id,
+        previousStatus,
+        newStatus: 'BLOCKED',
+        reason: 'Room deleted by user (soft delete via BLOCKED status)',
+        changedBy: ctx.userId,
+      },
+    });
+
+    return sendSuccess({ id, status: 'BLOCKED' }, 'Room deleted successfully (set to BLOCKED status)');
   } catch (error) {
     const message = error instanceof Error ? error.message : 'Failed to delete room';
     return sendError(ErrorCodes.INTERNAL_ERROR, message);
   }
 }
+
