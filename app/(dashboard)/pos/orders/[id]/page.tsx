@@ -267,6 +267,16 @@ export default function OrderDetailPage() {
                     <Button onClick={fulfillAll} disabled={isUpdating || order.status === 'cancelled' || order.status === 'refunded' || (order.lines && order.lines.every((l: any) => l.status === 'fulfilled'))}>
                         {isUpdating ? 'Working...' : 'Mark All Fulfilled'}
                     </Button>
+                    {canRefund && (
+                        <Button 
+                            variant="outline"
+                            className="text-orange-600 hover:text-orange-700"
+                            onClick={() => setRefundDialogOpen(true)}
+                            disabled={isUpdating}
+                        >
+                            Refund Order
+                        </Button>
+                    )}
                     {canCancel && (
                         <Button 
                             variant="destructive" 
@@ -557,7 +567,7 @@ export default function OrderDetailPage() {
             </Dialog>
 
             {/* Refund Order Dialog */}
-            {/* <Dialog open={refundDialogOpen} onOpenChange={setRefundDialogOpen}>
+            <Dialog open={refundDialogOpen} onOpenChange={setRefundDialogOpen}>
                 <DialogContent>
                     <DialogHeader>
                         <DialogTitle>Refund Order?</DialogTitle>
@@ -602,7 +612,7 @@ export default function OrderDetailPage() {
                         </Button>
                     </DialogFooter>
                 </DialogContent>
-            </Dialog>  */}
+            </Dialog> 
 
             {/* Extras Dialog */}
             <OrderExtrasDialog

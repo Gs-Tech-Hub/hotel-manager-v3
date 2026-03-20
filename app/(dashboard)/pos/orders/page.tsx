@@ -357,11 +357,6 @@ export default function PosOrdersPage() {
                                     </Button>
                                 </>
                             )}
-                            {canRefund && (
-                                <Link href={`/pos/orders/${item.id}`}>
-                                    <Button size="sm" variant="outline" className="text-orange-600">Refund</Button>
-                                </Link>
-                            )}
                             <Link href={`/pos/orders/${item.id}`}>
                                 <Button size="sm" variant="outline">View</Button>
                             </Link>
