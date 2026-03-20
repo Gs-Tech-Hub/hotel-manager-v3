@@ -2170,7 +2170,7 @@ model RoomType {
 /// Unit (individual room, suite, apartment instance)
 model Unit {
   id              String   @id @default(cuid())
-  roomNumber      String   @unique
+  roomNumber      String?  @unique
   unitKind        UnitKind @default(ROOM)
   roomTypeId      String
   roomType        RoomType @relation(fields: [roomTypeId], references: [id], onDelete: Restrict)

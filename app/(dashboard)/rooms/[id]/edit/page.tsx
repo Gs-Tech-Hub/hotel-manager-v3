@@ -20,7 +20,7 @@ import { formatTablePrice } from "@/lib/formatters";
 
 interface Room {
 	id: string;
-	roomNumber: string;
+	roomNumber: string | null;
 	unitKind: string;
 	status: string;
 	notes?: string;
@@ -179,7 +179,7 @@ export default function RoomEditPage(props: {
 									<Input
 										id="roomNumber"
 										name="roomNumber"
-										value={formData.roomNumber}
+										value={formData.roomNumber || ''}
 										onChange={handleChange}
 										placeholder="e.g., 101"
 									/>

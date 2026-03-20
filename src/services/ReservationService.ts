@@ -83,7 +83,7 @@ export class ReservationService {
       results.push({
         unitId: unit.id,
         unitKind: unit.unitKind,
-        roomNumber: unit.roomNumber,
+        roomNumber: unit.roomNumber || 'N/A',
         roomType: {
           id: unit.roomType.id,
           name: unit.roomType.name,
@@ -552,7 +552,7 @@ export class ReservationService {
    * Get active reservations (checked-in, not yet checked-out)
    */
   async getActiveReservations(): Promise<
-    (Reservation & { guest: Guest; unit: { roomNumber: string } })[]
+    (Reservation & { guest: Guest; unit: { roomNumber: string | null } })[]
   > {
     return prisma.reservation.findMany({
       where: {

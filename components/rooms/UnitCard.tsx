@@ -14,7 +14,7 @@ import { formatTablePrice } from '@/lib/formatters';
 export interface AvailableUnit {
   unit: {
     id: string;
-    roomNumber: string;
+    roomNumber: string | null;
     unitKind: UnitKind | string;
     roomType: {
       name: string;

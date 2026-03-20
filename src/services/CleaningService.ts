@@ -324,7 +324,7 @@ export class CleaningService {
    * Excludes only REJECTED and CANCELLED tasks
    */
   async getPendingTasks(departmentId?: string): Promise<
-    (CleaningTask & { unit: { roomNumber: string } })[]
+    (CleaningTask & { unit: { roomNumber: string | null } })[]
   > {
     return prisma.cleaningTask.findMany({
       where: {

@@ -7,7 +7,7 @@ import Price from '@/components/ui/Price'
 interface ReservationData {
   id: string
   confirmationNo: string
-  unit?: { roomNumber: string }
+  unit?: { roomNumber: string | null }
   guest?: { firstName: string; lastName: string; email: string; phone: string }
   checkInDate: string
   checkOutDate: string

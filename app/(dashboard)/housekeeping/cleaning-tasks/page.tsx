@@ -38,7 +38,7 @@ interface CleaningTask {
   taskNumber: string;
   unitId: string;
   unit: {
-    roomNumber: string;
+    roomNumber: string | null;
     roomType: {
       name: string;
     };

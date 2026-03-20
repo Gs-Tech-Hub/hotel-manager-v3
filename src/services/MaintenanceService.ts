@@ -266,7 +266,7 @@ export class MaintenanceService {
    */
   async getOpenRequests(
     priority?: MaintenancePriority
-  ): Promise<(MaintenanceRequest & { unit: { roomNumber: string } })[]> {
+  ): Promise<(MaintenanceRequest & { unit: { roomNumber: string | null } })[]> {
     return prisma.maintenanceRequest.findMany({
       where: {
         status: {

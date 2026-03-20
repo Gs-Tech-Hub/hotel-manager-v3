@@ -55,7 +55,7 @@ export async function POST(request: NextRequest) {
         confirmationNumber: reservation.confirmationNo,
         checkInDate: new Date(checkInDate).toLocaleDateString(),
         checkOutDate: new Date(checkOutDate).toLocaleDateString(),
-        roomNumber: unit.roomNumber,
+        roomNumber: unit.roomNumber || 'N/A',
         roomType: unit.roomType.name,
         totalPrice,
         guestName: `${guest.firstName} ${guest.lastName}`,

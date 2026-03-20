@@ -7,7 +7,8 @@
 		"build": "next build",
 		"start": "next start",
 		"lint": "next lint",
-		"seed:core": "tsx scripts/seed-core.ts"
+		"seed:core": "tsx scripts/seed-core.ts",
+		"migrate:resolve-checksums": "tsx scripts/resolve-migration-checksums.ts"
 	},
 	"engines": {
 		"node": ">=18"

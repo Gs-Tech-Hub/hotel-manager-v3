@@ -72,7 +72,7 @@ export interface IRoom {
   id: string;
   name: string;
   description?: string;
-  roomNumber: string;
+  roomNumber: string | null;
   status: 'AVAILABLE' | 'OCCUPIED' | 'CLEANING' | 'MAINTENANCE' | 'BLOCKED';
   price: number;
   capacity: number;

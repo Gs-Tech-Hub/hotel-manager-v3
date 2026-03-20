@@ -16,7 +16,7 @@ export interface CleaningTaskCardProps {
     taskNumber: string;
     unitId: string;
     unit: {
-      roomNumber: string;
+      roomNumber: string | null;
     };
     priority: CleaningPriority;
     status: CleaningTaskStatus;
@@ -67,7 +67,7 @@ export function CleaningTaskCard({
     .split(' ')
     .map(word => word.charAt(0).toUpperCase() + word.slice(1))
     .join(' ');
-  const taskName = `${taskTypeName} - Room ${task.unit.roomNumber}`;
+  const taskName = `${taskTypeName} - Room ${task.unit.roomNumber || 'N/A'}`;
 
   return (
     <Card className="hover:shadow-md transition-shadow">

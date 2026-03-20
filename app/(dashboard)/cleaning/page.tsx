@@ -23,7 +23,7 @@ interface CleaningTask {
   taskNumber: string;
   unitId: string;
   unit: {
-    roomNumber: string;
+    roomNumber: string | null;
   };
   priority: string;
   status: string;

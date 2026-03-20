@@ -178,7 +178,7 @@ export async function POST(
         confirmationNumber: reservation.confirmationNo,
         checkInDate: new Date(reservation.checkInDate).toLocaleDateString(),
         checkOutDate: new Date(reservation.checkOutDate).toLocaleDateString(),
-        roomNumber: reservation.unit.roomNumber,
+        roomNumber: reservation.unit.roomNumber || 'NULL',
         roomType: reservation.unit.roomType.name,
         totalPrice,
         guestName: `${reservation.guest.firstName} ${reservation.guest.lastName}`,

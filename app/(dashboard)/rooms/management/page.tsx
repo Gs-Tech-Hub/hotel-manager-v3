@@ -42,7 +42,7 @@ import {
 
 interface Room {
   id: string;
-  roomNumber: string;
+  roomNumber: string | null;
   status: string;
   roomType: {
     name: string;

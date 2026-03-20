@@ -158,18 +158,23 @@ export async function POST(
     // Convert Decimal to cents as integer for database
     const totalInCents = Math.round(totalAmount.toNumber() * 100);
 
-    // Recalculate tax
+    // Recalculate tax - dynamic, only when enabled
     let taxRate = 0;
+    let taxEnabled = true;
     try {
       const taxSettings = await (prisma as any).taxSettings.findFirst();
       if (taxSettings) {
+        taxEnabled = taxSettings.enabled ?? true;
         taxRate = taxSettings.taxRate ?? 0;
       }
     } catch (err) {
-      console.warn('TaxSettings fetch failed, using default tax rate');
+      console.warn('TaxSettings fetch failed, using defaults');
+      taxEnabled = true;
+      taxRate = 0;
     }
 
-    const taxCents = Math.round(totalInCents * (taxRate / 100));
+    // Only apply tax if enabled
+    const taxCents = taxEnabled ? Math.round(totalInCents * (taxRate / 100)) : 0;
     const finalTotalCents = totalInCents + taxCents;
 
     // Update order header with final totals

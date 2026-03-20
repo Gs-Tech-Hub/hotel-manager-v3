@@ -12,7 +12,7 @@ import { formatTablePrice } from "@/lib/formatters";
 
 interface Room {
 	id: string;
-	roomNumber: string;
+	roomNumber: string | null;
 	unitKind: string;
 	status: string;
 	notes?: string;

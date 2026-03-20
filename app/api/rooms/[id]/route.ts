@@ -116,11 +116,12 @@ export async function DELETE(
 
     const previousStatus = unit.status || 'AVAILABLE';
 
-    // Soft delete: set status to BLOCKED
+    // Soft delete: set status to BLOCKED and clear room number
     const blockedUnit = await prisma.unit.update({
       where: { id },
       data: {
         status: 'BLOCKED',
+        roomNumber: null,
         statusUpdatedAt: new Date(),
       },
     });
