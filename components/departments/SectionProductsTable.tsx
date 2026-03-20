@@ -155,7 +155,7 @@ export default function SectionProductsTable({ products: initialProducts, depart
   }
 
   const reduceQuantity = async (productId: string, productName: string) => {
-    const amount = prompt(`Reduce quantity for ${productName} by how much?`, '1')
+    const amount = prompt(`Reduce available for ${productName} by how much?`, '1')
     if (!amount) return
 
     const quantity = Number(amount)
@@ -164,22 +164,31 @@ export default function SectionProductsTable({ products: initialProducts, depart
       return
     }
 
+    if (!sectionCode) {
+      alert('Section code not available')
+      return
+    }
+
     try {
-      const res = await fetch(`/api/inventory/products/${encodeURIComponent(productId)}/reduce`, {
+      const res = await fetch(`/api/departments/${encodeURIComponent(sectionCode)}/section/inventory?op=adjust`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ quantity }),
+        body: JSON.stringify({ 
+          itemId: productId, 
+          delta: -quantity,
+          reason: 'Manual admin reduction from section'
+        }),
       })
       const j = await res.json().catch(() => null)
       if (!res.ok || !j?.success) {
         if (res.status === 403) {
           throw new Error('Only admin can reduce inventory')
         }
-        throw new Error(j?.error?.message || 'Failed to reduce quantity')
+        throw new Error(j?.error?.message || 'Failed to reduce available')
       }
       setMutateTick((v) => v + 1)
     } catch (e: any) {
-      alert(e?.message || 'Failed to reduce quantity')
+      alert(e?.message || 'Failed to reduce available')
     }
   }
 
