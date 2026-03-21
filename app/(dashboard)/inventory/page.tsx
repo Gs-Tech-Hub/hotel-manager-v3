@@ -72,6 +72,8 @@ export default function InventoryPage() {
   const [searchPage, setSearchPage] = useState<number>(1)
   const [searchTotal, setSearchTotal] = useState<number>(0)
   const [isSearching, setIsSearching] = useState<boolean>(false)
+  const [currentPage, setCurrentPage] = useState<number>(1)
+  const [defaultTotal, setDefaultTotal] = useState<number>(0)
 
   const generateSku = (cat: string) => {
     if (!cat) return ''
@@ -99,10 +101,15 @@ export default function InventoryPage() {
         // Otherwise fetch global inventory with search and pagination
         const urlObj = new URL('/api/inventory', window.location.origin)
         if (search) {
+          // For search: fetch first page only (API pagination)
           urlObj.searchParams.set('search', search)
+          urlObj.searchParams.set('page', page.toString())
+          urlObj.searchParams.set('limit', '100')
+        } else {
+          // For default view: fetch all items (client-side pagination)
+          urlObj.searchParams.set('page', '1')
+          urlObj.searchParams.set('limit', '10000')  // Fetch all at once for client-side pagination
         }
-        urlObj.searchParams.set('page', page.toString())
-        urlObj.searchParams.set('limit', '100')
         url = urlObj.toString()
       }
       
@@ -119,11 +126,19 @@ export default function InventoryPage() {
         // Show all items - inventory and extras
         setItems(fetched)
         setSearchTotal(0)
+        setDefaultTotal(0)
       } else {
         // Global inventory: only show items with quantity > 0
-        setItems(fetched.filter((it) => Number(it?.quantity ?? 0) > 0))
-        // Update search total from response metadata
-        setSearchTotal(json.data?.total || fetched.length)
+        const filtered = fetched.filter((it) => Number(it?.quantity ?? 0) > 0)
+        setItems(filtered)
+        
+        // Update total from response metadata based on search or default view
+        const total = json.data?.total || filtered.length
+        if (search) {
+          setSearchTotal(total)
+        } else {
+          setDefaultTotal(total)
+        }
       }
     } catch (err: any) {
       console.error('Failed to load inventory', err)
@@ -271,6 +286,9 @@ export default function InventoryPage() {
 
   useEffect(() => {
     fetchDepartments()
+    setCurrentPage(1)  // Reset pagination when department changes
+    setSearchQuery('')  // Clear search when department changes
+    setSearchPage(1)
     fetchItems(selectedDept)
     fetchExtras(selectedDept)
     if (selectedDept) {
@@ -290,6 +308,12 @@ export default function InventoryPage() {
   )
 
   const filteredItems = items.filter((it) => !categoryFilter || it.category === categoryFilter)
+
+  // Calculate paginated items for display (client-side pagination)
+  const itemsPerPage = 100
+  const startIdx = (currentPage - 1) * itemsPerPage
+  const endIdx = startIdx + itemsPerPage
+  const paginatedItems = filteredItems.slice(startIdx, endIdx)
 
   // Initialize selected department from the URL query (so returning from a transfer keeps the selection)
   useEffect(() => {
@@ -316,26 +340,65 @@ export default function InventoryPage() {
     }
   }, [selectedDept])
 
-  // Handle search with debouncing
-  useEffect(() => {
-    const timer = setTimeout(() => {
-      if (!selectedDept) {
-        // Only perform global search when no department is selected
-        setSearchPage(1)
-        if (searchQuery.trim()) {
-          setIsSearching(true)
-          fetchItems(undefined, searchQuery.trim(), 1)
-            .finally(() => setIsSearching(false))
-        } else {
-          // Reset to normal list when search is cleared
-          fetchItems(undefined, '', 1)
+  // Handle manual search button click
+  const handleSearchClick = async () => {
+    if (!selectedDept) {
+      setSearchPage(1)
+      setIsSearching(true)
+      try {
+        await fetchItems(undefined, searchQuery.trim(), 1)
+      } finally {
+        setIsSearching(false)
+      }
+    }
+  }
+
+  // Handle pagination for both search and default view
+  const handlePreviousPage = async () => {
+    if (searchQuery.trim()) {
+      // Search pagination
+      if (searchPage > 1) {
+        const newPage = searchPage - 1
+        setSearchPage(newPage)
+        setIsSearching(true)
+        try {
+          await fetchItems(undefined, searchQuery.trim(), newPage)
+        } finally {
+          setIsSearching(false)
         }
       }
-    }, 300) // 300ms debounce
+    } else {
+      // Default view pagination - client-side only
+      if (currentPage > 1) {
+        const newPage = currentPage - 1
+        setCurrentPage(newPage)
+      }
+    }
+  }
 
-    return () => clearTimeout(timer)
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [searchQuery, selectedDept])
+  const handleNextPage = async () => {
+    if (searchQuery.trim()) {
+      // Search pagination
+      const totalPages = Math.ceil(searchTotal / 100)
+      if (searchPage < totalPages) {
+        const newPage = searchPage + 1
+        setSearchPage(newPage)
+        setIsSearching(true)
+        try {
+          await fetchItems(undefined, searchQuery.trim(), newPage)
+        } finally {
+          setIsSearching(false)
+        }
+      }
+    } else {
+      // Default view pagination - use filteredItems length for total
+      const totalPages = Math.ceil(filteredItems.length / 100)
+      if (currentPage < totalPages) {
+        const newPage = currentPage + 1
+        setCurrentPage(newPage)
+      }
+    }
+  }
 
   return (
     <div className="space-y-6">
@@ -379,7 +442,8 @@ export default function InventoryPage() {
                 fetchItems(undefined, searchQuery.trim(), 1)
               } else {
                 // Refresh normal items
-                fetchItems(selectedDept)
+                setCurrentPage(1)
+                fetchItems(selectedDept, '', 1)
               }
             }
           }} className="px-3 py-1 border rounded text-sm mr-2">Refresh</button>
@@ -485,19 +549,81 @@ export default function InventoryPage() {
         {!selectedDept && activeTab === 'items' && (
           <div className="flex-1 min-w-[300px]">
             <label className="text-sm mr-2">Search inventory</label>
-            <input
-              type="text"
-              placeholder="Search by name, SKU, or description..."
-              value={searchQuery}
-              onChange={(e) => setSearchQuery(e.target.value)}
-              className="w-full border px-3 py-1 rounded"
-              disabled={isSearching}
-            />
-            {searchQuery && !isSearching && searchTotal > 0 && (
-              <div className="text-xs text-gray-600 mt-1">Found {searchTotal} item{searchTotal !== 1 ? 's' : ''}</div>
+            <div className="flex gap-2 items-end">
+              <div className="flex-1">
+                <input
+                  type="text"
+                  placeholder="Search by name, SKU, or description..."
+                  value={searchQuery}
+                  onChange={(e) => setSearchQuery(e.target.value)}
+                  className="w-full border px-3 py-1 rounded"
+                  disabled={isSearching}
+                  onKeyPress={(e) => {
+                    if (e.key === 'Enter') {
+                      handleSearchClick()
+                    }
+                  }}
+                />
+                {searchQuery && !isSearching && searchTotal > 0 && (
+                  <div className="text-xs text-gray-600 mt-1">Found {searchTotal} item{searchTotal !== 1 ? 's' : ''}</div>
+                )}
+                {isSearching && (
+                  <div className="text-xs text-gray-500 mt-1">Searching...</div>
+                )}
+              </div>
+              <button
+                onClick={handleSearchClick}
+                disabled={isSearching || !searchQuery.trim()}
+                className="px-3 py-1 bg-blue-600 text-white rounded text-sm hover:bg-blue-700 disabled:opacity-60 disabled:cursor-not-allowed whitespace-nowrap"
+              >
+                {isSearching ? 'Searching...' : 'Search'}
+              </button>
+            </div>
+            {searchQuery && searchTotal > 100 && (
+              <div className="flex items-center justify-between mt-3 p-2 bg-gray-50 rounded">
+                <span className="text-xs text-gray-700">
+                  Page {searchPage} of {Math.ceil(searchTotal / 100)} ({searchTotal} total items)
+                </span>
+                <div className="flex gap-2">
+                  <button
+                    onClick={handlePreviousPage}
+                    disabled={isSearching || searchPage === 1}
+                    className="px-2 py-1 border rounded text-xs hover:bg-gray-200 disabled:opacity-60 disabled:cursor-not-allowed"
+                  >
+                    ← Previous
+                  </button>
+                  <button
+                    onClick={handleNextPage}
+                    disabled={isSearching || searchPage === Math.ceil(searchTotal / 100)}
+                    className="px-2 py-1 border rounded text-xs hover:bg-gray-200 disabled:opacity-60 disabled:cursor-not-allowed"
+                  >
+                    Next →
+                  </button>
+                </div>
+              </div>
             )}
-            {isSearching && (
-              <div className="text-xs text-gray-500 mt-1">Searching...</div>
+            {!searchQuery && filteredItems.length > 100 && (
+              <div className="flex items-center justify-between mt-3 p-2 bg-gray-50 rounded">
+                <span className="text-xs text-gray-700">
+                  Page {currentPage} of {Math.ceil(filteredItems.length / 100)} ({filteredItems.length} total items)
+                </span>
+                <div className="flex gap-2">
+                  <button
+                    onClick={handlePreviousPage}
+                    disabled={loading || currentPage === 1}
+                    className="px-2 py-1 border rounded text-xs hover:bg-gray-200 disabled:opacity-60 disabled:cursor-not-allowed"
+                  >
+                    ← Previous
+                  </button>
+                  <button
+                    onClick={handleNextPage}
+                    disabled={loading || currentPage === Math.ceil(filteredItems.length / 100)}
+                    className="px-2 py-1 border rounded text-xs hover:bg-gray-200 disabled:opacity-60 disabled:cursor-not-allowed"
+                  >
+                    Next →
+                  </button>
+                </div>
+              </div>
             )}
           </div>
         )}
@@ -632,7 +758,7 @@ export default function InventoryPage() {
                 </tr>
               </thead>
               <tbody>
-                {filteredItems.map((it) => (
+                {paginatedItems.map((it) => (
                   <tr key={it.id} className="border-t hover:bg-gray-50">
                     <td className="p-2">
                       <div className="font-medium">{it.name}</div>
