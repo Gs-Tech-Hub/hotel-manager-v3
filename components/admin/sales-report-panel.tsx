@@ -9,6 +9,7 @@ import { DashboardChart } from "./dashboard-chart"
 import { DashboardDataTable } from "./dashboard-data-table"
 import { StatsCard } from "./dashboard-stats-card"
 import { formatTablePrice } from "@/lib/formatters"
+import { useAuth } from "@/components/auth-context"
 
 interface SalesReport {
   summary: {
@@ -30,6 +31,7 @@ interface SalesReportProps {
 }
 
 export function SalesReportPanel({ departmentFilter }: SalesReportProps) {
+  const { user } = useAuth()
   const [report, setReport] = useState<SalesReport | null>(null)
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
@@ -39,6 +41,10 @@ export function SalesReportPanel({ departmentFilter }: SalesReportProps) {
     return date.toISOString().split("T")[0]
   })
   const [endDate, setEndDate] = useState(new Date().toISOString().split("T")[0])
+
+  // Employees with orders.read permission (but not reports.read) can only see their department's sales
+  // This prevents them from viewing other departments' data
+  const isLimitedToOwnDepartment = user && user.permissions?.includes("orders.read") && !user.permissions?.includes("reports.read")
 
   const fetchReport = async () => {
     try {

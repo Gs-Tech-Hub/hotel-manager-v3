@@ -53,6 +53,55 @@ const dashboardSections: DashboardSection[] = [
 	},
 ];
 
+// Quick Actions availability - available to employees with POS or Department access
+interface QuickActionGroup {
+	title: string;
+	description: string;
+	actions: Array<{
+		label: string;
+		href: string;
+		icon: React.ElementType;
+	}>;
+	requiredPermissions: string[];
+}
+
+const quickActionGroups: QuickActionGroup[] = [
+	{
+		title: "Sales & Operations",
+		description: "Reports and analytics tools (Admin only)",
+		requiredPermissions: ["reports.read"],
+		actions: [
+			{
+				label: "Sales Report",
+				href: "/reports/sales",
+				icon: TrendingUp,
+			},
+			{
+				label: "Tax Report",
+				href: "/reports/tax",
+				icon: DollarSign,
+			},
+			{
+				label: "Analytics",
+				href: "/analytics",
+				icon: Activity,
+			},
+		],
+	},
+	{
+		title: "Sales Report",
+		description: "View sales for your departments",
+		requiredPermissions: ["orders.read"],
+		actions: [
+			{
+				label: "Sales Report",
+				href: "/reports/sales",
+				icon: TrendingUp,
+			},
+		],
+	},
+];
+
 // Stat cards that correspond to sections
 const statsBySection = {
 	revenue: {
@@ -129,6 +178,47 @@ function canAccessSection(section: DashboardSection, user: ReturnType<typeof use
 	return true;
 }
 
+/**
+ * Check if user can access quick actions (has admin or POS/Orders or Department access)
+ */
+function canAccessQuickActions(user: ReturnType<typeof useAuth>["user"]): boolean {
+	if (!user) return false;
+
+	// Admin always has access
+	if (user.userType === 'admin') {
+		return true;
+	}
+
+	// Check for Orders or Departments permissions
+	const hasQuickActionPermission = user.permissions?.some(perm =>
+		[
+			"orders.read",
+			"departments.read",
+		].includes(perm)
+	);
+
+	return !!hasQuickActionPermission;
+}
+
+/**
+ * Get available quick action groups for the user
+ */
+function getAvailableQuickActions(user: ReturnType<typeof useAuth>["user"]): QuickActionGroup[] {
+	if (!user) return [];
+
+	// Admins get full Sales & Operations
+	if (user.userType === 'admin') {
+		return [quickActionGroups[0]];
+	}
+
+	// Employees with orders permission get Sales Report only
+	if (user.permissions?.includes('orders.read')) {
+		return [quickActionGroups[1]];
+	}
+
+	return [];
+}
+
 
 export default function DashboardPage() {
 	const { user } = useAuth();
@@ -194,6 +284,17 @@ export default function DashboardPage() {
 	const accessibleSections = useMemo(() => {
 		if (!user) return [];
 		return dashboardSections.filter(section => canAccessSection(section, user));
+	}, [user]);
+
+	// Get accessible quick action groups for this user
+	const availableQuickActions = useMemo(() => {
+		if (!user) return [];
+		return getAvailableQuickActions(user);
+	}, [user]);
+
+	// Check if user can access quick actions
+	const showQuickActions = useMemo(() => {
+		return canAccessQuickActions(user);
 	}, [user]);
 
 	// Get accessible stats based on sections
@@ -286,10 +387,10 @@ export default function DashboardPage() {
 		)}
 
 		{/* Additional Content Sections - Only show if user has access */}
-		{accessibleSections.length > 0 && (
+		{(accessibleSections.length > 0 || showQuickActions) && (
 			<div className="grid gap-6">
-				{/* Quick Actions Card - Managers and above */}
-				{canAccessSection(dashboardSections.find(s => s.id === 'employees')!, user) && (
+				{/* Quick Actions Card - Show for employees with POS terminal or department access */}
+				{showQuickActions && availableQuickActions.length > 0 && (
 					<Card>
 						<CardHeader>
 							<CardTitle className="text-xl font-semibold">
@@ -297,36 +398,30 @@ export default function DashboardPage() {
 							</CardTitle>
 							<p className="text-muted-foreground">Commonly used features</p>
 						</CardHeader>
-						<CardContent className="space-y-4">
-							<div className="grid grid-cols-3 gap-4">
-								<Link href="/reports/sales">
-									<button
-										type="button"
-										className="w-full flex flex-col items-center justify-center gap-2 p-6 rounded-lg border hover:bg-muted transition-colors"
-									>
-										<TrendingUp className="h-6 w-6" />
-										<span className="text-sm font-medium">Sales Report</span>
-									</button>
-								</Link>
-								<Link href="/reports/tax">
-									<button
-										type="button"
-										className="w-full flex flex-col items-center justify-center gap-2 p-6 rounded-lg border hover:bg-muted transition-colors"
-									>
-										<DollarSign className="h-6 w-6" />
-										<span className="text-sm font-medium">Tax Report</span>
-									</button>
-								</Link>
-								<Link href="/analytics">
-									<button
-										type="button"
-										className="w-full flex flex-col items-center justify-center gap-2 p-6 rounded-lg border hover:bg-muted transition-colors"
-									>
-										<Activity className="h-6 w-6" />
-										<span className="text-sm font-medium">Analytics</span>
-									</button>
-								</Link>
-							</div>
+						<CardContent className="space-y-6">
+							{availableQuickActions.map((group) => (
+								<div key={group.title}>
+									<h3 className="font-medium text-sm text-gray-700 mb-3">
+										{group.title}
+									</h3>
+									<div className="grid grid-cols-2 md:grid-cols-3 gap-3">
+										{group.actions.map((action) => {
+											const Icon = action.icon;
+											return (
+												<Link key={action.href} href={action.href}>
+													<button
+														type="button"
+														className="w-full flex flex-col items-center justify-center gap-2 p-4 rounded-lg border hover:bg-muted hover:border-primary transition-colors"
+													>
+														<Icon className="h-5 w-5" />
+														<span className="text-xs font-medium text-center">{action.label}</span>
+													</button>
+												</Link>
+											);
+										})}
+									</div>
+								</div>
+							))}
 						</CardContent>
 					</Card>
 				)}
@@ -334,7 +429,7 @@ export default function DashboardPage() {
 		)}
 
 		{/* No access message */}
-		{accessibleSections.length === 0 && !hasNoOrDefaultRoles && (
+		{accessibleSections.length === 0 && !showQuickActions && !hasNoOrDefaultRoles && (
 			<Card>
 				<CardHeader>
 					<CardTitle className="text-xl font-semibold">
