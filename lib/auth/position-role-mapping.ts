@@ -11,8 +11,6 @@
  * - Position "Bartender" → role "bar_staff"
  */
 
-import { prisma } from "@/lib/auth/prisma";
-
 export type Position = {
   id: string;
   name: string;

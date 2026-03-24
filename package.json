@@ -8,7 +8,11 @@
 		"start": "next start",
 		"lint": "next lint",
 		"seed:core": "tsx scripts/seed-core.ts",
-		"migrate:resolve-checksums": "tsx scripts/resolve-migration-checksums.ts"
+		"migrate:resolve-checksums": "tsx scripts/resolve-migration-checksums.ts",
+		"migration:dump": "tsx scripts/migration-dump.ts",
+		"backup:create": "tsx scripts/backup-database.ts",
+		"export:accelerate": "tsx scripts/export-from-accelerate.ts",
+		"import:accelerate": "tsx scripts/import-from-accelerate.ts"
 	},
 	"engines": {
 		"node": ">=18"
@@ -38,6 +42,7 @@
 		"lucide-react": "^0.522.0",
 		"next": "15.3.8",
 		"next-themes": "^0.4.6",
+		"nodemailer": "^8.0.3",
 		"react": "^19.0.0",
 		"react-dom": "^19.0.0",
 		"react-hook-form": "^7.58.1",

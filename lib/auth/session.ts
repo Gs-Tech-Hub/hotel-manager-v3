@@ -1,8 +1,28 @@
 import { jwtVerify, SignJWT } from "jose";
 import { cookies } from "next/headers";
-import { prisma } from "./prisma";
-import { getDefaultRoleForDepartment } from "./department-role-mapping";
-import { getRoleForPosition } from "./position-role-mapping";
+// Lazy-load prisma to avoid edge runtime errors in middleware
+let prisma: any = null;
+const getPrisma = async () => {
+  if (!prisma) {
+    const { prisma: p } = await import("./prisma");
+    prisma = p;
+  }
+  return prisma;
+};
+
+// Lazy-load role mapping functions (only used in buildSession, not in middleware)
+let roleMapFns: any = null;
+const getRoleMapFunctions = async () => {
+  if (!roleMapFns) {
+    const dept = await import("./department-role-mapping");
+    const pos = await import("./position-role-mapping");
+    roleMapFns = {
+      getDefaultRoleForDepartment: dept.getDefaultRoleForDepartment,
+      getRoleForPosition: pos.getRoleForPosition,
+    };
+  }
+  return roleMapFns;
+};
 
 const SECRET = new TextEncoder().encode(
   process.env.JWT_SECRET || "hotel-manager-secret-key-change-in-production"
@@ -211,13 +231,14 @@ export async function validateSession(session: AuthSession): Promise<boolean> {
 
   try {
     // Check if user still exists and is active
+    const p = await getPrisma();
     if (session.userType === "admin") {
-      const admin = await prisma.adminUser.findUnique({
+      const admin = await p.adminUser.findUnique({
         where: { id: session.userId },
       });
       return admin?.isActive === true;
     } else if (session.userType === "employee") {
-      const employee = await prisma.pluginUsersPermissionsUser.findUnique({
+      const employee = await p.pluginUsersPermissionsUser.findUnique({
         where: { id: session.userId },
       });
       return employee?.blocked === false;
@@ -237,6 +258,7 @@ export async function buildSession(
   departmentId?: string
 ): Promise<AuthSession | null> {
   try {
+    const p = await getPrisma();
     let user: any = null;
     let email = "";
     let firstName = "";
@@ -244,14 +266,14 @@ export async function buildSession(
 
     // Fetch user details
     if (userType === "admin") {
-      user = await prisma.adminUser.findUnique({
+      user = await p.adminUser.findUnique({
         where: { id: userId },
       });
       email = user?.email || "";
       firstName = user?.firstname || "";
       lastName = user?.lastname || "";
     } else {
-      user = await prisma.pluginUsersPermissionsUser.findUnique({
+      user = await p.pluginUsersPermissionsUser.findUnique({
         where: { id: userId },
       });
       email = user?.email || "";
@@ -265,7 +287,7 @@ export async function buildSession(
       // Check whether unified user_roles table exists. If not, fall back to
       // legacy relations (e.g., adminUser.roles) to avoid Prisma P2021 errors.
       try {
-        const hasUserRolesRow: any[] = await prisma.$queryRaw`
+        const hasUserRolesRow: any[] = await p.$queryRaw`
           SELECT EXISTS (
             SELECT FROM information_schema.tables
             WHERE table_schema = 'public' AND table_name = 'user_roles'
@@ -276,7 +298,7 @@ export async function buildSession(
         let permissionsList: string[] = [];
 
         if (hasUserRoles) {
-          const userRoles = await prisma.userRole.findMany({
+          const userRoles = await p.userRole.findMany({
             where: {
               userId,
               userType,
@@ -295,11 +317,11 @@ export async function buildSession(
             },
           });
 
-          rolesList = userRoles.map((ur) => ur.role.code);
+          rolesList = userRoles.map((ur: any) => ur.role.code);
 
           // Extract permissions from all roles
           const permissionsSet = new Set<string>();
-          userRoles.forEach((ur) => {
+          userRoles.forEach((ur: any) => {
             ur.role.rolePermissions.forEach((rp: any) => {
               addPermissionVariants(
                 permissionsSet,
@@ -314,10 +336,13 @@ export async function buildSession(
           if (userType === "employee" && rolesList.length === 0) {
             try {
               let roleCodeToAssign: string | null = null;
+              
+              // Lazy-load role mapping functions
+              const { getRoleForPosition: getRoleForPos, getDefaultRoleForDepartment: getDefaultRole } = await getRoleMapFunctions();
 
               // First priority: check employee's position field
               if (user.position) {
-                roleCodeToAssign = await getRoleForPosition(user.position);
+                roleCodeToAssign = await getRoleForPos(user.position);
                 if (roleCodeToAssign) {
                   console.log(`[AUTH] Assigning role "${roleCodeToAssign}" to employee ${userId} based on position "${user.position}"`);
                 }
@@ -325,7 +350,7 @@ export async function buildSession(
 
               // Second priority: check department if no position-based role found
               if (!roleCodeToAssign && departmentId) {
-                roleCodeToAssign = await getDefaultRoleForDepartment(departmentId);
+                roleCodeToAssign = await getDefaultRole(departmentId);
                 if (roleCodeToAssign) {
                   console.log(`[AUTH] Assigning role "${roleCodeToAssign}" to employee ${userId} based on department`);
                 }
@@ -340,7 +365,7 @@ export async function buildSession(
                   rolesList.push(roleCodeToAssign);
                 }
 
-                const role = await prisma.role.findFirst({
+                const role = await p.role.findFirst({
                   where: { code: roleCodeToAssign },
                   include: {
                     rolePermissions: {
@@ -370,7 +395,7 @@ export async function buildSession(
         } else if (userType === "admin") {
           // Fallback for legacy schema: admin users fetch from AdminRole relation
           try {
-            const adminWithRoles = await prisma.adminUser.findUnique({
+            const adminWithRoles = await p.adminUser.findUnique({
               where: { id: userId },
               include: { 
                 roles: {
