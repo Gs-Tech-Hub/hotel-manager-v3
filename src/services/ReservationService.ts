@@ -130,11 +130,11 @@ export class ReservationService {
       }
     }
 
-    // Check for conflicts
+    // Check for conflicts - block if room is booked, occupied, or checking out (cleaning)
     const conflict = await prisma.reservation.findFirst({
       where: {
         unitId: data.unitId,
-        status: { in: ['CONFIRMED', 'CHECKED_IN'] },
+        status: { in: ['CONFIRMED', 'CHECKED_IN', 'CHECKED_OUT'] },
         AND: [
           { checkInDate: { lt: checkOutDate } },
           { checkOutDate: { gt: checkInDate } },
@@ -143,7 +143,7 @@ export class ReservationService {
     });
 
     if (conflict) {
-      throw new Error('Unit not available for selected dates');
+      throw new Error('Unit not available for selected dates - conflicts with existing reservation');
     }
 
     // Calculate price
@@ -227,13 +227,13 @@ export class ReservationService {
     const checkInDate = data.checkInDate || reservation.checkInDate;
     const checkOutDate = data.checkOutDate || reservation.checkOutDate;
 
-    // Check for conflicts with new dates
+    // Check for conflicts with new dates (exclude current reservation and CHECKED_OUT status blockers)
     if (data.checkInDate || data.checkOutDate) {
       const conflict = await prisma.reservation.findFirst({
         where: {
           id: { not: reservationId },
           unitId: reservation.unitId,
-          status: { in: ['CONFIRMED', 'CHECKED_IN'] },
+          status: { in: ['CONFIRMED', 'CHECKED_IN', 'CHECKED_OUT'] },
           AND: [
             { checkInDate: { lt: checkOutDate } },
             { checkOutDate: { gt: checkInDate } },
@@ -242,7 +242,7 @@ export class ReservationService {
       });
 
       if (conflict) {
-        throw new Error('Unit not available for new dates');
+        throw new Error('Unit not available for new dates - conflicts with existing reservation');
       }
     }
 

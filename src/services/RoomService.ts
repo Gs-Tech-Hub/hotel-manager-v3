@@ -69,12 +69,12 @@ export class RoomService {
     const available: (Unit & { roomType: RoomType })[] = [];
 
     for (const unit of units) {
-      // Check for conflicting reservations
+      // Check for conflicting reservations (block CONFIRMED, CHECKED_IN, and CHECKED_OUT statuses)
       const reservationConflict = await prisma.reservation.findFirst({
         where: {
           unitId: unit.id,
           status: {
-            in: ['CONFIRMED', 'CHECKED_IN'],
+            in: ['CONFIRMED', 'CHECKED_IN', 'CHECKED_OUT'], // CHECKED_OUT blocks during cleaning
           },
           AND: [
             { checkInDate: { lt: checkout } },

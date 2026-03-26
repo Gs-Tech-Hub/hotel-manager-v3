@@ -76,10 +76,16 @@ export async function GET(request: NextRequest) {
             let isAvailable = true;
             let unavailableReason = '';
 
-            // Check room status
-            if (unit.status !== UnitStatus.AVAILABLE) {
+            // Check room status - CLEANING and MAINTENANCE block all bookings
+            if (unit.status === 'CLEANING') {
               isAvailable = false;
-              unavailableReason = `Room is ${unit.status}`;
+              unavailableReason = 'Room is currently being cleaned - cannot book until completed';
+            } else if (unit.status === 'MAINTENANCE') {
+              isAvailable = false;
+              unavailableReason = 'Room is under maintenance - cannot book until completed';
+            } else if (unit.status !== UnitStatus.AVAILABLE) {
+              isAvailable = false;
+              unavailableReason = `Room is ${unit.status} - cannot book at this time`;
             }
 
             // If status is OK, check for booking conflicts
@@ -102,12 +108,12 @@ export async function GET(request: NextRequest) {
               }
             }
 
-            // Check for reservation conflicts
+            // Check for reservation conflicts (CONFIRMED, CHECKED_IN, and CHECKED_OUT statuses block booking)
             if (isAvailable) {
               const reservationConflict = await prisma.reservation.findFirst({
                 where: {
                   unitId: unit.id,
-                  status: { in: ['CONFIRMED', 'CHECKED_IN'] },
+                  status: { in: ['CONFIRMED', 'CHECKED_IN', 'CHECKED_OUT'] },
                   AND: [
                     { checkInDate: { lt: checkOutDate } },
                     { checkOutDate: { gt: checkInDate } },
@@ -116,8 +122,12 @@ export async function GET(request: NextRequest) {
               });
 
               if (reservationConflict) {
+                if (reservationConflict.status === 'CHECKED_OUT') {
+                  unavailableReason = 'Room checking out - cleaning in progress';
+                } else {
+                  unavailableReason = 'Already reserved for these dates';
+                }
                 isAvailable = false;
-                unavailableReason = 'Already reserved for these dates';
               }
             }
 

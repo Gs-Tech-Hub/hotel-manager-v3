@@ -6,7 +6,11 @@
  * This script imports data from an exported JSON file into the local database.
  * 
  * Usage:
- *   npm run import:accelerate -- <export-file>
+ *   npm run import:accelerate                                    # Clear & import latest export
+ *   npm run import:accelerate -- <export-file>                   # Import specific file
+ *   npm run import:accelerate -- --no-clear                      # Skip clearing (preserve existing)
+ *   npm run import:accelerate -- --continue-on-error             # Skip failed records
+ *   npm run import:accelerate -- --no-clear --continue-on-error  # Both flags
  */
 
 import * as fs from 'fs';
@@ -54,7 +58,6 @@ async function clearTables(): Promise<void> {
     'CleaningRoutine',
     'PricingOverride',
     'Reservation',
-    'Unit',
     'Guest',
     'GameSession',
     'GameType',
@@ -105,6 +108,8 @@ async function clearTables(): Promise<void> {
     'Bed',
     'Amenity',
     'Room',
+    'Unit',
+    'RoomType',
     'OrderExtra',
     'Extra',
     'OrderFulfillment',
@@ -135,7 +140,6 @@ async function clearTables(): Promise<void> {
     'ServiceInventory',
     'DepartmentSection',
     'Department',
-    'TransferTokenPermission',
     'TransferToken',
     'ApiTokenPermission',
     'ApiToken',
@@ -376,11 +380,31 @@ async function importData(exportPath: string, shouldClear: boolean = true): Prom
       
       for (const record of records) {
         try {
+          // When not clearing, check if record exists and skip it
+          if (!shouldClear && record.id && typeof model.findUnique === 'function') {
+            const existing = await model.findUnique({
+              where: { id: record.id }
+            });
+            if (existing) {
+              skippedRecords++;
+              errorCount++;
+              continue;
+            }
+          }
+          
           await model.create({ data: record });
           successCount++;
         } catch (error: any) {
           // Skip if duplicate or constraint violation
-          if (error.code === 'P2002' || error.code === 'P2003') {
+          // P2002 = Unique constraint, P2003 = Foreign key constraint
+          if (error.code === 'P2002' || error.code === 'P2003' || error.message?.includes('Unique constraint')) {
+            skippedRecords++;
+            errorCount++;
+            continue;
+          }
+          // If --continue-on-error flag is set, skip other errors too
+          if (process.argv.includes('--continue-on-error')) {
+            console.warn(`      ⚠️  Skipping record due to error: ${error.message}`);
             skippedRecords++;
             errorCount++;
             continue;
@@ -390,10 +414,13 @@ async function importData(exportPath: string, shouldClear: boolean = true): Prom
       }
 
       importedRecords += successCount;
-      console.log(`   ✓ Imported ${successCount} records${errorCount > 0 ? ` (${errorCount} duplicates skipped)` : ''}`);
+      console.log(`   ✓ Imported ${successCount} records${errorCount > 0 ? ` (${errorCount} duplicates/errors skipped)` : ''}`);
     } catch (error: any) {
       console.error(`   ❌ Failed to import ${tableName}: ${error.message}`);
-      throw error;
+      if (!process.argv.includes('--continue-on-error')) {
+        throw error;
+      }
+      console.log(`   ⚠️  Continuing despite error (--continue-on-error enabled)`);
     }
   }
 
@@ -411,13 +438,26 @@ async function main() {
   console.log('═══════════════════════════════════════════════════════');
 
   try {
-    const exportPath = process.argv[2] || await findLatestExportFile();
-    const shouldClear = !process.argv.includes('--no-clear');
+    // Parse arguments, filtering out flags
+    const flags = process.argv.filter(arg => arg.startsWith('--'));
+    const nonFlagArgs = process.argv.slice(2).filter(arg => !arg.startsWith('--'));
+    
+    const exportPath = nonFlagArgs[0] || await findLatestExportFile();
+    const shouldClear = !flags.includes('--no-clear');
+    const continueOnError = flags.includes('--continue-on-error');
+    
+    console.log('\n📋 Arguments parsed:');
+    console.log(`   Export path: ${exportPath.split('/').pop()}`);
+    console.log(`   Clear existing data: ${shouldClear ? 'YES' : 'NO'}`);
+    console.log(`   Continue on error: ${continueOnError ? 'YES' : 'NO'}`);
     
     if (shouldClear) {
       console.log('\n⚠️  WARNING: This will CLEAR all existing data');
       console.log('   Use --no-clear flag to preserve existing data');
+    } else {
+      console.log('\n✓ Preserving existing data (--no-clear enabled)');
     }
+    
     console.log('   Ensure you are connected to the LOCAL database first!\n');
     
     await importData(exportPath, shouldClear);
