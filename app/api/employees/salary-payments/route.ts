@@ -150,10 +150,14 @@ export async function POST(request: NextRequest) {
       }
     }
 
+    // Determine if paying early: if paymentDate is before salaryDueDate
+    const paymentDate = new Date(validated.paymentDate);
+    const isPayingEarly = salaryDueDate && paymentDate < salaryDueDate;
+
     const payment = await prisma.salaryPayment.create({
       data: {
         userId: validated.userId,
-        paymentDate: new Date(validated.paymentDate),
+        paymentDate,
         grossSalary: validated.grossSalary,
         deductions: validated.deductions,
         netSalary: validated.netSalary,
