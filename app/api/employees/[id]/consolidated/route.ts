@@ -4,10 +4,11 @@ import { extractUserContext } from '@/lib/user-context';
 import { successResponse, errorResponse, getStatusCode } from '@/lib/api-response';
 import { ErrorCodes } from '@/lib/api-response';
 import {
-  calculateEmployeeSalary,
-  getEmployeeSalaryHistory,
+  calculateEmployeeSalaryByDays,
   getOutstandingSalary,
+  getEmployeeDaysWorked,
 } from '@/src/services/salary.service';
+import { normalizeToCents } from '@/lib/price';
 
 /**
  * GET /api/employees/[id]/consolidated
@@ -97,17 +98,45 @@ export async function GET(
       recent: charges.slice(0, 5), // Last 5 charges
     };
 
-    // 4. Get salary information
+    // 4. Get salary information (DAYS-BASED CALCULATION)
     let salaryInfo: any = null;
     if (
       employmentData.employmentStatus !== 'inactive' &&
       employmentData.employmentStatus !== 'terminated'
     ) {
       try {
-        const salaryCalc = await calculateEmployeeSalary({
+        // Get current month's days worked
+        const now = new Date();
+        const monthStart = new Date(now.getFullYear(), now.getMonth(), 1);
+        const monthEnd = new Date(now.getFullYear(), now.getMonth() + 1, 0);
+        
+        const daysWorked = await getEmployeeDaysWorked(employeeId, monthStart, monthEnd);
+        const salaryCalc = await calculateEmployeeSalaryByDays(
           employeeId,
-        });
-        salaryInfo = salaryCalc;
+          daysWorked
+        );
+        
+        // Format for SalaryModal: wrap in currentSalary property
+        // Convert Decimal values to numbers (major units) then to minor units (cents) for consistent formatting
+        
+        const grossSalaryNum = salaryCalc.grossSalary.toNumber();
+        const netSalaryNum = salaryCalc.netSalary.toNumber();
+        const deductionsNum = salaryCalc.totalDeductions.toNumber();
+        
+        salaryInfo = {
+          currentSalary: {
+            grossSalary: normalizeToCents(grossSalaryNum, 100), // Convert to cents
+            netSalary: normalizeToCents(netSalaryNum, 100), // Convert to cents
+            deductions: normalizeToCents(deductionsNum, 100), // Convert to cents
+            payEarly: salaryCalc.payEarly,
+            salaryDueDate: salaryCalc.salaryDueDate,
+          },
+          daysWorked,
+          chargeDetails: {
+            pendingCharges: normalizeToCents(salaryCalc.chargeDetails?.pendingCharges?.toNumber() || 0, 100),
+            paidCharges: normalizeToCents(salaryCalc.chargeDetails?.paidCharges?.toNumber() || 0, 100),
+          },
+        };
       } catch (err) {
         console.error('Error calculating salary:', err);
       }
@@ -184,26 +213,34 @@ export async function GET(
     }
 
     // 8. Compile consolidated response
-    const consolidated = {
+    // Keep structure compatible with both EmployeeConsolidationView and SalaryModal
+    const responseData = {
+      // Core employee data
       employee,
       employment: employmentData,
       charges: chargesSummary,
-      salary: salaryInfo,
       salaryHistory,
       attendance: attendanceSummary,
       termination: terminationInfo,
+      
+      // Salary information (for both SalaryModal and console views)
+      salary: salaryInfo,
+      currentSalary: salaryInfo?.currentSalary || null,
+      daysWorked: salaryInfo?.daysWorked || 0,
+      chargeDetails: salaryInfo?.chargeDetails || null,
+      
       summary: {
         status: employmentData.employmentStatus,
         position: employmentData.position,
         baseSalary: employmentData.salary.toNumber(),
-        totalChargesOutstanding: chargesSummary.totalPending,
-        nextSalaryDue: salaryInfo?.salaryDueDate || null,
+        totalChargesOutstanding: chargesSummary?.totalPending || 0,
+        nextSalaryDue: salaryInfo?.currentSalary?.salaryDueDate || null,
         attendancePercentage: attendanceRecords.length > 0 ? attendanceSummary.totalCheckOuts / attendanceRecords.length : 0,
       },
     };
 
     return NextResponse.json(
-      successResponse({ data: { employee: consolidated } }),
+      successResponse({ data: responseData }),
       { status: 200 }
     );
   } catch (error: any) {

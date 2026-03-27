@@ -68,147 +68,147 @@ export function POSReceipt({ receipt, onClose }: { receipt: any; onClose?: () =>
 
   return (
     <div className="fixed inset-0 bg-black bg-opacity-40 flex items-center justify-center z-50">
-      <div className="bg-white rounded-lg p-4 w-80 shadow-lg max-h-[80vh] overflow-auto">
-        <div ref={ref} className="font-mono text-sm">
-          {/* Hotel Information */}
-          <div className="text-center font-bold">{hotelInfo?.name || 'Hotel'}</div>
-          {hotelInfo?.address && <div className="text-center text-xs">{hotelInfo.address}</div>}
-          {hotelInfo?.phone && <div className="text-center text-xs">{hotelInfo.phone}</div>}
-          {hotelInfo?.email && <div className="text-center text-xs">{hotelInfo.email}</div>}
-          
-          <div className="text-center mt-1">Receipt</div>
-          
-          {/* Items Added Badge */}
-          {receipt?.orderTypeDisplay === 'ITEMS ADDED' && (
-            <div className="mt-2 p-2 bg-green-100 border border-green-400 rounded text-center font-bold text-green-900">
-              ✓ ITEMS ADDED
+      <div className="bg-white rounded-lg p-4 w-96 shadow-lg max-h-[90vh] overflow-auto">
+        <div ref={ref} className="font-mono text-sm space-y-3">
+          {/* Header: Receipt Title */}
+          <div className="text-center border-b-2 border-gray-800 pb-2">
+            <div className="text-lg font-bold">{hotelInfo?.name || 'Hotel'}</div>
+            <div className="text-xs mt-1">PAYMENT RECEIPT</div>
+          </div>
+
+          {/* Order Info Section */}
+          <div className="text-xs space-y-1 border-b border-gray-300 pb-2">
+            <div className="flex justify-between">
+              <span className="font-semibold">Order #:</span>
+              <span>{receipt?.orderNumber ?? 'N/A'}</span>
             </div>
-          )}
-          
-          {/* Employee Charge Badge */}
-          {receipt?.orderTypeDisplay === 'EMPLOYEE CHARGE' && (
-            <div className="mt-2 p-2 bg-blue-100 border border-blue-400 rounded text-center font-bold text-blue-900">
-              💳 EMPLOYEE CHARGE
+            <div className="flex justify-between">
+              <span className="font-semibold">Date:</span>
+              <span>{new Date().toLocaleDateString()}</span>
             </div>
-          )}
-          
-          {/* Deferred Order Badge */}
-          {receipt?.isDeferred && (
-            <div className="mt-2 p-2 bg-amber-100 border border-amber-400 rounded text-center font-bold text-amber-900">
-              ⏰ DEFERRED ORDER
+            <div className="flex justify-between">
+              <span className="font-semibold">Time:</span>
+              <span>{new Date().toLocaleTimeString()}</span>
             </div>
-          )}
-          
-          <div className="mt-2">Order#: {receipt?.orderNumber ?? 'N/A'}</div>
-          
-          {/* Status for deferred orders */}
-          {receipt?.isDeferred && (
-            <div className="mt-2 p-2 bg-blue-50 rounded text-xs">
-              <div className="font-semibold">Status: PENDING PAYMENT</div>
-              <div className="text-gray-700 mt-1">
-                This order will be settled later. Payment not yet received.
+          </div>
+
+          {/* Status Badges */}
+          <div className="flex gap-2 justify-center">
+            {receipt?.orderTypeDisplay === 'ITEMS ADDED' && (
+              <div className="px-2 py-1 bg-green-100 border border-green-400 rounded text-xs font-bold text-green-900">
+                ✓ ITEMS ADDED
+              </div>
+            )}
+            {receipt?.orderTypeDisplay === 'EMPLOYEE CHARGE' && (
+              <div className="px-2 py-1 bg-blue-100 border border-blue-400 rounded text-xs font-bold text-blue-900">
+                💳 EMPLOYEE CHARGE
+              </div>
+            )}
+            {receipt?.isDeferred && (
+              <div className="px-2 py-1 bg-amber-100 border border-amber-400 rounded text-xs font-bold text-amber-900">
+                ⏰ DEFERRED
+              </div>
+            )}
+          </div>
+
+          {/* Items Table */}
+          <div className="border-t-2 border-b-2 border-gray-800 py-2">
+            <div className="text-xs font-bold mb-1 border-b border-gray-400 pb-1">
+              <div className="grid grid-cols-12 gap-1">
+                <div className="col-span-5">ITEM</div>
+                <div className="col-span-2 text-center">QTY</div>
+                <div className="col-span-2 text-right">PRICE</div>
+                <div className="col-span-3 text-right">TOTAL</div>
               </div>
             </div>
-          )}
-          
-          {/* Order Items with individual prices */}
-          <div className="mt-2 border-t pt-2">
-            <div className="font-bold mb-1">Items:</div>
             {(receipt?.items ?? []).map((it: any) => (
-              <div key={it.lineId}>
-                <div className="flex justify-between text-xs">
-                  <span>{it.productName}</span>
-                  <span>x{it.quantity}</span>
+              <div key={it.lineId} className="grid grid-cols-12 gap-1 text-xs py-1 border-b border-gray-200">
+                <div className="col-span-5 break-words">{it.productName}</div>
+                <div className="col-span-2 text-center">{it.quantity}</div>
+                <div className="col-span-2 text-right">
+                  <Price amount={it.unitPrice} isMinor={true} />
                 </div>
-                <div className="flex justify-between text-xs pl-2 mb-1">
-                  <span className="text-gray-600">
-                    <Price amount={it.unitPrice} isMinor={true} /> each
-                  </span>
-                  <span className="font-semibold">
-                    <Price amount={it.unitPrice * it.quantity} isMinor={true} />
-                  </span>
+                <div className="col-span-3 text-right font-semibold">
+                  <Price amount={it.unitPrice * it.quantity} isMinor={true} />
                 </div>
               </div>
             ))}
           </div>
 
-          {/* Subtotal */}
-          <div className="border-t mt-2 pt-2 flex justify-between text-xs">
-            <span>Subtotal</span>
-            <span><Price amount={subtotal} isMinor={true} /></span>
-          </div>
-
-          {/* Taxes if applied */}
-          {taxAmount > 0 && (
-            <div className="mt-1 flex justify-between text-xs text-blue-600">
-              <span>Tax</span>
-              <span><Price amount={taxAmount} isMinor={true} /></span>
+          {/* Calculations Section */}
+          <div className="space-y-1 text-xs border-b border-gray-300 pb-2">
+            <div className="flex justify-between">
+              <span>Subtotal:</span>
+              <span className="font-semibold"><Price amount={subtotal} isMinor={true} /></span>
             </div>
-          )}
-
-          {/* Discounts if applied */}
-          {discounts.length > 0 && (
-            <div className="mt-1 bg-green-50 p-2 rounded">
-              <div className="font-bold text-xs mb-1">Discounts Applied:</div>
-              {discounts.map((d: any, idx: number) => (
-                <div key={idx} className="flex justify-between text-xs mb-1">
-                  <span className="text-gray-700">
-                    {d.code} {d.type === 'percentage' ? `(${d.value}%)` : ''}
-                  </span>
-                  <span className="text-green-700 font-semibold">
-                    -<Price amount={d.discountAmount || 0} isMinor={true} />
-                  </span>
-                </div>
-              ))}
-              <div className="border-t border-green-200 pt-1 flex justify-between text-xs font-bold">
-                <span>Total Discount</span>
-                <span className="text-green-700">
-                  -<Price amount={totalDiscount} isMinor={true} />
-                </span>
+            {taxAmount > 0 && (
+              <div className="flex justify-between text-blue-600">
+                <span>Tax:</span>
+                <span className="font-semibold"><Price amount={taxAmount} isMinor={true} /></span>
               </div>
-            </div>
-          )}
-
-          {/* Total */}
-          <div className="border-t mt-2 pt-2 flex justify-between font-bold">
-            <span>Total</span>
-            <span><Price amount={receipt?.total ?? 0} isMinor={true} /></span>
+            )}
+            {discounts.length > 0 && (
+              <>
+                {discounts.map((d: any, idx: number) => (
+                  <div key={idx} className="flex justify-between text-green-700">
+                    <span>{d.code} {d.type === 'percentage' ? `(${d.value}%)` : ''}:</span>
+                    <span className="font-semibold">-<Price amount={d.discountAmount || 0} isMinor={true} /></span>
+                  </div>
+                ))}
+              </>
+            )}
           </div>
-          
+
+          {/* Total Section - CLEARLY SEPARATED */}
+          <div className="bg-gray-100 border-2 border-gray-800 rounded p-3 my-2 text-center">
+            <div className="text-xs text-gray-600 mb-1">TOTAL AMOUNT</div>
+            <div className="text-3xl font-bold text-blue-600">
+              <Price amount={receipt?.total ?? 0} isMinor={true} />
+            </div>
+          </div>
+
+          {/* Payment Status */}
+          <div className="text-xs text-center py-2 border-t border-gray-300">
+            {receipt?.isDeferred ? (
+              <div className="space-y-1">
+                <div className="font-semibold text-amber-700">⚠️ PAYMENT PENDING</div>
+                <div className="text-gray-600 text-xs">
+                  To settle this order, visit the Open Orders Dashboard
+                </div>
+                <div className="font-semibold">Order Status: PENDING</div>
+              </div>
+            ) : receipt?.orderTypeDisplay === 'EMPLOYEE CHARGE' ? (
+              <div className="font-semibold text-blue-600">✓ EMPLOYEE CHARGED</div>
+            ) : (
+              <div className="font-semibold text-green-600">✓ PAID</div>
+            )}
+          </div>
+
           {/* Employee Charge Information */}
           {receipt?.orderTypeDisplay === 'EMPLOYEE CHARGE' && (
-            <div className="border-t mt-2 pt-2">
-              <div className="text-xs font-semibold text-blue-900 mb-1">Charged to Employee:</div>
-              <div className="text-xs text-gray-700">
+            <div className="text-xs border-t border-gray-300 pt-2">
+              <div className="font-semibold text-blue-900 mb-1">Charged to:</div>
+              <div className="text-gray-700">
                 {receipt?.employee?.firstname} {receipt?.employee?.lastname}
-                {receipt?.employee?.email && <div className="text-xs text-gray-600">({receipt.employee.email})</div>}
               </div>
-              <div className="text-xs text-gray-600 mt-1">
-                Charge ID: {receipt?.employeeChargeId}
-              </div>
+              {receipt?.employee?.email && (
+                <div className="text-gray-600 text-xs">{receipt.employee.email}</div>
+              )}
+              {receipt?.employeeChargeId && (
+                <div className="text-gray-600 text-xs mt-1">ID: {receipt.employeeChargeId}</div>
+              )}
             </div>
           )}
-          
-          {/* Payment status section */}
-          {receipt?.isDeferred ? (
-            <div className="border-t mt-2 pt-2 text-center text-xs">
-              <div className="font-semibold text-amber-700">⚠️ PAYMENT PENDING</div>
-              <div className="mt-1 text-gray-600">
-                To settle this order, visit the Open Orders Dashboard
-              </div>
-              <div className="mt-2 font-semibold">Order Status: PENDING</div>
-            </div>
-          ) : receipt?.orderTypeDisplay === 'EMPLOYEE CHARGE' ? (
-            <div className="border-t mt-2 pt-2 flex justify-between text-xs">
-              <span>Payment Status:</span>
-              <span className="font-semibold text-blue-600">✓ EMPLOYEE CHARGED</span>
-            </div>
-          ) : (
-            <div className="border-t mt-2 pt-2 flex justify-between text-xs">
-              <span>Payment Status:</span>
-              <span className="font-semibold text-green-600">✓ PAID</span>
-            </div>
-          )}
+
+          {/* Organization Footer */}
+          <div className="border-t-2 border-gray-800 pt-2 text-center text-xs space-y-1 text-gray-600">
+            {hotelInfo?.address && <div>{hotelInfo.address}</div>}
+            {hotelInfo?.phone && <div>Tel: {hotelInfo.phone}</div>}
+            {hotelInfo?.email && <div>{hotelInfo.email}</div>}
+            {hotelInfo?.website && <div>{hotelInfo.website}</div>}
+            <div className="text-gray-500 pt-1">Generated: {new Date().toLocaleString()}</div>
+            <div className="text-gray-500">Thank you for your purchase!</div>
+          </div>
         </div>
 
         <div className="flex gap-2 mt-4">

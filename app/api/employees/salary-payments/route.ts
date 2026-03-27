@@ -168,6 +168,8 @@ export async function POST(request: NextRequest) {
       },
     });
 
+    console.log(`[SalaryPayments POST] Payment created: userId=${validated.userId}, grossSalary=${validated.grossSalary}`);
+
     return NextResponse.json(
       successResponse({ data: { payment } }),
       { status: 201 }

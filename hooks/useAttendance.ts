@@ -21,6 +21,7 @@ interface UseAttendanceState {
   monthlyCheckIns: number;
   monthlyCheckOuts: number;
   clockInLoading: boolean;
+  dataLoading: boolean;
   error: string | null;
   checkIn: () => Promise<void>;
   checkOut: () => Promise<void>;
@@ -32,17 +33,20 @@ export function useAttendance(employeeId: string | undefined): UseAttendanceStat
   const [monthlyCheckIns, setMonthlyCheckIns] = useState(0);
   const [monthlyCheckOuts, setMonthlyCheckOuts] = useState(0);
   const [clockInLoading, setClockInLoading] = useState(false);
+  const [dataLoading, setDataLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
   const fetchMonthlyAttendance = useCallback(async () => {
     if (!employeeId) return;
 
     try {
+      setDataLoading(true);
       const now = new Date();
       const startDate = new Date(now.getFullYear(), now.getMonth(), 1).toISOString();
       const endDate = new Date(now.getFullYear(), now.getMonth() + 1, 0).toISOString();
 
       const records = await employeeApi.getMonthlyAttendance(employeeId, startDate, endDate);
+      console.log('useAttendance - Raw records from API:', records);
 
       let daysWorkedInMonth = 0;
       let completedCycles = 0;
@@ -50,21 +54,26 @@ export function useAttendance(employeeId: string | undefined): UseAttendanceStat
       let activeCheckInRecord = null;
 
       for (const record of records) {
+        console.log('useAttendance - Processing record:', record);
         if (record.checkOutTime) {
           daysWorkedInMonth += record.daysCounted || 1;
           completedCycles += 1;
         } else {
+          console.log('useAttendance - Found active check-in:', record);
           hasActiveCheckIn = true;
           activeCheckInRecord = record;
         }
       }
 
+      console.log('useAttendance - hasActiveCheckIn:', hasActiveCheckIn, 'activeCheckInRecord:', activeCheckInRecord);
       setMonthlyCheckIns(daysWorkedInMonth);
       setMonthlyCheckOuts(completedCycles);
       setActiveCheckIn(hasActiveCheckIn && activeCheckInRecord ? activeCheckInRecord : null);
     } catch (err: any) {
       console.error('Failed to fetch monthly attendance:', err);
       setError(err?.message || 'Failed to fetch attendance');
+    } finally {
+      setDataLoading(false);
     }
   }, [employeeId]);
 
@@ -115,6 +124,7 @@ export function useAttendance(employeeId: string | undefined): UseAttendanceStat
     monthlyCheckIns,
     monthlyCheckOuts,
     clockInLoading,
+    dataLoading,
     error,
     checkIn,
     checkOut,

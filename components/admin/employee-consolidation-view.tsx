@@ -2,11 +2,8 @@
 
 import { useEffect, useState } from 'react';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
-import { Button } from '@/components/ui/button';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import {
-  DollarSign,
-  Users,
   AlertCircle,
   Clock,
   TrendingUp,
@@ -131,7 +128,8 @@ export function EmployeeConsolidationView({ employeeId }: EmployeeConsolidationV
       }
 
       const result = await response.json();
-      setData(result.data?.employee || null);
+      // The endpoint returns data directly, not nested under "employee"
+      setData(result.data || null);
       setError(null);
     } catch (err: any) {
       setError(err.message);
@@ -209,46 +207,7 @@ export function EmployeeConsolidationView({ employeeId }: EmployeeConsolidationV
 
   return (
     <div className="space-y-6">
-      {/* Header Card */}
-      <Card>
-        <CardHeader>
-          <div className="flex items-start justify-between">
-            <div>
-              <CardTitle className="flex items-center gap-2">
-                <Users className="h-5 w-5" />
-                {employee.firstname} {employee.lastname}
-              </CardTitle>
-              <CardDescription>{employee.email}</CardDescription>
-            </div>
-            <div className={`px-3 py-1 rounded-full text-sm font-semibold ${statusColors[employment.employmentStatus] || statusColors.active}`}>
-              {employment.employmentStatus.toUpperCase()}
-            </div>
-          </div>
-        </CardHeader>
-        <CardContent>
-          <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
-            <div>
-              <p className="text-sm text-gray-500">Position</p>
-              <p className="font-semibold">{employment.position}</p>
-            </div>
-            <div>
-              <p className="text-sm text-gray-500">Department</p>
-              <p className="font-semibold">{employment.department || 'N/A'}</p>
-            </div>
-            <div>
-              <p className="text-sm text-gray-500">Base Salary</p>
-              <p className="font-semibold">{formatTablePrice(summary.baseSalary)}</p>
-            </div>
-            <div>
-              <p className="text-sm text-gray-500">Employed Since</p>
-              <p className="font-semibold">
-                {new Date(employment.employmentDate).toLocaleDateString()}
-              </p>
-            </div>
-          </div>
-        </CardContent>
-      </Card>
-
+      
       {/* Outstanding Charges Warning */}
       {outstandingCharges && (
         <div className="flex gap-3 p-4 bg-red-50 border border-red-200 rounded-lg">

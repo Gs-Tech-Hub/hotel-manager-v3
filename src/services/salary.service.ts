@@ -97,8 +97,12 @@ async function calculateEmployeeCharges(
 }
 
 /**
- * Calculate salary for an employee
- * Includes deductions for pending charges
+ * Calculate salary for an employee using DEFAULT/FALLBACK method
+ * This is a fallback when days-worked data is unavailable.
+ * Uses full monthly salary if payment is due, zero otherwise.
+ * 
+ * NOTE: This should rarely be used - calculateEmployeeSalaryByDays is preferred.
+ * IMPORTANT: No early payout allowed - only pay on due date.
  */
 export async function calculateEmployeeSalary(
   input: SalaryCalculationInput
@@ -128,19 +132,28 @@ export async function calculateEmployeeSalary(
     input.salaryDueDate ||
     calculateNextSalaryDueDate(employmentData.employmentDate, employmentData.salaryFrequency);
 
-  // Determine if paying early
+  // CRITICAL: Check if payment is due TODAY
+  // Early payout is NOT ALLOWED - only pay on or after due date
   const today = new Date();
-  const payEarly = input.payEarly || today < salaryDueDate;
+  today.setHours(0, 0, 0, 0);
+  const dueDate = new Date(salaryDueDate);
+  dueDate.setHours(0, 0, 0, 0);
+  const isPaymentDue = today >= dueDate;
 
-  // Get baseSalary
-  const baseSalary = employmentData.salary;
+  // Get baseSalary - but only pay if due
+  let baseSalary = employmentData.salary;
+  if (!isPaymentDue) {
+    baseSalary = new Decimal(0); // Not due yet, return zero
+  }
 
   // Calculate charges
   const charges = await calculateEmployeeCharges(employmentData.id);
 
-  // Calculate deductions
-  // Only deduct pending charges from salary, not paid ones
-  const chargeDeductions = charges.pending;
+  // Calculate deductions - only apply if payment is due
+  let chargeDeductions = new Decimal(0);
+  if (isPaymentDue) {
+    chargeDeductions = charges.pending;
+  }
   const totalDeductions = chargeDeductions;
 
   // Calculate net salary
@@ -159,15 +172,20 @@ export async function calculateEmployeeSalary(
       totalCharges: charges.total,
     },
     salaryDueDate,
-    payEarly,
+    payEarly: false, // Never allow early payout
     calculatedAt: new Date(),
   };
 }
 
 /**
  * Calculate salary for an employee based on days worked
- * Uses consolidated view: days worked from check-in/check-out + charges
- * Per-day rate = monthly salary / 30 days (approximate)
+ * Primary calculation method: per-day rate = monthly salary / 30 days
+ * Days are counted from completed check-in/check-out cycles
+ * 
+ * IMPORTANT: 
+ * - Always calculates salary amount based on days worked
+ * - Returns payEarly=true if date is before due date (UI disables payment button)
+ * - Payment is only processed on or after due date (backend validation)
  */
 export async function calculateEmployeeSalaryByDays(
   employeeId: string,
@@ -191,13 +209,29 @@ export async function calculateEmployeeSalaryByDays(
     throw new Error('Cannot calculate salary for inactive or terminated employee');
   }
 
+  // Calculate salary due date - THIS IS WHEN PAYMENT IS ALLOWED
+  const salaryDueDate = calculateNextSalaryDueDate(
+    employmentData.employmentDate,
+    employmentData.salaryFrequency
+  );
+
+  // Check if payment is due today or later
+  const today = new Date();
+  today.setHours(0, 0, 0, 0);
+  const dueDate = new Date(salaryDueDate);
+  dueDate.setHours(0, 0, 0, 0);
+
+  // Check if this is early payout attempt (before due date)
+  const isPaymentDue = today >= dueDate;
+
   // Get base salary (monthly rate)
   const baseSalaryMonthly = employmentData.salary;
   
   // Calculate per-day rate: monthly salary / 30 days
   const perDayRate = baseSalaryMonthly.div(30);
   
-  // Calculate gross salary based on days worked
+  // ALWAYS calculate gross salary based on days worked (never return 0 for calculation)
+  // The payEarly flag will indicate if payment can actually be processed
   const grossSalary = perDayRate.mul(new Decimal(daysWorked));
 
   // Get employee summary for charges
@@ -221,19 +255,16 @@ export async function calculateEmployeeSalaryByDays(
     paid = paid.add(charge.paidAmount);
   }
 
-  // Calculate deductions
-  const chargeDeductions = pending;
+  // Calculate deductions - only apply if payment is due
+  let chargeDeductions = new Decimal(0);
+  if (isPaymentDue) {
+    chargeDeductions = pending;
+  }
   const totalDeductions = chargeDeductions;
 
   // Calculate net salary
   const netSalaryValue = grossSalary.sub(totalDeductions);
   const netSalary = Decimal.max(netSalaryValue, new Decimal(0)); // Cannot be negative
-
-  // Calculate salary due date
-  const salaryDueDate = calculateNextSalaryDueDate(
-    employmentData.employmentDate,
-    employmentData.salaryFrequency
-  );
 
   return {
     userId: employeeId,
@@ -247,7 +278,7 @@ export async function calculateEmployeeSalaryByDays(
       totalCharges: pending.add(paid),
     },
     salaryDueDate,
-    payEarly: false,
+    payEarly: !isPaymentDue, // True if trying to pay before due date (UI shows warning, button disabled)
     calculatedAt: new Date(),
   };
 }

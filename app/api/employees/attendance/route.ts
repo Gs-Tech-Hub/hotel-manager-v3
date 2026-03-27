@@ -32,9 +32,31 @@ export async function GET(request: NextRequest) {
     const fromDate = request.nextUrl.searchParams.get('fromDate');
     const toDate = request.nextUrl.searchParams.get('toDate');
 
-    const whereFilter: any = employeeId
-      ? { employeeSummaryId: employeeId }
-      : {};
+    console.log('[Attendance GET] Parameters:', { employeeId, fromDate, toDate });
+
+    const whereFilter: any = {};
+
+    // If employeeId is provided, resolve it to employeeSummaryId
+    if (employeeId) {
+      console.log('[Attendance GET] Looking up EmployeeSummary for userId:', employeeId);
+      const employeeSummary = await prisma.employeeSummary.findUnique({
+        where: { userId: employeeId },
+        select: { id: true },
+      });
+
+      console.log('[Attendance GET] EmployeeSummary found:', employeeSummary);
+
+      if (employeeSummary) {
+        whereFilter.employeeSummaryId = employeeSummary.id;
+      } else {
+        // No employee summary found, return empty results
+        console.log('[Attendance GET] No EmployeeSummary found, returning empty');
+        return NextResponse.json(
+          successResponse({ data: { checkIns: [] } }),
+          { status: 200 }
+        );
+      }
+    }
 
     if (fromDate || toDate) {
       whereFilter.checkInTime = {};
@@ -47,6 +69,8 @@ export async function GET(request: NextRequest) {
         whereFilter.checkInTime.lte = endDate;
       }
     }
+
+    console.log('[Attendance GET] Where filter:', whereFilter);
 
     const records = await prisma.checkIn.findMany({
       where: whereFilter,
@@ -68,6 +92,8 @@ export async function GET(request: NextRequest) {
         checkInTime: 'desc',
       },
     });
+
+    console.log('[Attendance GET] Found records:', records.length);
 
     // Calculate hours worked for each record
     const enrichedRecords = records.map((record) => {
@@ -157,6 +183,48 @@ export async function POST(request: NextRequest) {
       );
     }
 
+    // CRITICAL: Prevent multiple check-ins on the same calendar date
+    // Use UTC dates to ensure consistency with database
+    const todayUTC = new Date();
+    const utcYear = todayUTC.getUTCFullYear();
+    const utcMonth = todayUTC.getUTCMonth();
+    const utcDate = todayUTC.getUTCDate();
+    
+    // Create UTC date range: today 00:00:00 to today 23:59:59 UTC
+    const todayStart = new Date(Date.UTC(utcYear, utcMonth, utcDate, 0, 0, 0, 0));
+    const todayEnd = new Date(Date.UTC(utcYear, utcMonth, utcDate, 23, 59, 59, 999));
+
+    console.log(`[Attendance Check-in] Checking for existing check-ins for employee ${employeeSummary.id} on ${todayStart.toISOString()} to ${todayEnd.toISOString()}`);
+
+    // Check if employee already has a check-in TODAY (completed or active)
+    const existingTodayCheckIn = await prisma.checkIn.findFirst({
+      where: {
+        employeeSummaryId: employeeSummary.id,
+        checkInTime: {
+          gte: todayStart,
+          lte: todayEnd,
+        },
+      },
+      select: {
+        id: true,
+        checkInTime: true,
+        checkOutTime: true,
+      },
+    });
+
+    if (existingTodayCheckIn) {
+      console.log(`[Attendance Check-in] BLOCKED: Employee already has check-in at ${existingTodayCheckIn.checkInTime.toISOString()}`);
+      return NextResponse.json(
+        errorResponse(
+          ErrorCodes.CONFLICT,
+          `Employee already has a check-in for today (${existingTodayCheckIn.checkInTime.toLocaleTimeString()}). Only one check-in per calendar day allowed.`
+        ),
+        { status: getStatusCode(ErrorCodes.CONFLICT) }
+      );
+    }
+
+    console.log(`[Attendance Check-in] OK: No existing check-in found. Creating new check-in for employee ${employeeSummary.id}`);
+    
     // Create check-in record
     const checkIn = await prisma.checkIn.create({
       data: {

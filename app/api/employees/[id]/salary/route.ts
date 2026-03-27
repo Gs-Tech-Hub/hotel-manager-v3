@@ -55,7 +55,8 @@ export async function GET(
       return getOutstandingAction(request, employeeId);
     }
 
-    // Default: calculate salary based on days worked
+    // Default: calculate salary BASED ON DAYS WORKED (PRIMARY METHOD)
+    // This ensures salary is calculated from actual attendance records
     try {
       // Get current month's days worked
       const now = new Date();
@@ -63,6 +64,8 @@ export async function GET(
       const monthEnd = new Date(now.getFullYear(), now.getMonth() + 1, 0);
 
       const daysWorked = await getEmployeeDaysWorked(employeeId, monthStart, monthEnd);
+      
+      console.log(`[Salary Calculate] Days worked in current month: ${daysWorked} days for employee ${employeeId}`);
 
       const calculation = await calculateEmployeeSalaryByDays(
         employeeId,
@@ -70,12 +73,22 @@ export async function GET(
         upToDate ? new Date(upToDate) : undefined
       );
 
+      console.log(`[Salary Calculate] Calculated salary based on days: Gross=${calculation.grossSalary.toString()}, Net=${calculation.netSalary.toString()}`);
+
       return NextResponse.json(
-        successResponse({ data: { salary: calculation, daysWorked } }),
+        successResponse({ 
+          data: { 
+            salary: calculation, 
+            daysWorked,
+            calculationMethod: 'days-worked', // Explicitly state the method
+            note: `Salary calculated from ${daysWorked} days of work at ₦${calculation.grossSalary.div(daysWorked).toFixed(0)}/day`
+          } 
+        }),
         { status: 200 }
       );
     } catch (error: any) {
       // Fallback to fixed salary calculation if days-based fails
+      console.warn(`[Salary Calculate] Days-worked calculation failed, falling back to fixed salary: ${error.message}`);
       const calculation = await calculateEmployeeSalary({
         employeeId,
         payEarly,

@@ -4,6 +4,8 @@ import { useState, useEffect } from 'react';
 import { DollarSign, Loader2, AlertCircle } from 'lucide-react';
 import { EmployeeDetailData } from '../../hooks/useEmployee';
 import { useSalary } from '../../hooks/useSalary';
+import { formatTablePrice } from '@/lib/formatters';
+import { normalizeToCents } from '@/lib/price';
 
 interface SalaryModalProps {
   employee: EmployeeDetailData;
@@ -41,21 +43,18 @@ export function SalaryModal({ employee, onClose }: SalaryModalProps) {
 
   const handleEarlyPayout = async () => {
     try {
-      if (!salaryData?.currentSalary?.grossSalary) {
+      if (!salaryData?.currentSalary?.netSalary) {
         throw new Error('Unable to process early payout: Missing salary data');
       }
 
-      // Backend calculates eligible salary based on days worked
-      const payoutAmount = Number(salaryData.currentSalary.grossSalary) * 0.5; // 50% advance
-
-      const notes = `Early salary advance (50% of gross) for ${new Date().toLocaleDateString('en-US', {
+      const notes = `Early salary payout for ${new Date().toLocaleDateString('en-US', {
         month: 'long',
         year: 'numeric',
       })}`;
 
-      await earlyPayout(employee.id, payoutAmount, notes);
+      await earlyPayout(employee.id, salaryData.currentSalary.netSalary, notes);
       setPayoutConfirmOpen(false);
-      // Refresh after payout
+      // Refresh after payment
       await fetchSalary(employee.id);
     } catch (err: any) {
       console.error('Early payout error:', err);
@@ -63,7 +62,17 @@ export function SalaryModal({ employee, onClose }: SalaryModalProps) {
   };
 
   const isSalaryDue =
-    employee.nextSalaryDueDate && new Date() >= new Date(employee.nextSalaryDueDate);
+    salaryData?.currentSalary?.payEarly === false // Use API's payEarly flag
+      ? true
+      : salaryData?.currentSalary?.payEarly === true
+        ? false
+        : employee.nextSalaryDueDate && new Date() >= new Date(employee.nextSalaryDueDate);
+
+  const salaryDueDate = salaryData?.currentSalary?.salaryDueDate
+    ? new Date(salaryData.currentSalary.salaryDueDate)
+    : employee.nextSalaryDueDate
+      ? new Date(employee.nextSalaryDueDate)
+      : null;
 
   return (
     <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
@@ -106,14 +115,14 @@ export function SalaryModal({ employee, onClose }: SalaryModalProps) {
                   <div className="p-4 bg-gray-50 rounded-lg border border-gray-200">
                     <p className="text-sm text-gray-600">Gross Salary</p>
                     <p className="text-2xl font-bold text-gray-900 mt-2">
-                      ₦{Number(salaryData.currentSalary.grossSalary).toFixed(2)}
+                      {formatTablePrice(salaryData.currentSalary.grossSalary)}
                     </p>
                   </div>
 
                   <div className="p-4 bg-red-50 rounded-lg border border-red-200">
                     <p className="text-sm text-red-600">Deductions</p>
                     <p className="text-2xl font-bold text-red-900 mt-2">
-                      ₦{Number(salaryData.currentSalary.deductions || 0).toFixed(2)}
+                      {formatTablePrice(salaryData.currentSalary.deductions || 0)}
                     </p>
                   </div>
 
@@ -121,7 +130,7 @@ export function SalaryModal({ employee, onClose }: SalaryModalProps) {
                     <div className="p-4 bg-orange-50 rounded-lg border border-orange-200">
                       <p className="text-sm text-orange-600">Advances</p>
                       <p className="text-2xl font-bold text-orange-900 mt-2">
-                        ₦{Number(salaryData.currentSalary.advances).toFixed(2)}
+                        {formatTablePrice(salaryData.currentSalary.advances)}
                       </p>
                     </div>
                   )}
@@ -129,32 +138,67 @@ export function SalaryModal({ employee, onClose }: SalaryModalProps) {
                   <div className="p-4 bg-green-50 rounded-lg border border-green-200">
                     <p className="text-sm text-green-600">Net Salary</p>
                     <p className="text-2xl font-bold text-green-900 mt-2">
-                      ₦{Number(salaryData.currentSalary.netSalary).toFixed(2)}
+                      {formatTablePrice(salaryData.currentSalary.netSalary)}
                     </p>
                   </div>
                 </div>
               </div>
 
-              {/* Additional Salary Data */}
-              {Object.keys(salaryData).filter(key => key !== 'currentSalary').length > 0 && (
+              {/* Salary Calculation Details */}
+              <div className="space-y-4">
+                <h3 className="font-semibold text-gray-900">Salary Calculation Details</h3>
+                <div className="bg-gradient-to-r from-blue-50 to-indigo-50 p-4 rounded-lg border border-indigo-200">
+                  <div className="space-y-3">
+                    <div className="flex justify-between items-center">
+                      <span className="text-gray-700">Days Worked This Month</span>
+                      <span className="font-semibold text-lg text-indigo-600">{salaryData.daysWorked || 0} days</span>
+                    </div>
+                    <div className="border-t border-indigo-200 pt-3">
+                      <p className="text-xs text-gray-600 mb-2">Formula: (Monthly Salary ÷ 30) × Days Worked</p>
+                      <p className="text-xs text-gray-600">
+                        ({formatTablePrice(normalizeToCents(employee.employmentData?.salary || 0, 100))} ÷ 30) × {salaryData.daysWorked || 0} = {formatTablePrice(salaryData.currentSalary.grossSalary)}
+                      </p>
+                    </div>
+                  </div>
+                </div>
+              </div>
+
+              {/* Charges/Deductions Breakdown */}
+              {salaryData.chargeDetails && (salaryData.chargeDetails.pendingCharges > 0 || salaryData.chargeDetails.paidCharges > 0) && (
                 <div className="space-y-4">
-                  <h3 className="font-semibold text-gray-900">Additional Information</h3>
+                  <h3 className="font-semibold text-gray-900">Charges Applied</h3>
                   <div className="space-y-2">
-                    {Object.entries(salaryData)
-                      .filter(([key]) => key !== 'currentSalary')
-                      .map(([key, value]) => (
-                        <div
-                          key={key}
-                          className="flex justify-between items-center p-3 bg-gray-50 rounded border border-gray-200"
-                        >
-                          <span className="text-gray-700 capitalize">{key.replace(/([A-Z])/g, ' $1')}</span>
-                          <span className="font-semibold text-gray-900">
-                            {typeof value === 'number'
-                              ? `₦${Number(value).toFixed(2)}`
-                              : String(value)}
-                          </span>
-                        </div>
-                      ))}
+                    {salaryData.chargeDetails.pendingCharges > 0 && (
+                      <div className="flex justify-between items-center p-3 bg-yellow-50 rounded border border-yellow-200">
+                        <span className="text-yellow-700">Pending Charges</span>
+                        <span className="font-semibold text-yellow-900">{formatTablePrice(salaryData.chargeDetails.pendingCharges)}</span>
+                      </div>
+                    )}
+                    {salaryData.chargeDetails.paidCharges > 0 && (
+                      <div className="flex justify-between items-center p-3 bg-green-50 rounded border border-green-200">
+                        <span className="text-green-700">Paid Charges</span>
+                        <span className="font-semibold text-green-900">{formatTablePrice(salaryData.chargeDetails.paidCharges)}</span>
+                      </div>
+                    )}
+                  </div>
+                </div>
+              )}
+
+              {/* Salary Availability Warning */}
+              {!isSalaryDue && salaryDueDate && (
+                <div className="p-4 bg-blue-50 border border-blue-200 rounded-lg flex gap-3">
+                  <AlertCircle className="text-blue-600 flex-shrink-0 mt-0.5" size={20} />
+                  <div>
+                    <p className="font-semibold text-blue-900">Salary Not Yet Payable</p>
+                    <p className="text-blue-700 text-sm mt-1">
+                      This salary amount is calculated and will be available for payment on{' '}
+                      <strong>{salaryDueDate.toLocaleDateString('en-US', {
+                        weekday: 'long',
+                        year: 'numeric',
+                        month: 'long',
+                        day: 'numeric',
+                      })}</strong>.
+                    </p>
                   </div>
                 </div>
               )}
@@ -174,11 +218,7 @@ export function SalaryModal({ employee, onClose }: SalaryModalProps) {
               <div className="bg-white rounded-lg shadow-xl max-w-sm w-full p-6">
                 <h3 className="text-xl font-bold text-gray-900 mb-4">Confirm Payment</h3>
                 <p className="text-gray-600 mb-6">
-                  Process salary payment of ₦
-                  {salaryData?.currentSalary?.netSalary
-                    ? Number(salaryData.currentSalary.netSalary).toFixed(2)
-                    : '0.00'}{' '}
-                  for {employee.firstname || employee.username}?
+                  Process salary payment of {formatTablePrice(salaryData?.currentSalary?.netSalary || 0)} for {employee.firstname || employee.username}?
                 </p>
                 <div className="flex gap-3 justify-end">
                   <button
@@ -209,13 +249,14 @@ export function SalaryModal({ employee, onClose }: SalaryModalProps) {
           {payoutConfirmOpen && (
             <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
               <div className="bg-white rounded-lg shadow-xl max-w-sm w-full p-6">
-                <h3 className="text-xl font-bold text-gray-900 mb-4">Confirm Early Payout</h3>
+                <h3 className="text-xl font-bold text-gray-900 mb-4">Early Salary Payout</h3>
                 <p className="text-gray-600 mb-6">
-                  Process early salary payout of ₦
-                  {salaryData?.currentSalary?.grossSalary
-                    ? (Number(salaryData.currentSalary.grossSalary) * 0.5).toFixed(2)
-                    : '0.00'}{' '}
-                  (50% advance) for {employee.firstname || employee.username}?
+                  Process early payout of {formatTablePrice(salaryData?.currentSalary?.netSalary || 0)} for {employee.firstname || employee.username}?
+                  <br />
+                  <br />
+                  <span className="text-sm text-yellow-600 font-semibold">
+                    Note: Regular salary will still be available on the scheduled payment date.
+                  </span>
                 </p>
                 <div className="flex gap-3 justify-end">
                   <button
@@ -227,7 +268,7 @@ export function SalaryModal({ employee, onClose }: SalaryModalProps) {
                   <button
                     onClick={handleEarlyPayout}
                     disabled={loading}
-                    className="px-4 py-2 bg-orange-600 text-white rounded-lg hover:bg-orange-700 disabled:opacity-50 flex items-center gap-2"
+                    className="px-4 py-2 bg-amber-600 text-white rounded-lg hover:bg-amber-700 disabled:opacity-50 flex items-center gap-2"
                   >
                     {loading ? (
                       <>
@@ -253,7 +294,7 @@ export function SalaryModal({ employee, onClose }: SalaryModalProps) {
           <button
             onClick={() => setPayConfirmOpen(true)}
             disabled={loading || !isSalaryDue}
-            title={!isSalaryDue ? 'Salary is not due yet' : 'Process salary payment'}
+            title={!isSalaryDue ? `Salary will be available on ${salaryDueDate?.toLocaleDateString() || 'the due date'}` : 'Process salary payment'}
             className="px-6 py-3 bg-green-600 text-white rounded-lg hover:bg-green-700 disabled:opacity-50 disabled:cursor-not-allowed font-medium flex items-center gap-2"
           >
             {loading ? (
@@ -271,8 +312,9 @@ export function SalaryModal({ employee, onClose }: SalaryModalProps) {
 
           <button
             onClick={() => setPayoutConfirmOpen(true)}
-            disabled={loading}
-            className="px-6 py-3 bg-orange-600 text-white rounded-lg hover:bg-orange-700 disabled:opacity-50 disabled:cursor-not-allowed font-medium flex items-center gap-2"
+            disabled={loading || !salaryData?.currentSalary?.netSalary}
+            title={!salaryData?.currentSalary?.netSalary ? 'Salary data not available' : 'Process early payout'}
+            className="px-6 py-3 bg-amber-600 text-white rounded-lg hover:bg-amber-700 disabled:opacity-50 disabled:cursor-not-allowed font-medium flex items-center gap-2"
           >
             {loading ? (
               <>

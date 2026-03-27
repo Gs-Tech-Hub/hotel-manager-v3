@@ -14,6 +14,8 @@ export interface SalaryData {
     netSalary: number;
     deductions: number;
     advances?: number;
+    payEarly?: boolean; // True if trying to pay before due date
+    salaryDueDate?: string; // Date when salary becomes payable
   };
   [key: string]: any;
 }

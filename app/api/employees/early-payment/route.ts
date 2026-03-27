@@ -47,10 +47,26 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    // Calculate salary to the specified date (or next due date for regular early payment)
+    // CRITICAL: Early payout is ONLY allowed for termination
+    // Regular employees cannot receive early payout - only on payment due date
+    const isTermination =
+      validated.upToDate ||
+      employmentData.employmentStatus === 'terminated';
+
+    if (!isTermination) {
+      return NextResponse.json(
+        errorResponse(
+          ErrorCodes.CONFLICT,
+          'Early payout is not allowed. Salary is only payable on the scheduled payment date.'
+        ),
+        { status: getStatusCode(ErrorCodes.CONFLICT) }
+      );
+    }
+
+    // Calculate salary to the specified date (termination payout only)
     const calculation = await calculateEmployeeSalary({
       employeeId: validated.employeeId,
-      payEarly: true,
+      payEarly: true, // Only for termination
       upToDate: validated.upToDate ? new Date(validated.upToDate) : undefined,
     });
 
@@ -77,10 +93,12 @@ export async function POST(request: NextRequest) {
         netSalary: paymentAmount,
         paymentMethod: validated.paymentMethod || 'transfer',
         status: 'completed',
-        notes: `${validated.notes ? validated.notes + ' - ' : ''}Early payment. Next due: ${calculation.salaryDueDate.toISOString().split('T')[0]}`,
+        notes: `${validated.notes ? validated.notes + ' - ' : ''}Termination settlement. Next due: ${calculation.salaryDueDate.toISOString().split('T')[0]}`,
         salaryDueDate: calculation.salaryDueDate,
       },
     });
+
+    console.log(`[Early Payment] Termination payout created: userId=${validated.employeeId}, amount=${paymentAmount.toString()}`);
 
     // Prepare response
     const response: any = {
