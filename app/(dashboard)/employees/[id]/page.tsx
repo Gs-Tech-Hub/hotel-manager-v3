@@ -270,17 +270,30 @@ export default function EmployeeDetailPage() {
       // Each record with daysCounted = 1 day
       let daysWorkedInMonth = 0
       let completedCycles = 0
+      let hasActiveCheckIn = false
+      let activeCheckInRecord = null
       
       for (const record of records) {
         if (record.checkOutTime) {
           // Completed check-in/check-out cycle
           daysWorkedInMonth += record.daysCounted || 1
           completedCycles += 1
+        } else {
+          // Found active check-in (no check-out time)
+          hasActiveCheckIn = true
+          activeCheckInRecord = record
         }
       }
       
       setMonthlyCheckIns(daysWorkedInMonth)
       setMonthlyCheckOuts(completedCycles)
+      
+      // Set active check-in if found
+      if (hasActiveCheckIn && activeCheckInRecord) {
+        setActiveCheckIn(activeCheckInRecord)
+      } else {
+        setActiveCheckIn(null)
+      }
     } catch (err: any) {
       console.error('Failed to fetch monthly attendance:', err)
     }
