@@ -371,10 +371,21 @@ async function seedPermissions(roles: Record<string, any>) {
       { action: 'roles.create', subject: null },
       { action: 'roles.update', subject: null },
       { action: 'roles.delete', subject: null },
-      // Reports
+      // Reports - General
       { action: 'reports.read', subject: null },
       { action: 'reports.generate', subject: null },
       { action: 'reports.export', subject: null },
+      // Reports - Specific Types
+      { action: 'reports.sales', subject: null },
+      { action: 'reports.orders', subject: null },
+      { action: 'reports.inventory', subject: null },
+      { action: 'reports.bookings', subject: null },
+      { action: 'reports.payments', subject: null },
+      { action: 'reports.occupancy', subject: null },
+      { action: 'reports.revenue', subject: null },
+      { action: 'reports.customers', subject: null },
+      { action: 'reports.employees', subject: null },
+      { action: 'reports.department', subject: null },
       // Services permissions
       { action: 'services.read', subject: null },
       { action: 'services.create', subject: null },
@@ -437,6 +448,16 @@ async function seedPermissions(roles: Record<string, any>) {
       { action: 'reports.read', subject: null },
       { action: 'reports.generate', subject: null },
       { action: 'reports.export', subject: null },
+      { action: 'reports.sales', subject: null },
+      { action: 'reports.orders', subject: null },
+      { action: 'reports.inventory', subject: null },
+      { action: 'reports.bookings', subject: null },
+      { action: 'reports.payments', subject: null },
+      { action: 'reports.occupancy', subject: null },
+      { action: 'reports.revenue', subject: null },
+      { action: 'reports.customers', subject: null },
+      { action: 'reports.employees', subject: null },
+      { action: 'reports.department', subject: null },
       { action: 'analytics.read', subject: null },
       // Services permissions
       { action: 'services.read', subject: null },
@@ -491,6 +512,10 @@ async function seedPermissions(roles: Record<string, any>) {
       { action: 'reports.read', subject: null },
       { action: 'reports.generate', subject: null },
       { action: 'reports.export', subject: null },
+      { action: 'reports.sales', subject: null },
+      { action: 'reports.orders', subject: null },
+      { action: 'reports.payment', subject: null },
+      { action: 'analytics.read', subject: null },
     ],
 
     // ==================== INVENTORY STAFF ====================
@@ -511,6 +536,7 @@ async function seedPermissions(roles: Record<string, any>) {
       { action: 'department_sections.update', subject: null },
       { action: 'departments.read', subject: null },
       { action: 'reports.read', subject: null },
+      { action: 'reports.inventory', subject: null },
       // Services permissions
       { action: 'services.read', subject: null },
       { action: 'services.create', subject: null },
@@ -531,9 +557,18 @@ async function seedPermissions(roles: Record<string, any>) {
       { action: 'discounts.read', subject: null },
       { action: 'departments.read', subject: null },
       { action: 'department_sections.read', subject: null },
+      // Reports - Full access for financial reporting
       { action: 'reports.read', subject: null },
       { action: 'reports.generate', subject: null },
       { action: 'reports.export', subject: null },
+      { action: 'reports.sales', subject: null },
+      { action: 'reports.orders', subject: null },
+      { action: 'reports.inventory', subject: null },
+      { action: 'reports.bookings', subject: null },
+      { action: 'reports.payments', subject: null },
+      { action: 'reports.revenue', subject: null },
+      { action: 'reports.customers', subject: null },
+      { action: 'reports.department', subject: null },
       { action: 'analytics.read', subject: null },
     ],
 
@@ -561,6 +596,10 @@ async function seedPermissions(roles: Record<string, any>) {
       { action: 'discounts.apply', subject: null },
       // POS terminal
       { action: 'pos_terminal.access', subject: null },
+      // Reports for cash handling
+      { action: 'reports.read', subject: null },
+      { action: 'reports.orders', subject: null },
+      { action: 'reports.payments', subject: null },
     ],
 
     // ==================== STAFF ====================
@@ -606,6 +645,8 @@ async function seedPermissions(roles: Record<string, any>) {
       { action: 'discounts.apply', subject: null },
       // Reports
       { action: 'reports.read', subject: null },
+      { action: 'reports.sales', subject: null },
+      { action: 'reports.orders', subject: null },
     ],
     // ==================== EMPLOYEE ====================
     // Minimal access, read-only for most features
@@ -617,6 +658,7 @@ async function seedPermissions(roles: Record<string, any>) {
       { action: 'departments.read', subject: null },
       { action: 'department_sections.read', subject: null },
       { action: 'services.read', subject: null },
+      { action: 'reports.read', subject: null },
     ],
 
     // ==================== KITCHEN STAFF ====================
