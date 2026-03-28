@@ -511,22 +511,8 @@ export default function EmployeeEditPage() {
           </div>
         </div>
 
-        {/* Account Status */}
-        <div className="space-y-4 pt-4 border-t border-gray-200">
-          <h2 className="text-xl font-semibold">Account Status</h2>
-          <label className="flex items-center gap-3 cursor-pointer">
-            <input
-              type="checkbox"
-              checked={formData.blocked}
-              onChange={(e) => setFormData({ ...formData, blocked: e.target.checked })}
-              className="w-5 h-5 border border-gray-300 rounded focus:ring-2 focus:ring-blue-500"
-            />
-            <span className="text-gray-700 font-medium">Block this account</span>
-          </label>
-          <p className="text-sm text-gray-600">
-            When blocked, this employee cannot log in or perform any actions in the system.
-          </p>
-        </div>
+        {/* Account Status section removed. 
+            Employment termination is now handled via admin-only "Terminate Employment" action on employee details page. */}
       </div>
     </div>
   )

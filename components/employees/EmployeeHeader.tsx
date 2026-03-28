@@ -1,6 +1,7 @@
 'use client';
 
 import { useState, useEffect } from 'react';
+import { useAuth } from '../auth-context';
 import { ArrowLeft, LogIn, LogOut, Loader2, AlertCircle, Clock } from 'lucide-react';
 import { EmployeeDetailData } from '../../hooks/useEmployee';
 
@@ -35,6 +36,7 @@ export function EmployeeHeader({
   error,
 }: EmployeeHeaderProps) {
   const [elapsedTime, setElapsedTime] = useState<string>('');
+  const { user } = useAuth();
 
   // Debug: Log activeCheckIn state
   useEffect(() => {
@@ -74,7 +76,7 @@ export function EmployeeHeader({
   const handleCheckInClick = async () => {
     try {
       await onCheckIn();
-    } catch (err) {
+    } catch (_err) {
       // Error handled in hook
     }
   };
@@ -82,7 +84,7 @@ export function EmployeeHeader({
   const handleCheckOutClick = async () => {
     try {
       await onCheckOut();
-    } catch (err) {
+    } catch (_err) {
       // Error handled in hook
     }
   };
@@ -97,7 +99,7 @@ export function EmployeeHeader({
             <h3 className="font-semibold text-red-900">Action Required</h3>
             <p className="text-red-800 text-sm mt-1">{error}</p>
             {error.includes('already has active check-in') && (
-              <p className="text-red-700 text-xs mt-2 font-medium">→ Please click "Clock Out" button to complete the current session first.</p>
+              <p className="text-red-700 text-xs mt-2 font-medium">→ Please click &quot;Clock Out&quot; button to complete the current session first.</p>
             )}
           </div>
         </div>
@@ -109,14 +111,18 @@ export function EmployeeHeader({
           <p className="text-gray-600 mt-2">{employee.email}</p>
           <p className="text-gray-600">@{employee.username}</p>
         </div>
-        <div className="flex flex-col gap-2 items-end">
+          <div className="flex flex-col gap-2 items-end">
           <span className={`px-4 py-2 rounded-full text-sm font-medium ${statusColor}`}>
             {empStatus.replace('_', ' ').charAt(0).toUpperCase() + empStatus.slice(1).replace('_', ' ')}
           </span>
-          {employee.blocked && (
-            <span className="px-4 py-2 rounded-full text-sm font-medium bg-red-100 text-red-800">
-              Blocked
-            </span>
+          {/* Blocked status removed. Termination handled via admin-only action elsewhere. */}
+          {user?.userType === 'admin' && (
+            <button
+              className="px-4 py-2 bg-red-600 text-white rounded-lg hover:bg-red-700 font-medium mt-2"
+              // TODO: Hook up to termination modal/flow
+            >
+              Terminate Employment
+            </button>
           )}
           <div className="flex gap-2 mt-2">
             {dataLoading ? (

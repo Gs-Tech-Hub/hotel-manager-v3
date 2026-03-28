@@ -13,7 +13,7 @@ interface SalaryModalProps {
 }
 
 export function SalaryModal({ employee, onClose }: SalaryModalProps) {
-  const { salaryData, loading, error, fetchSalary, paySalary, earlyPayout, clearError } = useSalary();
+  const { salaryData, loading, error, fetchSalary, paySalary, earlyPayout } = useSalary();
   const [payConfirmOpen, setPayConfirmOpen] = useState(false);
   const [payoutConfirmOpen, setPayoutConfirmOpen] = useState(false);
 
