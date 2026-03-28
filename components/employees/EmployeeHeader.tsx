@@ -115,15 +115,6 @@ export function EmployeeHeader({
           <span className={`px-4 py-2 rounded-full text-sm font-medium ${statusColor}`}>
             {empStatus.replace('_', ' ').charAt(0).toUpperCase() + empStatus.slice(1).replace('_', ' ')}
           </span>
-          {/* Blocked status removed. Termination handled via admin-only action elsewhere. */}
-          {user?.userType === 'admin' && (
-            <button
-              className="px-4 py-2 bg-red-600 text-white rounded-lg hover:bg-red-700 font-medium mt-2"
-              // TODO: Hook up to termination modal/flow
-            >
-              Terminate Employment
-            </button>
-          )}
           <div className="flex gap-2 mt-2">
             {dataLoading ? (
               <button

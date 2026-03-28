@@ -1,6 +1,6 @@
 'use client';
 
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
@@ -22,12 +22,44 @@ export function EmployeeTerminationForm({
   const [loading, setLoading] = useState(false);
   const [restoring, setRestoring] = useState(false);
   const [showForm, setShowForm] = useState(!!termination);
+  const [calculatingSettlement, setCalculatingSettlement] = useState(false);
   const [formData, setFormData] = useState({
-    terminationDate: termination?.terminationDate?.split('T')[0] || '',
+    terminationDate: termination?.terminationDate?.split('T')[0] || new Date().toISOString().split('T')[0],
     reason: termination?.reason || '',
     details: termination?.details || '',
     finalSettlement: termination?.finalSettlement || '',
   });
+
+  // Calculate final settlement from salary service when termination date changes
+  useEffect(() => {
+    if (!formData.terminationDate || termination) return; // Don't recalculate if already terminated
+
+    const calculateSettlement = async () => {
+      try {
+        setCalculatingSettlement(true);
+        const res = await fetch(
+          `/api/employees/${employeeId}/early-payment-preview?upToDate=${new Date(formData.terminationDate).toISOString()}`
+        );
+        const data = await res.json();
+        
+        if (data.success && data.data) {
+          // Set finalSettlement to the calculated net amount from salary service
+          setFormData((prev) => ({
+            ...prev,
+            finalSettlement: data.data.netAmount?.toString() || '',
+          }));
+        }
+      } catch (err) {
+        console.error('Failed to calculate settlement:', err);
+      } finally {
+        setCalculatingSettlement(false);
+      }
+    };
+
+    // Debounce calculation
+    const timer = setTimeout(calculateSettlement, 500);
+    return () => clearTimeout(timer);
+  }, [formData.terminationDate, employeeId, termination]);
 
   const handleChange = (e: React.ChangeEvent<HTMLInputElement | HTMLTextAreaElement>) => {
     const { name, value } = e.target;

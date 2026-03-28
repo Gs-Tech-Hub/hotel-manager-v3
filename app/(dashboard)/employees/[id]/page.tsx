@@ -5,6 +5,7 @@ import { ArrowLeft, AlertCircle, Loader2, Edit2, Trash2 } from 'lucide-react'
 import Link from 'next/link'
 import { useAuth } from '@/components/auth-context'
 import { EmployeeConsolidationView } from '@/components/admin/employee-consolidation-view'
+import { EmployeeTerminationForm } from '@/components/admin/employee-termination-form'
 import { useEmployee } from '@/hooks/useEmployee'
 import { useAttendance } from '@/hooks/useAttendance'
 import { useSalary } from '@/hooks/useSalary'
@@ -13,7 +14,7 @@ import { EmployeeHeader } from '@/components/employees/EmployeeHeader'
 import { EmploymentInfo } from '@/components/employees/EmploymentInfo'
 import { SalarySection } from '@/components/employees/SalarySection'
 import { AttendanceSection } from '@/components/employees/AttendanceSection'
-import { useState } from 'react'
+import { useState, useEffect } from 'react'
 
 export default function EmployeeDetailPage() {
   const router = useRouter()
@@ -28,6 +29,33 @@ export default function EmployeeDetailPage() {
   const { salaryData, loading: salaryLoading, fetchSalary } = useSalary()
 
   const [deleting, setDeleting] = useState(false)
+  const [termination, setTermination] = useState<any>(null)
+  const [loadingTermination, setLoadingTermination] = useState(false)
+
+  // Fetch termination data
+  useEffect(() => {
+    if (!employeeId) return
+
+    const fetchTermination = async () => {
+      try {
+        setLoadingTermination(true)
+        const res = await fetch(`/api/employees/${employeeId}/termination`)
+        const data = await res.json()
+        if (data.success && data.data) {
+          setTermination(data.data)
+        }
+      } catch (err) {
+        console.error('Failed to load termination data:', err)
+      } finally {
+        setLoadingTermination(false)
+      }
+    }
+
+    fetchTermination()
+  }, [employeeId])
+
+  // Check if employee is terminated
+  const isTerminated = employee?.employmentData?.employmentStatus === 'terminated' || termination
 
   const handleDelete = async () => {
     if (!window.confirm('Are you sure you want to delete this employee? This action cannot be undone.')) {
@@ -88,39 +116,74 @@ export default function EmployeeDetailPage() {
         <ArrowLeft size={18} /> Back to Employees
       </button>
 
+      {/* Terminated Employee Banner */}
+      {isTerminated && (
+        <div className="mb-6 p-4 bg-red-50 border border-red-200 rounded-lg flex items-start gap-3">
+          <AlertCircle className="text-red-600 flex-shrink-0 mt-0.5" size={20} />
+          <div className="flex-1">
+            <h3 className="font-semibold text-red-900">Employee Terminated</h3>
+            <p className="text-red-700 mt-1 text-sm">
+              This employee has been terminated and can no longer perform any work-related activities. 
+              The view below shows read-only information and termination details.
+            </p>
+            {termination?.terminationDate && (
+              <p className="text-red-700 mt-1 text-sm">
+                <strong>Termination Date:</strong> {new Date(termination.terminationDate).toLocaleDateString()}
+              </p>
+            )}
+          </div>
+        </div>
+      )}
+
       {/* Main Content */}
       <div className="max-w-4xl mx-auto space-y-6">
-        {/* Header with Clock In/Out */}
-        <EmployeeHeader
-          employee={employee}
-          activeCheckIn={activeCheckIn}
-          monthlyCheckIns={monthlyCheckIns}
-          monthlyCheckOuts={monthlyCheckOuts}
-          onCheckIn={checkIn}
-          onCheckOut={checkOut}
-          loading={clockInLoading}
-          dataLoading={dataLoading}
-          error={attendanceError}
-        />
+        {/* Header with Clock In/Out - DISABLED if terminated */}
+        {isTerminated ? (
+          <div className="bg-gray-100 rounded-lg border border-gray-300 p-8 text-center">
+            <p className="text-gray-600">Clock in/out is disabled for terminated employees</p>
+          </div>
+        ) : (
+          <EmployeeHeader
+            employee={employee}
+            activeCheckIn={activeCheckIn}
+            monthlyCheckIns={monthlyCheckIns}
+            monthlyCheckOuts={monthlyCheckOuts}
+            onCheckIn={checkIn}
+            onCheckOut={checkOut}
+            loading={clockInLoading}
+            dataLoading={dataLoading}
+            error={attendanceError}
+          />
+        )}
 
-        {/* Employment Information */}
-        <EmploymentInfo employee={employee} />
+        {/* Employment Information - READ ONLY if terminated */}
+        <div className={isTerminated ? 'opacity-60 pointer-events-none' : ''}>
+          <EmploymentInfo employee={employee} />
+        </div>
 
-        {/* Salary & Payment */}
-        <SalarySection
-          employee={employee}
-          onViewDetails={() => fetchSalary(employee.id)}
-          loading={salaryLoading}
-        />
+        {/* Salary & Payment - DISABLED if terminated, derive settlement from salary service */}
+        <div className={isTerminated ? 'opacity-60 pointer-events-none' : ''}>
+          <SalarySection
+            employee={employee}
+            onViewDetails={() => fetchSalary(employee.id)}
+            loading={salaryLoading}
+          />
+        </div>
 
-        {/* Monthly Attendance */}
-        {/* <AttendanceSection employeeId={employee.id} /> */}
+        {/* Monthly Attendance - HIDDEN if terminated */}
+        {!isTerminated && (
+          <>
+            {/* Placeholder for future attendance features */}
+          </>
+        )}
 
-        {/* Consolidated Employee View - Charges Summary */}
-        <EmployeeConsolidationView employeeId={employee.id} />
+        {/* Consolidated Employee View - Charges Summary - DISABLED if terminated */}
+        <div className={isTerminated ? 'opacity-60 pointer-events-none' : ''}>
+          <EmployeeConsolidationView employeeId={employee.id} />
+        </div>
 
-        {/* Roles & Leaves */}
-        <div className="bg-white rounded-lg border border-gray-200 p-8">
+        {/* Roles & Leaves - READ ONLY if terminated */}
+        <div className={`bg-white rounded-lg border border-gray-200 p-8 ${isTerminated ? 'opacity-60' : ''}`}>
           <h2 className="text-2xl font-bold text-gray-900 mb-6">Roles & Leaves</h2>
           <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
             <div>
@@ -144,16 +207,16 @@ export default function EmployeeDetailPage() {
             <div>
               <h3 className="text-lg font-semibold text-gray-900 mb-4">Leave Status</h3>
               <div className="p-6 bg-blue-50 rounded-lg border border-blue-200">
-                <p className="text-4xl font-bold text-blue-900">{employee.activeLeaves}</p>
-                <p className="text-blue-700 mt-2">Active approved leave(s)</p>
+                <p className="text-4xl font-bold text-blue-900">{isTerminated ? 0 : employee.activeLeaves}</p>
+                <p className="text-blue-700 mt-2">{isTerminated ? 'No active leaves (Employee terminated)' : 'Active approved leave(s)'}</p>
               </div>
             </div>
           </div>
         </div>
 
-        {/* Action Buttons */}
+        {/* Action Buttons - DISABLED if terminated */}
         <div className="flex gap-4">
-          {hasPermission('employees.update') && (
+          {!isTerminated && hasPermission('employees.update') && (
             <Link
               href={`/employees/${employee.id}/edit`}
               className="px-6 py-3 bg-blue-600 text-white rounded-lg hover:bg-blue-700 font-medium flex items-center gap-2"
@@ -161,7 +224,7 @@ export default function EmployeeDetailPage() {
               <Edit2 size={18} /> Edit Employee
             </Link>
           )}
-          {hasPermission('employees.delete') && (
+          {!isTerminated && hasPermission('employees.delete') && (
             <button
               onClick={handleDelete}
               disabled={deleting}
@@ -177,6 +240,14 @@ export default function EmployeeDetailPage() {
             Back to List
           </button>
         </div>
+
+        {/* Terminate Employment Section - ALWAYS VISIBLE for admins */}
+        {hasPermission('employees.delete') && (
+          <EmployeeTerminationForm
+            employeeId={employee.id}
+            termination={termination}
+          />
+        )}
       </div>
     </div>
   )
