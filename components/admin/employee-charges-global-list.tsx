@@ -87,7 +87,7 @@ export function EmployeeChargesGlobalList() {
   const fetchData = async () => {
     setLoading(true);
     try {
-      const empRes = await fetch('/api/employees');
+      const empRes = await fetch('/api/employees?status=active');
       if (empRes.ok) {
         const empJson = await empRes.json();
         const empList = empJson.data?.employees || empJson.data || [];

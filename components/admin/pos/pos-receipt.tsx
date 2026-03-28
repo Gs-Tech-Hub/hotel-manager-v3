@@ -51,11 +51,141 @@ export function POSReceipt({ receipt, onClose }: { receipt: any; onClose?: () =>
 
   const handlePrint = () => {
     if (!ref.current) return
-    const w = window.open('', '', 'width=600,height=600')
+    const w = window.open('', '', 'width=400,height=600')
     if (!w) return
-    w.document.write('<html><body>' + ref.current.innerHTML + '</body></html>')
+    
+    // For 80mm POS printer paper (commonly used)
+    const posPaperWidthMm = 80;
+    const posPaperWidthPx = '226px'; // 80mm at 96dpi
+    
+    const html = `
+      <!DOCTYPE html>
+      <html>
+        <head>
+          <meta charset="UTF-8">
+          <meta name="viewport" content="width=device-width, initial-scale=1.0">
+          <title>Receipt</title>
+          <style>
+            * {
+              margin: 0;
+              padding: 0;
+              box-sizing: border-box;
+            }
+            
+            html, body {
+              width: ${posPaperWidthPx};
+              margin: 0 auto;
+              padding: 0;
+              background: white;
+            }
+            
+            body {
+              font-family: 'Courier New', monospace;
+              font-size: 11px;
+              line-height: 1.2;
+              width: ${posPaperWidthPx};
+              color: #000;
+            }
+            
+            .receipt-container {
+              width: 100%;
+              padding: 8px;
+            }
+            
+            .font-mono { font-family: 'Courier New', monospace; }
+            .text-sm { font-size: 11px; }
+            .text-xs { font-size: 9px; }
+            .text-lg { font-size: 13px; }
+            .text-3xl { font-size: 18px; }
+            .text-center { text-align: center; }
+            .text-right { text-align: right; }
+            .font-bold { font-weight: bold; }
+            .font-semibold { font-weight: 600; }
+            .border-b { border-bottom: 1px solid #000; }
+            .border-b-2 { border-bottom: 2px solid #000; }
+            .border-t { border-top: 1px solid #000; }
+            .border-t-2 { border-top: 2px solid #000; }
+            .border { border: 1px solid #000; }
+            .border-2 { border: 2px solid #000; }
+            .px-2 { padding-left: 4px; padding-right: 4px; }
+            .py-1 { padding-top: 2px; padding-bottom: 2px; }
+            .py-2 { padding-top: 4px; padding-bottom: 4px; }
+            .p-3 { padding: 4px; }
+            .pb-2 { padding-bottom: 4px; }
+            .pt-2 { padding-top: 4px; }
+            .pt-1 { padding-top: 2px; }
+            .mt-1 { margin-top: 2px; }
+            .mb-1 { margin-bottom: 2px; }
+            .my-2 { margin-top: 4px; margin-bottom: 4px; }
+            .space-y-1 > * + * { margin-top: 2px; }
+            .space-y-3 > * + * { margin-top: 6px; }
+            .rounded { border-radius: 2px; }
+            .grid { display: grid; width: 100%; }
+            .grid-cols-12 { grid-template-columns: repeat(12, 1fr); }
+            .col-span-2 { grid-column: span 2; }
+            .col-span-3 { grid-column: span 3; }
+            .col-span-5 { grid-column: span 5; }
+            .break-words { word-break: break-word; }
+            .flex { display: flex; }
+            .justify-between { justify-content: space-between; }
+            .justify-center { justify-content: center; }
+            .items-center { align-items: center; }
+            .gap-1 { gap: 2px; }
+            .gap-2 { gap: 4px; }
+            
+            /* Print-specific styles */
+            @media print {
+              * {
+                -webkit-print-color-adjust: exact;
+                print-color-adjust: exact;
+                color-adjust: exact;
+              }
+              
+              html, body {
+                width: ${posPaperWidthPx};
+                height: auto;
+                margin: 0;
+                padding: 0;
+              }
+              
+              @page {
+                size: ${posPaperWidthMm}mm auto;
+                margin: 0;
+                padding: 0;
+              }
+              
+              .receipt-container {
+                padding: 4px;
+                width: 100%;
+              }
+              
+              body {
+                font-size: 11px;
+                line-height: 1.2;
+              }
+              
+              .no-print {
+                display: none !important;
+              }
+            }
+          </style>
+        </head>
+        <body>
+          <div class="receipt-container font-mono">
+            ${ref.current.innerHTML}
+          </div>
+        </body>
+      </html>
+    `
+    w.document.write(html)
     w.document.close()
-    w.print()
+    
+    // Wait for content to load, then print
+    w.onload = () => {
+      setTimeout(() => {
+        w.print()
+      }, 200)
+    }
   }
 
   // Calculate discounts and taxes from receipt data

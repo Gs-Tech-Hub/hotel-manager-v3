@@ -13,7 +13,6 @@ import { employeeApi } from '@/../app/api/employees/employee.api'
 import { EmployeeHeader } from '@/components/employees/EmployeeHeader'
 import { EmploymentInfo } from '@/components/employees/EmploymentInfo'
 import { SalarySection } from '@/components/employees/SalarySection'
-import { AttendanceSection } from '@/components/employees/AttendanceSection'
 import { useState, useEffect } from 'react'
 
 export default function EmployeeDetailPage() {

@@ -893,17 +893,144 @@ export default function BookingDetailPage({
 						<div className="flex gap-2 mt-4">
 							<Button
 								onClick={() => {
+									const receiptContent = document.querySelector('.font-mono');
+									if (!receiptContent) return;
 									const printWindow = window.open('', '', 'width=600,height=800');
-									if (printWindow) {
-										const receiptContent = document.querySelector('.font-mono');
-										if (receiptContent) {
-											printWindow.document.write('<html><head><title>Receipt</title></head><body>');
-											printWindow.document.write(receiptContent.innerHTML);
-											printWindow.document.write('</body></html>');
-											printWindow.document.close();
+									if (!printWindow) return;
+									
+									// 80mm thermal printer paper = 226px at 96dpi
+									const thermalPaperWidthMm = '80mm'
+									const thermalPaperWidthPx = '226px'
+									const html = `
+										<!DOCTYPE html>
+										<html>
+											<head>
+												<meta charset="UTF-8">
+												<style>
+													/* Reset all defaults */
+													* {
+														margin: 0;
+														padding: 0;
+														box-sizing: border-box;
+													}
+													
+													/* Document setup for 80mm thermal paper */
+													@page {
+														size: ${thermalPaperWidthMm} auto;
+														margin: 0;
+														padding: 0;
+														orphans: 0;
+														widows: 0;
+													}
+													
+													html {
+														width: ${thermalPaperWidthPx};
+														margin: 0;
+														padding: 0;
+													}
+													
+													body {
+														width: ${thermalPaperWidthPx};
+														height: auto;
+														margin: 0;
+														padding: 2px;
+														font-family: 'Courier New', 'Courier', monospace;
+														font-size: 10px;
+														line-height: 1.2;
+														color: #000;
+														background: white;
+														overflow: hidden;
+													}
+													
+													.receipt-container {
+														width: 100%;
+														max-width: ${thermalPaperWidthPx};
+														padding: 2px;
+														overflow: hidden;
+														word-wrap: break-word;
+														white-space: normal;
+													}
+													
+													.font-mono { font-family: 'Courier New', 'Courier', monospace; }
+													.text-sm { font-size: 10px; }
+													.text-xs { font-size: 9px; }
+													.text-lg { font-size: 11px; }
+													.text-center { text-align: center; }
+													.text-right { text-align: right; }
+													.font-bold { font-weight: bold; }
+													.font-semibold { font-weight: 600; }
+													.border-b { border-bottom: 1px solid #000; }
+													.border-b-2 { border-bottom: 2px solid #000; }
+													.border-t { border-top: 1px solid #000; }
+													.border-t-2 { border-top: 2px solid #000; }
+													.px-2 { padding-left: 2px; padding-right: 2px; }
+													.px-3 { padding-left: 3px; padding-right: 3px; }
+													.py-1 { padding-top: 1px; padding-bottom: 1px; }
+													.py-2 { padding-top: 2px; padding-bottom: 2px; }
+													.p-2 { padding: 2px; }
+													.pb-2 { padding-bottom: 2px; }
+													.pt-2 { padding-top: 2px; }
+													.mt-1 { margin-top: 1px; }
+													.mb-1 { margin-bottom: 1px; }
+													.space-y-1 > * + * { margin-top: 1px; }
+													.space-y-2 > * + * { margin-top: 2px; }
+													.space-y-3 > * + * { margin-top: 3px; }
+													.flex { display: flex !important; flex-direction: row; flex-wrap: nowrap; width: 100%; }
+													.justify-between { justify-content: space-between; width: 100%; }
+													.capitalize { text-transform: capitalize; }
+													.text-green-600 { color: #16a34a; }
+													.text-muted-foreground { color: #6b7280; }
+													
+													@media print {
+														* {
+															-webkit-print-color-adjust: exact !important;
+															print-color-adjust: exact !important;
+															color-adjust: exact !important;
+														}
+														@page {
+															size: ${thermalPaperWidthMm} auto;
+															margin: 0;
+															padding: 0;
+														}
+														html, body {
+															width: ${thermalPaperWidthPx};
+															max-width: ${thermalPaperWidthPx};
+															height: auto;
+															margin: 0;
+															padding: 2px;
+														}
+														.flex {
+															display: flex !important;
+															flex-direction: row;
+															flex-wrap: nowrap !important;
+															width: 100%;
+														}
+														.justify-between {
+															justify-content: space-between !important;
+															width: 100%;
+														}
+														.space-y-1 > *, 
+														.space-y-2 > *,
+														.space-y-3 > * {
+															page-break-inside: avoid;
+														}
+													}
+												</style>
+											</head>
+											<body>
+												<div class="receipt-container font-mono">
+													${receiptContent.innerHTML}
+												</div>
+											</body>
+										</html>
+									`;
+									printWindow.document.write(html);
+									printWindow.document.close();
+									printWindow.onload = () => {
+										setTimeout(() => {
 											printWindow.print();
-										}
-									}
+										}, 200);
+									};
 								}}
 								size="sm"
 								className="flex-1"

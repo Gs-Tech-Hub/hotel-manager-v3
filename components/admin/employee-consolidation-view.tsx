@@ -12,6 +12,7 @@ import {
   AlertTriangle,
 } from 'lucide-react';
 import { formatTablePrice } from '@/lib/formatters';
+import { OutstandingChargesPayment } from '@/components/employees/OutstandingChargesPayment';
 
 interface ConsolidatedEmployee {
   employee: {
@@ -113,6 +114,7 @@ export function EmployeeConsolidationView({ employeeId }: EmployeeConsolidationV
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [processingEarlyPayment, setProcessingEarlyPayment] = useState(false);
+  const [showPayCharges, setShowPayCharges] = useState(false);
 
   useEffect(() => {
     fetchConsolidatedData();
@@ -202,7 +204,7 @@ export function EmployeeConsolidationView({ employeeId }: EmployeeConsolidationV
     );
   }
 
-  const { employee, employment, charges, salary, salaryHistory, attendance, summary } = data;
+  const { charges, salaryHistory, attendance, summary } = data;
   const outstandingCharges = charges.totalPending > 0;
 
   return (
@@ -249,19 +251,19 @@ export function EmployeeConsolidationView({ employeeId }: EmployeeConsolidationV
                   <div className="p-4 bg-red-50 rounded-lg">
                     <p className="text-sm text-gray-600">Total Amount</p>
                     <p className="text-2xl font-bold text-red-700">
-                      {formatTablePrice(charges.totalAmount)}
+                      {formatTablePrice(charges.totalAmount * 100)}
                     </p>
                   </div>
                   <div className="p-4 bg-yellow-50 rounded-lg">
                     <p className="text-sm text-gray-600">Outstanding</p>
                     <p className="text-2xl font-bold text-yellow-700">
-                      {formatTablePrice(charges.totalPending)}
+                      {formatTablePrice(Math.round(charges.totalPending) * 100)}
                     </p>
                   </div>
                   <div className="p-4 bg-green-50 rounded-lg">
                     <p className="text-sm text-gray-600">Paid</p>
                     <p className="text-2xl font-bold text-green-700">
-                      {formatTablePrice(charges.totalPaid)}
+                      {formatTablePrice(Math.round(charges.totalPaid) * 100)}
                     </p>
                   </div>
                 </div>
@@ -269,9 +271,20 @@ export function EmployeeConsolidationView({ employeeId }: EmployeeConsolidationV
                 {/* Charges by Status */}
                 {charges.recent.length > 0 && (
                   <div className="mt-6">
-                    <h4 className="font-semibold mb-3">Recent Charges</h4>
+                    <h4 className="font-semibold mb-3">Recent Charges (Last 30 Days)</h4>
                     <div className="space-y-2 max-h-72 overflow-y-auto">
-                      {charges.recent.map((charge) => (
+                      {charges.recent
+                        .filter((charge) => {
+                          // Only show paid charges from the last 30 days
+                          if (charge.status === 'paid') {
+                            const chargeDate = new Date(charge.date);
+                            const thirtyDaysAgo = new Date();
+                            thirtyDaysAgo.setDate(thirtyDaysAgo.getDate() - 30);
+                            return chargeDate >= thirtyDaysAgo;
+                          }
+                          return true;
+                        })
+                        .map((charge) => (
                         <div
                           key={charge.id}
                           className="flex items-center justify-between p-3 border rounded-lg"
@@ -283,9 +296,9 @@ export function EmployeeConsolidationView({ employeeId }: EmployeeConsolidationV
                             </p>
                           </div>
                           <div className="text-right mr-3">
-                            <p className="font-semibold">{formatTablePrice(charge.amount)}</p>
+                            <p className="font-semibold">{formatTablePrice(Math.round(charge.amount * 100))}</p>
                             <p className="text-xs text-gray-500">
-                              Paid: {formatTablePrice(charge.paidAmount)}
+                              Paid: {formatTablePrice(Math.round(charge.paidAmount * 100))} 
                             </p>
                           </div>
                           <span
@@ -299,6 +312,28 @@ export function EmployeeConsolidationView({ employeeId }: EmployeeConsolidationV
                   </div>
                 )}
               </div>
+
+              {/* Outstanding Charges Payment Section */}
+              {charges.totalPending > 0 && (
+                <div className="mt-6">
+                  {!showPayCharges && (
+                    <button
+                      onClick={() => setShowPayCharges(true)}
+                      className="w-full px-4 py-2 bg-orange-600 text-white rounded-lg hover:bg-orange-700 font-medium"
+                    >
+                      Pay Now ({formatTablePrice(Math.round(charges.totalPending) * 100)})
+                    </button>
+                  )}
+                  {showPayCharges && (
+                    <OutstandingChargesPayment
+                      employeeId={employeeId}
+                      onPaymentSuccess={() => {
+                        window.location.reload();
+                      }}
+                    />
+                  )}
+                </div>
+              )}
             </CardContent>
           </Card>
         </TabsContent>

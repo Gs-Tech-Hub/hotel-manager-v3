@@ -51,7 +51,7 @@ export default function EmployeesPage() {
   const [editingEmployee, setEditingEmployee] = useState<Employee | null>(null)
 
   // Filtering & Sorting
-  const [statusFilter, setStatusFilter] = useState<string>('all')
+  const [statusFilter, setStatusFilter] = useState<string>('active')
   const [sortBy, setSortBy] = useState<'name' | 'salary' | 'charges' | 'outstanding'>('name')
   const [searchQuery, setSearchQuery] = useState('')
 
@@ -84,21 +84,6 @@ export default function EmployeesPage() {
     fetchEmployees()
   }, [])
 
-  const handleDeleteEmployee = async (id: string) => {
-    if (!window.confirm('Are you sure you want to delete this employee?')) return
-
-    try {
-      const res = await fetch(`/api/employees/${encodeURIComponent(id)}`, {
-        method: 'DELETE',
-      })
-      const json = await res.json()
-      if (!res.ok) throw new Error(json.error || `Failed to delete employee (${res.status})`)
-      await fetchEmployees()
-    } catch (err: any) {
-      console.error('Failed to delete employee:', err)
-      setError(err?.message || 'Failed to delete employee')
-    }
-  }
 
   const handleViewEmployee = (id: string) => {
     router.push(`/employees/${id}`)
