@@ -4,8 +4,14 @@
  * Core permission checking and role management utilities.
  * Works with the unified Permission, Role, UserRole models.
  * 
+ * IMPORTANT: All permissions are stored with subject: null
+ * DO NOT pass a subject parameter to checkPermission()
+ * 
  * Usage:
- *   const hasPermission = await checkPermission(ctx, 'orders.create', 'orders');
+ *   import { PERMISSIONS } from '@/lib/permissions';
+ *   const hasAccess = await checkPermission(ctx, PERMISSIONS.ORDERS.CREATE);
+ *   // NOT: await checkPermission(ctx, 'orders.create', 'orders');
+ *   
  *   const perms = await getUserPermissions(ctx);
  *   const roles = await getUserRoles(ctx);
  */

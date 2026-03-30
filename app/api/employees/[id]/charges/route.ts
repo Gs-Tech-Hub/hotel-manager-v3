@@ -34,10 +34,10 @@ export async function GET(
     // Check permission to read employee data
     const permCtx: PermissionContext = {
       userId: ctx.userId,
-      userType: userWithRoles.isAdmin ? 'admin' : hasAnyRole(userWithRoles, ['admin', 'manager', 'staff']) ? 'employee' : 'other',
+      userType: userWithRoles.isAdmin ? 'admin' : 'employee',
     };
 
-    const canRead = await checkPermission(permCtx, 'employees.read', 'employees');
+    const canRead = await checkPermission(permCtx, 'employees.read');
     if (!canRead) {
       return NextResponse.json(
         errorResponse(ErrorCodes.FORBIDDEN, 'Insufficient permissions to view employee charges'),
@@ -129,10 +129,10 @@ export async function POST(
     // Check permission to update employees (includes charge management)
     const permCtx: PermissionContext = {
       userId: ctx.userId,
-      userType: userWithRoles.isAdmin ? 'admin' : hasAnyRole(userWithRoles, ['admin', 'manager', 'staff']) ? 'employee' : 'other',
+      userType: userWithRoles.isAdmin ? 'admin' : 'employee',
     };
 
-    const canCreate = await checkPermission(permCtx, 'employees.update', 'employees');
+    const canCreate = await checkPermission(permCtx, 'employees.update');
     if (!canCreate) {
       return NextResponse.json(
         errorResponse(ErrorCodes.FORBIDDEN, 'Insufficient permissions to create employee charges'),

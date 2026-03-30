@@ -175,7 +175,7 @@ export async function GET(request: NextRequest) {
       userType: (userWithRoles.userType as 'admin' | 'employee' | 'other') || 'employee',
       departmentId: null,
     };
-    const canRead = await checkPermission(permCtx, 'discounts.read', 'discounts');
+    const canRead = await checkPermission(permCtx, 'discounts.read');
     if (!canRead) {
       return NextResponse.json(
         errorResponse(ErrorCodes.FORBIDDEN, 'Insufficient permissions to view discounts'),

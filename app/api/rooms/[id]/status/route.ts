@@ -51,9 +51,9 @@ async function handleStatusUpdate(
 
     const permCtx: PermissionContext = {
       userId: ctx.userId,
-      userType: user.isAdmin ? 'admin' : hasAnyRole(user, ['admin', 'manager', 'staff']) ? 'employee' : 'other',
+      userType: user.isAdmin ? 'admin' : hasAnyRole(user, ['admin', 'manager', 'staff']) ? 'employee' : 'employee',
     };
-    const hasAccess = await checkPermission(permCtx, 'rooms.manage', 'rooms');
+    const hasAccess = await checkPermission(permCtx, 'rooms.manage');
     if (!hasAccess) {
       return NextResponse.json(
         errorResponse(ErrorCodes.FORBIDDEN, 'Insufficient permissions'),

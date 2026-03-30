@@ -46,7 +46,7 @@ export async function GET(req: NextRequest) {
       userType: (userWithRoles.userType as 'admin' | 'employee' | 'other') || 'employee',
       departmentId: null,
     };
-    const canRead = await checkPermission(permCtx, 'inventory.read', 'inventory');
+    const canRead = await checkPermission(permCtx, 'inventory.read');
     if (!canRead) {
       return sendError(ErrorCodes.FORBIDDEN, 'Insufficient permissions to view inventory');
     }

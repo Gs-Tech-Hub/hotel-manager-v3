@@ -205,7 +205,7 @@ export async function DELETE(
 
     // Check appropriate permission based on item type
     if (itemType === 'extra') {
-      const canDelete = await checkPermission(permCtx, 'extras.delete', 'extras');
+      const canDelete = await checkPermission(permCtx, 'extras.delete');
       if (!canDelete) {
         return NextResponse.json(
           errorResponse(ErrorCodes.FORBIDDEN, 'Insufficient permissions to delete extras'),
@@ -213,7 +213,7 @@ export async function DELETE(
         );
       }
     } else if (itemType === 'inventory') {
-      const canDelete = await checkPermission(permCtx, 'inventory.delete', 'inventory');
+      const canDelete = await checkPermission(permCtx, 'inventory.delete');
       if (!canDelete) {
         return NextResponse.json(
           errorResponse(ErrorCodes.FORBIDDEN, 'Insufficient permissions to delete inventory'),

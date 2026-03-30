@@ -51,11 +51,11 @@ export async function POST(request: NextRequest) {
     // Build permission context for RBAC checks
     const permCtx: PermissionContext = {
       userId: ctx.userId,
-      userType: userWithRoles.isAdmin ? 'admin' : hasAnyRole(userWithRoles, ['admin', 'manager', 'staff']) ? 'employee' : 'other',
+      userType: userWithRoles.isAdmin ? 'admin' : hasAnyRole(userWithRoles, ['admin', 'manager', 'staff']) ? 'employee' : 'employee',
     };
 
     // Require explicit permission to create orders
-    const canCreate = await checkPermission(permCtx, 'orders.create', 'orders');
+    const canCreate = await checkPermission(permCtx, 'orders.create');
     if (!canCreate) {
       return NextResponse.json(
         errorResponse(ErrorCodes.FORBIDDEN, 'Insufficient permissions to create orders'),
@@ -264,7 +264,7 @@ export async function GET(request: NextRequest) {
     console.log(`[ORDERS API] Checking orders.read permission...`);
 
     // Check read permission; employees/admins must have 'orders.read'.
-    const hasReadPerm = await checkPermission(permCtx, 'orders.read', 'orders');
+    const hasReadPerm = await checkPermission(permCtx, 'orders.read');
     console.log(`[ORDERS API] hasReadPerm=${hasReadPerm}`);
 
     // Parse query parameters

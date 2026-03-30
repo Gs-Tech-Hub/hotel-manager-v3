@@ -37,9 +37,9 @@ export async function POST(
 
     const permCtx: PermissionContext = {
       userId: ctx.userId,
-      userType: user.isAdmin ? 'admin' : hasAnyRole(user, ['admin', 'manager', 'staff']) ? 'employee' : 'other',
+      userType: user.isAdmin ? 'admin' : hasAnyRole(user, ['admin', 'manager', 'staff']) ? 'employee' : 'employee',
     };
-    const hasAccess = await checkPermission(permCtx, 'reservations.checkout', 'reservations');
+    const hasAccess = await checkPermission(permCtx, 'reservations.checkout');
     if (!hasAccess) {
       return NextResponse.json(
         errorResponse(ErrorCodes.FORBIDDEN, 'Insufficient permissions'),

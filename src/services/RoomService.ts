@@ -137,7 +137,7 @@ export class RoomService {
    */
   async createUnit(data: CreateUnitInput, ctx: PermissionContext): Promise<Unit> {
     // Check permission
-    const hasAccess = await checkPermission(ctx, 'rooms.manage', 'rooms');
+    const hasAccess = await checkPermission(ctx, 'rooms.manage');
     if (!hasAccess) {
       throw new Error('Insufficient permissions to manage rooms');
     }
@@ -166,7 +166,7 @@ export class RoomService {
    * Update unit
    */
   async updateUnit(unitId: string, data: UpdateUnitInput, ctx: PermissionContext): Promise<Unit> {
-    const hasAccess = await checkPermission(ctx, 'rooms.manage', 'rooms');
+    const hasAccess = await checkPermission(ctx, 'rooms.manage');
     if (!hasAccess) {
       throw new Error('Insufficient permissions to manage rooms');
     }
@@ -358,7 +358,7 @@ export class RoomService {
    * Bulk import units from data
    */
   async importUnits(units: CreateUnitInput[], ctx: PermissionContext): Promise<Unit[]> {
-    const hasAccess = await checkPermission(ctx, 'rooms.manage', 'rooms');
+    const hasAccess = await checkPermission(ctx, 'rooms.manage');
     if (!hasAccess) {
       throw new Error('Insufficient permissions to manage rooms');
     }
@@ -375,7 +375,7 @@ export class RoomService {
    * Create room type
    */
   async createRoomType(data: CreateRoomTypeInput, ctx: PermissionContext): Promise<RoomType> {
-    const hasAccess = await checkPermission(ctx, 'rooms.manage', 'rooms');
+    const hasAccess = await checkPermission(ctx, 'rooms.manage');
     if (!hasAccess) {
       throw new Error('Insufficient permissions to manage rooms');
     }

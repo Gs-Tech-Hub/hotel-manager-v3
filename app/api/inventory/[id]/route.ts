@@ -99,10 +99,10 @@ export async function PUT(
     // Check permission to update inventory
     const permCtx = {
       userId: ctx.userId,
-      userType: (userWithRoles.isAdmin ? 'admin' : 'other') as 'admin' | 'employee' | 'other',
+      userType: (userWithRoles.isAdmin ? 'admin' : 'employee') as 'admin' | 'employee' | 'other',
     };
     
-    const canUpdate = await checkPermission(permCtx, 'inventory.update', 'inventory');
+    const canUpdate = await checkPermission(permCtx, 'inventory.update');
     if (!canUpdate) {
       return sendError(ErrorCodes.FORBIDDEN, 'Insufficient permissions to update inventory');
     }
@@ -155,10 +155,10 @@ export async function DELETE(
     // Check permission to delete inventory
     const permCtx = {
       userId: ctx.userId,
-      userType: (userWithRoles.isAdmin ? 'admin' : 'other') as 'admin' | 'employee' | 'other',
+      userType: (userWithRoles.isAdmin ? 'admin' : 'employee') as 'admin' | 'employee' | 'other',
     };
     
-    const canDelete = await checkPermission(permCtx, 'inventory.delete', 'inventory');
+    const canDelete = await checkPermission(permCtx, 'inventory.delete');
     if (!canDelete) {
       return sendError(ErrorCodes.FORBIDDEN, 'Insufficient permissions to delete inventory');
     }

@@ -36,9 +36,9 @@ export async function GET(request: NextRequest) {
     // Check permission to view terminals
     const permCtx: PermissionContext = {
       userId: ctx.userId,
-      userType: user.isAdmin ? 'admin' : hasAnyRole(user, ['admin', 'manager', 'staff']) ? 'employee' : 'other',
+      userType: user.isAdmin ? 'admin' : 'employee',
     };
-    const hasAccess = await checkPermission(permCtx, 'terminals.read', 'terminals');
+    const hasAccess = await checkPermission(permCtx, 'terminals.read');
     if (!hasAccess) {
       return NextResponse.json(
         errorResponse(ErrorCodes.FORBIDDEN, 'Insufficient permissions'),
@@ -136,9 +136,9 @@ export async function POST(request: NextRequest) {
     // Check permission to update terminals
     const permCtx: PermissionContext = {
       userId: ctx.userId,
-      userType: user.isAdmin ? 'admin' : hasAnyRole(user, ['admin', 'manager', 'staff']) ? 'employee' : 'other',
+      userType: user.isAdmin ? 'admin' : 'employee',
     };
-    const hasAccess = await checkPermission(permCtx, 'terminals.update', 'terminals');
+      const hasAccess = await checkPermission(permCtx, 'terminals.update');
     if (!hasAccess) {
       return NextResponse.json(
         errorResponse(ErrorCodes.FORBIDDEN, 'Insufficient permissions'),

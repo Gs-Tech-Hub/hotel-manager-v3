@@ -46,7 +46,7 @@ export async function GET(request: NextRequest) {
       userType: (userWithRoles.userType as 'admin' | 'employee' | 'other') || 'employee',
       departmentId: null,
     };
-    const canRead = await checkPermission(permCtx, 'departments.read', 'departments');
+    const canRead = await checkPermission(permCtx, 'departments.read');
     if (!canRead) {
       return NextResponse.json(
         errorResponse(ErrorCodes.FORBIDDEN, 'Insufficient permissions to view departments'),
@@ -222,10 +222,10 @@ async function postHandler(request: NextRequest) {
     const { checkPermission } = await import('@/lib/auth/rbac');
     const permCtx = {
       userId: ctx.userId,
-      userType: (userWithRoles.isAdmin ? 'admin' : 'other') as 'admin' | 'employee' | 'other',
+      userType: (userWithRoles.isAdmin ? 'admin' : 'employee') as 'admin' | 'employee' | 'other',
     };
     
-    const canCreate = await checkPermission(permCtx, 'departments.create', 'departments');
+    const canCreate = await checkPermission(permCtx, 'departments.create');
     if (!canCreate) {
       return NextResponse.json(
         errorResponse(ErrorCodes.FORBIDDEN, 'Insufficient permissions to create departments'),

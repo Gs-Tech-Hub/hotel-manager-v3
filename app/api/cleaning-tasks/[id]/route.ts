@@ -77,9 +77,9 @@ export async function PUT(
 
     const permCtx: PermissionContext = {
       userId: ctx.userId,
-      userType: user.isAdmin ? 'admin' : hasAnyRole(user, ['admin', 'manager', 'staff']) ? 'employee' : 'other',
+      userType: user.isAdmin ? 'admin' : hasAnyRole(user, ['admin', 'manager', 'staff']) ? 'employee' : 'employee',
     };
-    const hasAccess = await checkPermission(permCtx, 'cleaning.manage', 'cleaning');
+      const hasAccess = await checkPermission(permCtx, 'cleaning.manage');
     if (!hasAccess) {
       return NextResponse.json(
         errorResponse(ErrorCodes.FORBIDDEN, 'Insufficient permissions'),
@@ -219,9 +219,9 @@ export async function DELETE(
 
     const permCtx: PermissionContext = {
       userId: ctx.userId,
-      userType: user.isAdmin ? 'admin' : hasAnyRole(user, ['admin', 'manager', 'staff']) ? 'employee' : 'other',
+      userType: user.isAdmin ? 'admin' : hasAnyRole(user, ['admin', 'manager', 'staff']) ? 'employee' : 'employee',
     };
-    const hasAccess = await checkPermission(permCtx, 'cleaning.manage', 'cleaning');
+    const hasAccess = await checkPermission(permCtx, 'cleaning.manage');
     if (!hasAccess) {
       return NextResponse.json(
         errorResponse(ErrorCodes.FORBIDDEN, 'Insufficient permissions'),

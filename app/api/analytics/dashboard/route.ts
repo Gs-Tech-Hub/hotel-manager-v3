@@ -84,10 +84,10 @@ export async function GET(request: NextRequest) {
     // Check permissions - require dashboard access
     const permCtx: PermissionContext = {
       userId: ctx.userId,
-      userType: (userWithRoles.isAdmin ? 'admin' : hasAnyRole(userWithRoles, ['admin', 'manager', 'staff']) ? 'employee' : 'other') as 'admin' | 'employee' | 'other',
+      userType: (userWithRoles.isAdmin ? 'admin' : hasAnyRole(userWithRoles, ['admin', 'manager', 'staff']) ? 'employee' : 'employee') as 'admin' | 'employee' | 'other',
     };
 
-    const canViewDashboard = await checkPermission(permCtx, 'dashboard.read', 'dashboard');
+    const canViewDashboard = await checkPermission(permCtx, 'dashboard.read');
     
     if (!canViewDashboard) {
       return NextResponse.json(

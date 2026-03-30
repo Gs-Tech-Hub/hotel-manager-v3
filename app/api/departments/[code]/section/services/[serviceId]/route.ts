@@ -45,7 +45,7 @@ export async function DELETE(
       userType: (userWithRoles.userType as any) || 'employee'
     }
 
-    const canDelete = userWithRoles.isAdmin || (await checkPermission(permCtx, 'services.delete', 'services'))
+    const canDelete = userWithRoles.isAdmin || (await checkPermission(permCtx, 'services.delete'))
     if (!canDelete) {
       return NextResponse.json(
         errorResponse(ErrorCodes.FORBIDDEN, 'Insufficient permissions to remove services'),

@@ -42,7 +42,7 @@ export async function GET(
       userType: (userWithRoles.userType as 'admin' | 'employee' | 'other') || 'employee',
       departmentId: null,
     };
-    const canRead = await checkPermission(permCtx, 'extras.read', 'extras');
+    const canRead = await checkPermission(permCtx, 'extras.read');
     if (!canRead) {
       return NextResponse.json(
         errorResponse(ErrorCodes.FORBIDDEN, 'Insufficient permissions to view extras'),

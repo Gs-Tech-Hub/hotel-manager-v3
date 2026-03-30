@@ -53,7 +53,7 @@ export async function POST(
     };
 
     // Check permission to update employees (includes charging)
-    const canChargeEmployee = await checkPermission(permCtx, 'employees.update', 'employees');
+    const canChargeEmployee = await checkPermission(permCtx, 'employees.update');
     if (!canChargeEmployee) {
       return NextResponse.json(
         errorResponse(ErrorCodes.FORBIDDEN, 'Insufficient permissions to charge employee'),

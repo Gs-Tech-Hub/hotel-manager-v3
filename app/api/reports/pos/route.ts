@@ -34,10 +34,10 @@ export async function GET(request: NextRequest) {
     // Check permissions
     const permCtx: PermissionContext = {
       userId: ctx.userId,
-      userType: (userWithRoles.isAdmin ? 'admin' : hasAnyRole(userWithRoles, ['admin', 'manager', 'staff']) ? 'employee' : 'other') as 'admin' | 'employee' | 'other',
+      userType: (userWithRoles.isAdmin ? 'admin' : hasAnyRole(userWithRoles, ['admin', 'manager', 'staff']) ? 'employee' : 'employee') as 'admin' | 'employee' | 'other',
     };
 
-    const canViewReports = await checkPermission(permCtx, 'reports.read', 'reports');
+    const canViewReports = await checkPermission(permCtx, 'reports.read');
     
     if (!canViewReports) {
       return NextResponse.json(
@@ -65,7 +65,9 @@ export async function GET(request: NextRequest) {
     if (departmentCode) {
       where.departments = {
         some: {
-          code: departmentCode,
+          department: {
+            code: departmentCode,
+          },
         },
       };
     }

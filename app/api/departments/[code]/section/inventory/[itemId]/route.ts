@@ -45,7 +45,7 @@ export async function DELETE(
       userType: (userWithRoles.userType as any) || 'employee'
     }
 
-    const canDelete = userWithRoles.isAdmin || (await checkPermission(permCtx, 'inventory.delete', 'inventory'))
+    const canDelete = userWithRoles.isAdmin || (await checkPermission(permCtx, 'inventory.delete'))
     if (!canDelete) {
       return NextResponse.json(
         errorResponse(ErrorCodes.FORBIDDEN, 'Insufficient permissions to remove inventory'),

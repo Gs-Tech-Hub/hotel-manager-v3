@@ -48,10 +48,10 @@ export async function POST(request: NextRequest) {
     // Check permission to process payments via RBAC (settlement is a payment operation)
     const permCtx: PermissionContext = {
       userId: ctx.userId,
-      userType: userWithRoles.isAdmin ? 'admin' : hasAnyRole(userWithRoles, ['admin', 'manager', 'staff']) ? 'employee' : 'other',
+      userType: userWithRoles.isAdmin ? 'admin' : hasAnyRole(userWithRoles, ['admin', 'manager', 'staff']) ? 'employee' : 'employee',
     };
 
-    const canSettle = await checkPermission(permCtx, 'payments.process', 'payments');
+    const canSettle = await checkPermission(permCtx, 'payments.process');
     if (!canSettle) {
       // Fallback to legacy role check for backward compatibility
       const hasPaymentPermission = hasAnyRole(userWithRoles, ['admin', 'manager', 'cashier', 'staff']);

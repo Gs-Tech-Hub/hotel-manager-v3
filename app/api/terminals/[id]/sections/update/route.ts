@@ -45,8 +45,8 @@ export async function PUT(
 
     // Allow if user is admin or has POS-related management permissions
     const isAdmin = user.isAdmin || hasAnyRole(user, ['admin', 'manager']);
-    const hasOrdersPermission = await checkPermission(permCtx, 'orders.create', 'orders');
-    const hasPOSTerminalAccess = await checkPermission(permCtx, 'pos_terminal.manage', 'pos_terminal');
+    const hasOrdersPermission = await checkPermission(permCtx, 'orders.create');
+    const hasPOSTerminalAccess = await checkPermission(permCtx, 'pos_terminal.manage');
     
     if (!isAdmin && !hasOrdersPermission && !hasPOSTerminalAccess) {
       return NextResponse.json(

@@ -33,9 +33,9 @@ export async function GET(request: NextRequest) {
     // Check permission to view maintenance requests
     const permCtx: PermissionContext = {
       userId: ctx.userId,
-      userType: user.isAdmin ? 'admin' : hasAnyRole(user, ['admin', 'manager', 'staff']) ? 'employee' : 'other',
+      userType: user.isAdmin ? 'admin' : hasAnyRole(user, ['admin', 'manager', 'staff']) ? 'employee' : 'employee',
     };
-    const hasAccess = await checkPermission(permCtx, 'maintenance.view', 'maintenance');
+    const hasAccess = await checkPermission(permCtx, 'maintenance.view');
     if (!hasAccess) {
       return NextResponse.json(
         errorResponse(ErrorCodes.FORBIDDEN, 'Insufficient permissions to view maintenance requests'),

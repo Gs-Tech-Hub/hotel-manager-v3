@@ -37,13 +37,13 @@ export async function POST(
 
     const permCtx: PermissionContext = {
       userId: ctx.userId,
-      userType: user.isAdmin ? 'admin' : hasAnyRole(user, ['admin', 'manager', 'staff']) ? 'employee' : 'other',
+      userType: user.isAdmin ? 'admin' : hasAnyRole(user, ['admin', 'manager', 'staff']) ? 'employee' : 'employee',
     };
 
     // Check action permissions
     if (action === 'start' || action === 'log') {
       // 'log' and 'start' are equivalent - start work on a maintenance request
-      const hasAccess = await checkPermission(permCtx, 'maintenance.work', 'maintenance');
+      const hasAccess = await checkPermission(permCtx, 'maintenance.work');
       if (!hasAccess) {
         return NextResponse.json(
           errorResponse(ErrorCodes.FORBIDDEN, 'Insufficient permissions to start maintenance request'),
@@ -76,7 +76,7 @@ export async function POST(
         { status: 200 }
       );
     } else if (action === 'complete') {
-      const hasAccess = await checkPermission(permCtx, 'maintenance.work', 'maintenance');
+      const hasAccess = await checkPermission(permCtx, 'maintenance.work');
       if (!hasAccess) {
         return NextResponse.json(
           errorResponse(ErrorCodes.FORBIDDEN, 'Insufficient permissions to complete maintenance request'),
@@ -121,7 +121,7 @@ export async function POST(
         { status: 200 }
       );
     } else if (action === 'verify') {
-      const hasAccess = await checkPermission(permCtx, 'maintenance.verify', 'maintenance');
+      const hasAccess = await checkPermission(permCtx, 'maintenance.verify');
       if (!hasAccess) {
         return NextResponse.json(
           errorResponse(ErrorCodes.FORBIDDEN, 'Insufficient permissions to verify maintenance request'),

@@ -32,14 +32,14 @@ export async function GET(request: NextRequest) {
 
     const permCtx: PermissionContext = {
       userId: ctx.userId,
-      userType: (userWithRoles.isAdmin ? 'admin' : hasAnyRole(userWithRoles, ['admin', 'manager', 'staff']) ? 'employee' : 'other') as 'admin' | 'employee' | 'other',
+      userType: (userWithRoles.isAdmin ? 'admin' : hasAnyRole(userWithRoles, ['admin', 'manager', 'staff']) ? 'employee' : 'employee') as 'admin' | 'employee' | 'other',
     };
 
     // Check if user can view reports (admins/managers)
-    const canViewReports = await checkPermission(permCtx, 'reports.read', 'reports');
+    const canViewReports = await checkPermission(permCtx, 'reports.read');
     
     // Also check if user can read orders (employees with POS/department access)
-    const canReadOrders = await checkPermission(permCtx, 'orders.read', 'orders');
+    const canReadOrders = await checkPermission(permCtx, 'orders.read');
     
     // User must have at least one of these permissions
     if (!canViewReports && !canReadOrders) {

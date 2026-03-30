@@ -404,7 +404,7 @@ export async function DELETE(
     }
 
     // Admins can always delete, otherwise check permission
-    const canDelete = userWithRoles.isAdmin || (await checkPermission(permCtx, 'department_sections.delete', 'department_sections'))
+    const canDelete = userWithRoles.isAdmin || (await checkPermission(permCtx, 'department_sections.delete'))
     if (!canDelete) {
       return NextResponse.json(
         errorResponse(ErrorCodes.FORBIDDEN, 'Insufficient permissions to delete sections'),

@@ -38,7 +38,7 @@ export class MaintenanceService {
     data: CreateMaintenanceRequestInput,
     ctx: PermissionContext
   ): Promise<MaintenanceRequest> {
-    const hasAccess = await checkPermission(ctx, 'maintenance.request', 'maintenance');
+    const hasAccess = await checkPermission(ctx, 'maintenance.request');
     if (!hasAccess) {
       throw new Error('Insufficient permissions to create maintenance requests');
     }
@@ -103,7 +103,7 @@ export class MaintenanceService {
     assignedToId: string,
     ctx: PermissionContext
   ): Promise<MaintenanceRequest> {
-    const hasAccess = await checkPermission(ctx, 'maintenance.assign', 'maintenance');
+    const hasAccess = await checkPermission(ctx, 'maintenance.assign');
     if (!hasAccess) {
       throw new Error('Insufficient permissions to assign requests');
     }
@@ -139,7 +139,7 @@ export class MaintenanceService {
     data: MaintenanceLogInput,
     ctx: PermissionContext
   ): Promise<MaintenanceLog> {
-    const hasAccess = await checkPermission(ctx, 'maintenance.work', 'maintenance');
+    const hasAccess = await checkPermission(ctx, 'maintenance.work');
     if (!hasAccess) {
       throw new Error('Insufficient permissions to log maintenance work');
     }
@@ -190,7 +190,7 @@ export class MaintenanceService {
     requestId: string,
     ctx: PermissionContext
   ): Promise<MaintenanceRequest> {
-    const hasAccess = await checkPermission(ctx, 'maintenance.work', 'maintenance');
+    const hasAccess = await checkPermission(ctx, 'maintenance.work');
     if (!hasAccess) {
       throw new Error('Insufficient permissions to complete maintenance requests');
     }

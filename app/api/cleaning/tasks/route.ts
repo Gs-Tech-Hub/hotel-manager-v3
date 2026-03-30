@@ -33,9 +33,9 @@ export async function GET(request: NextRequest) {
     // Check permission to view cleaning tasks
     const permCtx: PermissionContext = {
       userId: ctx.userId,
-      userType: user.isAdmin ? 'admin' : hasAnyRole(user, ['admin', 'manager', 'staff']) ? 'employee' : 'other',
+      userType: user.isAdmin ? 'admin' : hasAnyRole(user, ['admin', 'manager', 'staff']) ? 'employee' : 'employee',
     };
-    const hasAccess = await checkPermission(permCtx, 'cleaning.view', 'cleaning');
+    const hasAccess = await checkPermission(permCtx, 'cleaning.view');
     if (!hasAccess) {
       return NextResponse.json(
         errorResponse(ErrorCodes.FORBIDDEN, 'Insufficient permissions to view cleaning tasks'),

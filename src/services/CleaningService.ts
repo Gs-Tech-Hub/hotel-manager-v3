@@ -49,7 +49,7 @@ export class CleaningService {
     data: CreateCleaningTaskInput,
     ctx: PermissionContext
   ): Promise<CleaningTask> {
-    const hasAccess = await checkPermission(ctx, 'cleaning.assign', 'cleaning');
+    const hasAccess = await checkPermission(ctx, 'cleaning.assign');
     if (!hasAccess) {
       throw new Error('Insufficient permissions to create cleaning tasks');
     }
@@ -121,7 +121,7 @@ export class CleaningService {
     assignedToId: string,
     ctx: PermissionContext
   ): Promise<CleaningTask> {
-    const hasAccess = await checkPermission(ctx, 'cleaning.assign', 'cleaning');
+    const hasAccess = await checkPermission(ctx, 'cleaning.assign');
     if (!hasAccess) {
       throw new Error('Insufficient permissions to assign tasks');
     }
@@ -147,7 +147,7 @@ export class CleaningService {
    * Mark task as in-progress
    */
   async startTask(taskId: string, ctx: PermissionContext): Promise<CleaningTask> {
-    const hasAccess = await checkPermission(ctx, 'cleaning.work', 'cleaning');
+    const hasAccess = await checkPermission(ctx, 'cleaning.work');
     if (!hasAccess) {
       throw new Error('Insufficient permissions to work on cleaning tasks');
     }
@@ -183,7 +183,7 @@ export class CleaningService {
     data: CleaningLogInput,
     ctx: PermissionContext
   ): Promise<CleaningLog> {
-    const hasAccess = await checkPermission(ctx, 'cleaning.work', 'cleaning');
+    const hasAccess = await checkPermission(ctx, 'cleaning.work');
     if (!hasAccess) {
       throw new Error('Insufficient permissions to log cleaning items');
     }
@@ -396,7 +396,7 @@ export class CleaningService {
     data: CreateCleaningRoutineInput,
     ctx: PermissionContext
   ): Promise<CleaningRoutine> {
-    const hasAccess = await checkPermission(ctx, 'cleaning.manage', 'cleaning');
+    const hasAccess = await checkPermission(ctx, 'cleaning.manage');
     if (!hasAccess) {
       throw new Error('Insufficient permissions to create cleaning routines');
     }

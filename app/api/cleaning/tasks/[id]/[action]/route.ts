@@ -37,12 +37,12 @@ export async function POST(
 
     const permCtx: PermissionContext = {
       userId: ctx.userId,
-      userType: user.isAdmin ? 'admin' : hasAnyRole(user, ['admin', 'manager', 'staff']) ? 'employee' : 'other',
+      userType: user.isAdmin ? 'admin' : hasAnyRole(user, ['admin', 'manager', 'staff']) ? 'employee' : 'employee',
     };
 
     // Check action permissions
     if (action === 'start') {
-      const hasAccess = await checkPermission(permCtx, 'cleaning.work', 'cleaning');
+      const hasAccess = await checkPermission(permCtx, 'cleaning.work');
       if (!hasAccess) {
         return NextResponse.json(
           errorResponse(ErrorCodes.FORBIDDEN, 'Insufficient permissions to start cleaning task'),
@@ -56,7 +56,7 @@ export async function POST(
         { status: 200 }
       );
     } else if (action === 'complete') {
-      const hasAccess = await checkPermission(permCtx, 'cleaning.work', 'cleaning');
+      const hasAccess = await checkPermission(permCtx, 'cleaning.work');
       if (!hasAccess) {
         return NextResponse.json(
           errorResponse(ErrorCodes.FORBIDDEN, 'Insufficient permissions to complete cleaning task'),
@@ -81,7 +81,7 @@ export async function POST(
         { status: 200 }
       );
     } else if (action === 'inspect') {
-      const hasAccess = await checkPermission(permCtx, 'cleaning.inspect', 'cleaning');
+      const hasAccess = await checkPermission(permCtx, 'cleaning.inspect');
       if (!hasAccess) {
         return NextResponse.json(
           errorResponse(ErrorCodes.FORBIDDEN, 'Insufficient permissions to inspect cleaning task'),

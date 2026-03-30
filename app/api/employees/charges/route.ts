@@ -113,10 +113,10 @@ export async function POST(request: NextRequest) {
     // Check permission to update employees (includes charge management)
     const permCtx: PermissionContext = {
       userId: ctx.userId,
-      userType: userWithRoles.isAdmin ? 'admin' : hasAnyRole(userWithRoles, ['admin', 'manager', 'staff']) ? 'employee' : 'other',
+      userType: userWithRoles.isAdmin ? 'admin' : hasAnyRole(userWithRoles, ['admin', 'manager', 'staff']) ? 'employee' : 'employee',
     };
 
-    const canCreate = await checkPermission(permCtx, 'employees.update', 'employees');
+    const canCreate = await checkPermission(permCtx, 'employees.update');
     if (!canCreate) {
       return NextResponse.json(
         errorResponse(ErrorCodes.FORBIDDEN, 'Insufficient permissions to create employee charges'),

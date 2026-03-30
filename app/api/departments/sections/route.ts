@@ -39,7 +39,7 @@ export const GET = withAuth(
         departmentId: null,
       };
       
-      const hasPermission = await checkPermission(permCtx, 'department_sections.read', 'department_sections');
+      const hasPermission = await checkPermission(permCtx, 'department_sections.read');
       console.log(`[API] Permission check result: ${hasPermission}`);
       
       if (!hasPermission) {
@@ -121,7 +121,7 @@ export const POST = withAuth(
           userId: ctx.userId,
           userType: (userWithRoles.userType as 'admin' | 'employee' | 'other') || 'employee',
         };
-        const hasPermission = await checkPermission(permCtx, 'department_sections.create', 'department_sections');
+        const hasPermission = await checkPermission(permCtx, 'department_sections.create');
         if (!hasPermission) {
           return NextResponse.json(
             { success: false, error: 'Insufficient permissions to create sections' },
@@ -214,7 +214,7 @@ export const DELETE = withAuth(
           userId: ctx.userId,
           userType: (userWithRoles.userType as 'admin' | 'employee' | 'other') || 'employee',
         };
-        const hasPermission = await checkPermission(permCtx, 'department_sections.delete', 'department_sections');
+        const hasPermission = await checkPermission(permCtx, 'department_sections.delete');
         if (!hasPermission) {
           return NextResponse.json(
             { success: false, error: 'Insufficient permissions to delete sections' },

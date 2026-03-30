@@ -108,7 +108,7 @@ export class ReservationService {
     idempotencyKey?: string
   ): Promise<{ reservation: Reservation; cleaningTaskCreated: boolean }> {
     // Check permission
-    const hasAccess = await checkPermission(ctx, 'reservations.create', 'reservations');
+    const hasAccess = await checkPermission(ctx, 'reservations.create');
     if (!hasAccess) {
       throw new Error('Insufficient permissions to create reservations');
     }
@@ -211,7 +211,7 @@ export class ReservationService {
     data: ModifyReservationInput,
     ctx: PermissionContext
   ): Promise<Reservation> {
-    const hasAccess = await checkPermission(ctx, 'reservations.modify', 'reservations');
+    const hasAccess = await checkPermission(ctx, 'reservations.modify');
     if (!hasAccess) {
       throw new Error('Insufficient permissions to modify reservations');
     }
@@ -287,7 +287,7 @@ export class ReservationService {
     reason: string,
     ctx: PermissionContext
   ): Promise<Reservation> {
-    const hasAccess = await checkPermission(ctx, 'reservations.cancel', 'reservations');
+    const hasAccess = await checkPermission(ctx, 'reservations.cancel');
     if (!hasAccess) {
       throw new Error('Insufficient permissions to cancel reservations');
     }
@@ -331,7 +331,7 @@ export class ReservationService {
     actualCheckInTime: Date,
     ctx: PermissionContext
   ): Promise<Reservation> {
-    const hasAccess = await checkPermission(ctx, 'reservations.checkin', 'reservations');
+    const hasAccess = await checkPermission(ctx, 'reservations.checkin');
     if (!hasAccess) {
       throw new Error('Insufficient permissions to check-in guests');
     }
@@ -416,7 +416,7 @@ export class ReservationService {
       cleaningNotes?: string;
     }
   ): Promise<{ reservation: Reservation; cleaningTask: CleaningTask }> {
-    const hasAccess = await checkPermission(ctx, 'reservations.checkout', 'reservations');
+    const hasAccess = await checkPermission(ctx, 'reservations.checkout');
     if (!hasAccess) {
       throw new Error('Insufficient permissions to check-out guests');
     }

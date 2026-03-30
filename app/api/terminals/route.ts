@@ -42,13 +42,13 @@ export async function GET(request: NextRequest) {
     // Allow access if user has any POS-related permissions (orders.read, pos_terminal.access, etc.)
     const permCtx: PermissionContext = {
       userId: ctx.userId,
-      userType: user.isAdmin ? 'admin' : hasAnyRole(user, ['admin', 'manager', 'staff']) ? 'employee' : 'other',
+      userType: user.isAdmin ? 'admin' : 'employee',
     };
     
     // Check for POS-related permissions - any of these grants terminal visibility
-    const hasOrdersPermission = await checkPermission(permCtx, 'orders.read', 'orders');
-    const hasPOSTerminalAccess = await checkPermission(permCtx, 'pos_terminal.access', 'pos_terminal');
-    const hasDashboardAccess = await checkPermission(permCtx, 'dashboard.read', 'dashboard');
+    const hasOrdersPermission = await checkPermission(permCtx, 'orders.read');
+    const hasPOSTerminalAccess = await checkPermission(permCtx, 'pos_terminal.access');
+    const hasDashboardAccess = await checkPermission(permCtx, 'dashboard.read');
     
     if (!hasOrdersPermission && !hasPOSTerminalAccess && !hasDashboardAccess) {
       return NextResponse.json(
@@ -163,9 +163,9 @@ export async function POST(request: NextRequest) {
     // Check permission to create terminals
     const permCtx: PermissionContext = {
       userId: ctx.userId,
-      userType: user.isAdmin ? 'admin' : hasAnyRole(user, ['admin', 'manager', 'staff']) ? 'employee' : 'other',
+      userType: user.isAdmin ? 'admin' : hasAnyRole(user, ['admin', 'manager', 'staff']) ? 'employee' : 'employee',
     };
-    const hasAccess = await checkPermission(permCtx, 'terminals.create', 'terminals');
+    const hasAccess = await checkPermission(permCtx, 'terminals.create');
     if (!hasAccess) {
       return NextResponse.json(
         errorResponse(ErrorCodes.FORBIDDEN, 'Insufficient permissions to create terminals'),

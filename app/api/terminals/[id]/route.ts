@@ -47,9 +47,9 @@ export async function GET(request: NextRequest, { params }: { params: Promise<Pa
     // Check permission to view terminals
     const permCtx: PermissionContext = {
       userId: ctx.userId,
-      userType: user.isAdmin ? 'admin' : hasAnyRole(user, ['admin', 'manager', 'staff']) ? 'employee' : 'other',
+      userType: user.isAdmin ? 'admin' : 'employee',
     };
-    const hasAccess = await checkPermission(permCtx, 'terminals.read', 'terminals');
+    const hasAccess = await checkPermission(permCtx, 'terminals.read');
     if (!hasAccess) {
       return NextResponse.json(
         errorResponse(ErrorCodes.FORBIDDEN, 'Insufficient permissions'),
@@ -121,9 +121,9 @@ export async function PUT(request: NextRequest, { params }: { params: Promise<Pa
     // Check permission to update terminals
     const permCtx: PermissionContext = {
       userId: ctx.userId,
-      userType: user.isAdmin ? 'admin' : hasAnyRole(user, ['admin', 'manager', 'staff']) ? 'employee' : 'other',
+      userType: user.isAdmin ? 'admin' : hasAnyRole(user, ['admin', 'manager', 'staff']) ? 'employee' : 'employee',
     };
-    const hasAccess = await checkPermission(permCtx, 'terminals.update', 'terminals');
+    const hasAccess = await checkPermission(permCtx, 'terminals.update');
     if (!hasAccess) {
       return NextResponse.json(
         errorResponse(ErrorCodes.FORBIDDEN, 'Insufficient permissions'),
@@ -242,9 +242,9 @@ export async function DELETE(request: NextRequest, { params }: { params: Promise
     // Check permission to delete terminals
     const permCtx: PermissionContext = {
       userId: ctx.userId,
-      userType: user.isAdmin ? 'admin' : hasAnyRole(user, ['admin', 'manager', 'staff']) ? 'employee' : 'other',
+      userType: user.isAdmin ? 'admin' : hasAnyRole(user, ['admin', 'manager', 'staff']) ? 'employee' : 'employee',
     };
-    const hasAccess = await checkPermission(permCtx, 'terminals.delete', 'terminals');
+    const hasAccess = await checkPermission(permCtx, 'terminals.delete');
     if (!hasAccess) {
       return NextResponse.json(
         errorResponse(ErrorCodes.FORBIDDEN, 'Insufficient permissions'),

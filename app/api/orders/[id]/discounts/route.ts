@@ -57,7 +57,7 @@ export async function POST(
       userType: (userWithRoles.userType as 'admin' | 'employee' | 'other') || 'employee',
       departmentId: null,
     };
-    const canApplyDiscount = await checkPermission(permCtx, 'discounts.apply', 'discounts');
+    const canApplyDiscount = await checkPermission(permCtx, 'discounts.apply');
     if (!canApplyDiscount) {
       return NextResponse.json(
         errorResponse(ErrorCodes.FORBIDDEN, 'Insufficient permissions to apply discounts'),
