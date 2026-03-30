@@ -750,33 +750,8 @@ export default function SalesTerminal() {
             const chargeId = chargeJson.data?.id
             console.log('[SalesTerminal] Employee charge created:', chargeId)
             
-            // Step 2.5.1: If payment method was 'charges', mark the charge as PAID immediately
-            if (isChargesPayment && chargeId) {
-              try {
-                console.log('[SalesTerminal] Marking charge as PAID for charges payment method')
-                const markPaidRes = await fetch(`/api/employees/${selectedEmployee.id}/charges/${chargeId}`, {
-                  method: 'PUT',
-                  credentials: 'include',
-                  headers: { 'Content-Type': 'application/json' },
-                  body: JSON.stringify({
-                    status: 'paid',
-                    paidAmount: chargeAmountDollars,
-                    paidDate: new Date().toISOString(),
-                  }),
-                })
-                
-                const markPaidJson = await markPaidRes.json()
-                if (markPaidRes.ok && markPaidJson?.success) {
-                  console.log('[SalesTerminal] Charge successfully marked as PAID:', chargeId)
-                } else {
-                  console.warn('[SalesTerminal] Failed to mark charge as paid (non-blocking):', markPaidJson?.error?.message)
-                  // Don't fail if marking as paid fails - charge was created successfully
-                }
-              } catch (markPaidErr) {
-                console.warn('[SalesTerminal] Exception marking charge as paid (non-blocking):', markPaidErr)
-                // Don't throw
-              }
-            }
+            // Charge created in 'pending' status and remains unpaid
+            // Will be deducted from salary or paid separately
           }
         } catch (chargeErr) {
           console.warn('[SalesTerminal] Exception creating employee charge (non-blocking):', chargeErr)
