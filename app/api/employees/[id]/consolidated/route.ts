@@ -1,8 +1,9 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { prisma } from '@/lib/auth/prisma';
-import { extractUserContext } from '@/lib/user-context';
+import { extractUserContext, loadUserWithRoles } from '@/lib/user-context';
 import { successResponse, errorResponse, getStatusCode } from '@/lib/api-response';
 import { ErrorCodes } from '@/lib/api-response';
+import { checkPermission, type PermissionContext } from '@/lib/auth/rbac';
 import {
   calculateEmployeeSalaryByDays,
   getOutstandingSalary,
@@ -18,6 +19,7 @@ import { normalizeToCents } from '@/lib/price';
  * - Charge summary and history
  * - Attendance summary
  * - Salary payment history
+ * Requires: employees.read permission
  */
 export async function GET(
   request: NextRequest,
@@ -29,6 +31,29 @@ export async function GET(
       return NextResponse.json(
         errorResponse(ErrorCodes.UNAUTHORIZED),
         { status: getStatusCode(ErrorCodes.UNAUTHORIZED) }
+      );
+    }
+
+    // Load full user with roles to get userType
+    const userWithRoles = await loadUserWithRoles(ctx.userId);
+    if (!userWithRoles) {
+      return NextResponse.json(
+        errorResponse(ErrorCodes.UNAUTHORIZED, 'User not found'),
+        { status: getStatusCode(ErrorCodes.UNAUTHORIZED) }
+      );
+    }
+
+    // Check permission to view consolidated employee details
+    const permCtx: PermissionContext = {
+      userId: ctx.userId,
+      userType: userWithRoles.isAdmin ? 'admin' : 'employee',
+      departmentId: undefined,
+    };
+    const canRead = await checkPermission(permCtx, 'employees.read');
+    if (!canRead) {
+      return NextResponse.json(
+        errorResponse(ErrorCodes.FORBIDDEN, 'Insufficient permissions to view employee consolidated data'),
+        { status: getStatusCode(ErrorCodes.FORBIDDEN) }
       );
     }
 

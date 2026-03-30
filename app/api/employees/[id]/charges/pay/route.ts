@@ -5,9 +5,10 @@
 
 import { NextRequest, NextResponse } from 'next/server';
 import { prisma } from '@/lib/auth/prisma';
-import { extractUserContext, loadUserWithRoles } from '@/lib/user-context';
+import { extractUserContext, loadUserWithRoles, hasAnyRole } from '@/lib/user-context';
 import { successResponse, errorResponse, ErrorCodes, getStatusCode } from '@/lib/api-response';
 import { checkPermission, type PermissionContext } from '@/lib/auth/rbac';
+import { PERMISSIONS } from '@/lib/permissions';
 import { z } from 'zod';
 
 const PayChargesSchema = z.object({
@@ -45,18 +46,17 @@ export async function POST(
     // Build permission context
     const permCtx: PermissionContext = {
       userId: ctx.userId,
-      userType: userWithRoles.isAdmin ? 'admin' : 'employee',
+      userType: (userWithRoles.isAdmin ? 'admin' : hasAnyRole(userWithRoles, ['admin', 'manager', 'staff', 'accountant', 'hr_manager']) ? 'employee' : 'other') as 'admin' | 'employee' | 'other',
     };
 
-    // Check permission to update employees
-    const canUpdateEmployees = await checkPermission(
+    // Check permission to pay charges
+    const canPayCharges = await checkPermission(
       permCtx,
-      'employees.update',
-      'employees'
+      PERMISSIONS.CHARGES.PAY
     );
-    if (!canUpdateEmployees) {
+    if (!canPayCharges) {
       return NextResponse.json(
-        errorResponse(ErrorCodes.FORBIDDEN, 'Insufficient permissions'),
+        errorResponse(ErrorCodes.FORBIDDEN, 'Insufficient permissions to pay employee charges'),
         { status: getStatusCode(ErrorCodes.FORBIDDEN) }
       );
     }

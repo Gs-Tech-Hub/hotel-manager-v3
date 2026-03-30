@@ -394,13 +394,11 @@ export const pageAccessRules: Record<string, PageAccessRule> = {
 
   // ==================== EMPLOYEES ====================
   "/employees": {
-    requiredRoles: ["manager", "admin"],
     requiredPermissions: ["employees.read"],
     adminBypass: true,
   },
 
   "/employees/*": {
-    requiredRoles: ["manager", "admin"],
     requiredPermissions: ["employees.read"],
     adminBypass: true,
   },

@@ -1,9 +1,11 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { prisma } from '@/lib/auth/prisma';
-import { extractUserContext } from '@/lib/user-context';
+import { extractUserContext, loadUserWithRoles, hasAnyRole } from '@/lib/user-context';
+import { checkPermission, type PermissionContext } from '@/lib/auth/rbac';
 import { successResponse, errorResponse, getStatusCode } from '@/lib/api-response';
 import { ErrorCodes } from '@/lib/api-response';
 import { z } from 'zod';
+import { PERMISSIONS } from '@/lib/permissions';
 
 const CheckInSchema = z.object({
   employeeId: z.string().min(1),
@@ -143,6 +145,29 @@ export async function POST(request: NextRequest) {
       );
     }
 
+    // Load user with roles for RBAC
+    const userWithRoles = await loadUserWithRoles(ctx.userId);
+    if (!userWithRoles) {
+      return NextResponse.json(
+        errorResponse(ErrorCodes.FORBIDDEN, 'Insufficient permissions'),
+        { status: getStatusCode(ErrorCodes.FORBIDDEN) }
+      );
+    }
+
+    // Check attendance.clock_in permission
+    const permCtx: PermissionContext = {
+      userId: ctx.userId,
+      userType: (userWithRoles.isAdmin ? 'admin' : hasAnyRole(userWithRoles, ['admin', 'manager', 'staff', 'hr_manager']) ? 'employee' : 'other') as 'admin' | 'employee' | 'other',
+    };
+
+    const hasClockInPermission = await checkPermission(permCtx, PERMISSIONS.ATTENDANCE.CLOCK_IN);
+    if (!hasClockInPermission) {
+      return NextResponse.json(
+        errorResponse(ErrorCodes.FORBIDDEN, 'Insufficient permissions to clock in employees'),
+        { status: getStatusCode(ErrorCodes.FORBIDDEN) }
+      );
+    }
+
     const body = await request.json();
     const validated = CheckInSchema.parse(body);
 
@@ -277,6 +302,29 @@ export async function PUT(request: NextRequest) {
       return NextResponse.json(
         errorResponse(ErrorCodes.UNAUTHORIZED),
         { status: getStatusCode(ErrorCodes.UNAUTHORIZED) }
+      );
+    }
+
+    // Load user with roles for RBAC
+    const userWithRoles = await loadUserWithRoles(ctx.userId);
+    if (!userWithRoles) {
+      return NextResponse.json(
+        errorResponse(ErrorCodes.FORBIDDEN, 'Insufficient permissions'),
+        { status: getStatusCode(ErrorCodes.FORBIDDEN) }
+      );
+    }
+
+    // Check attendance.clock_out permission
+    const permCtx: PermissionContext = {
+      userId: ctx.userId,
+      userType: (userWithRoles.isAdmin ? 'admin' : hasAnyRole(userWithRoles, ['admin', 'manager', 'staff', 'hr_manager']) ? 'employee' : 'other') as 'admin' | 'employee' | 'other',
+    };
+
+    const hasClockOutPermission = await checkPermission(permCtx, PERMISSIONS.ATTENDANCE.CLOCK_OUT);
+    if (!hasClockOutPermission) {
+      return NextResponse.json(
+        errorResponse(ErrorCodes.FORBIDDEN, 'Insufficient permissions to clock out employees'),
+        { status: getStatusCode(ErrorCodes.FORBIDDEN) }
       );
     }
 

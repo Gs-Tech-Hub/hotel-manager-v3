@@ -1,18 +1,37 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { extractUserContext } from '@/lib/user-context';
+import { extractUserContext, loadUserWithRoles } from '@/lib/user-context';
 import { prisma } from '@/lib/auth/prisma';
 import { hashPassword } from '@/lib/auth/credentials';
 import { errorResponse, successResponse } from '@/lib/api-response';
+import { checkPermission, type PermissionContext } from '@/lib/auth/rbac';
 
 /**
  * GET /api/employees
  * List employees with their roles and employment data
+ * Requires: employees.read permission
  */
 export async function GET(req: NextRequest) {
   try {
     const ctx = await extractUserContext(req);
     if (!ctx.userId) {
       return NextResponse.json(errorResponse('UNAUTHORIZED', 'User not authenticated'), { status: 401 });
+    }
+
+    // Load full user with roles to get userType
+    const userWithRoles = await loadUserWithRoles(ctx.userId);
+    if (!userWithRoles) {
+      return NextResponse.json(errorResponse('UNAUTHORIZED', 'User not found'), { status: 401 });
+    }
+
+    // Check permission to view employees
+    const permCtx: PermissionContext = {
+      userId: ctx.userId,
+      userType: userWithRoles.isAdmin ? 'admin' : 'employee',
+      departmentId: undefined,
+    };
+    const canRead = await checkPermission(permCtx, 'employees.read');
+    if (!canRead) {
+      return NextResponse.json(errorResponse('FORBIDDEN', 'Insufficient permissions to view employees'), { status: 403 });
     }
 
     const searchParams = req.nextUrl.searchParams;

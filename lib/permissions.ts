@@ -175,6 +175,30 @@ export const PERMISSIONS = {
   EMPLOYEES: {
     READ: 'employees.read',
     UPDATE: 'employees.update',
+    DELETE: 'employees.delete',
+    TERMINATE: 'employees.terminate',
+  },
+
+  // Attendance
+  ATTENDANCE: {
+    VIEW: 'attendance.view',
+    CLOCK_IN: 'attendance.clock_in',
+    CLOCK_OUT: 'attendance.clock_out',
+  },
+
+  // Salary & Payments
+  SALARY: {
+    VIEW: 'salary.view',
+    PAY: 'salary.pay',
+    EARLY_PAYMENT: 'salary.early_payment',
+  },
+
+  // Employee Charges
+  CHARGES: {
+    VIEW: 'charges.view',
+    CREATE: 'charges.create',
+    PAY: 'charges.pay',
+    UPDATE: 'charges.update',
   },
 
   // Analytics

@@ -443,6 +443,20 @@ async function seedPermissions(roles: Record<string, any>) {
       { action: 'employees.create', subject: null },
       { action: 'employees.update', subject: null },
       { action: 'employees.delete', subject: null },
+      { action: 'employees.terminate', subject: null },
+      // Attendance
+      { action: 'attendance.view', subject: null },
+      { action: 'attendance.clock_in', subject: null },
+      { action: 'attendance.clock_out', subject: null },
+      // Salary
+      { action: 'salary.view', subject: null },
+      { action: 'salary.pay', subject: null },
+      { action: 'salary.early_payment', subject: null },
+      // Charges
+      { action: 'charges.view', subject: null },
+      { action: 'charges.create', subject: null },
+      { action: 'charges.pay', subject: null },
+      { action: 'charges.update', subject: null },
       // Roles & permissions management (needed for employee create/edit role assignment UI)
       { action: 'roles.read', subject: null },
       { action: 'reports.read', subject: null },
@@ -557,6 +571,16 @@ async function seedPermissions(roles: Record<string, any>) {
       { action: 'discounts.read', subject: null },
       { action: 'departments.read', subject: null },
       { action: 'department_sections.read', subject: null },
+      // Salary & charges
+      { action: 'salary.view', subject: null },
+      { action: 'salary.pay', subject: null },
+      { action: 'salary.early_payment', subject: null },
+      { action: 'charges.view', subject: null },
+      { action: 'charges.pay', subject: null },
+      { action: 'charges.create', subject: null },
+      // Employees
+      { action: 'employees.read', subject: null },
+      { action: 'attendance.view', subject: null },
       // Reports - Full access for financial reporting
       { action: 'reports.read', subject: null },
       { action: 'reports.generate', subject: null },
@@ -647,6 +671,11 @@ async function seedPermissions(roles: Record<string, any>) {
       { action: 'reports.read', subject: null },
       { action: 'reports.sales', subject: null },
       { action: 'reports.orders', subject: null },
+      // Employees & Attendance
+      { action: 'employees.read', subject: null },
+      { action: 'attendance.view', subject: null },
+      { action: 'attendance.clock_in', subject: null },
+      { action: 'attendance.clock_out', subject: null },
     ],
     // ==================== EMPLOYEE ====================
     // Minimal access, read-only for most features

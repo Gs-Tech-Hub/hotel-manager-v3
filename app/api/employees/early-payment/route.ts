@@ -1,8 +1,10 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { prisma } from '@/lib/auth/prisma';
-import { extractUserContext } from '@/lib/user-context';
+import { extractUserContext, loadUserWithRoles, hasAnyRole } from '@/lib/user-context';
+import { checkPermission, type PermissionContext } from '@/lib/auth/rbac';
 import { successResponse, errorResponse, getStatusCode } from '@/lib/api-response';
 import { ErrorCodes } from '@/lib/api-response';
+import { PERMISSIONS } from '@/lib/permissions';
 import { calculateEmployeeSalary, getOutstandingSalary } from '@/src/services/salary.service';
 import { z } from 'zod';
 import { Decimal } from '@prisma/client/runtime/library';
@@ -29,6 +31,29 @@ export async function POST(request: NextRequest) {
       return NextResponse.json(
         errorResponse(ErrorCodes.UNAUTHORIZED),
         { status: getStatusCode(ErrorCodes.UNAUTHORIZED) }
+      );
+    }
+
+    // Load user with roles for RBAC
+    const userWithRoles = await loadUserWithRoles(ctx.userId);
+    if (!userWithRoles) {
+      return NextResponse.json(
+        errorResponse(ErrorCodes.FORBIDDEN, 'Insufficient permissions'),
+        { status: getStatusCode(ErrorCodes.FORBIDDEN) }
+      );
+    }
+
+    // Check salary.early_payment permission
+    const permCtx: PermissionContext = {
+      userId: ctx.userId,
+      userType: (userWithRoles.isAdmin ? 'admin' : hasAnyRole(userWithRoles, ['admin', 'manager', 'accountant', 'hr_manager']) ? 'employee' : 'other') as 'admin' | 'employee' | 'other',
+    };
+
+    const hasEarlyPaymentPermission = await checkPermission(permCtx, PERMISSIONS.SALARY.EARLY_PAYMENT);
+    if (!hasEarlyPaymentPermission) {
+      return NextResponse.json(
+        errorResponse(ErrorCodes.FORBIDDEN, 'Insufficient permissions to process early salary payments'),
+        { status: getStatusCode(ErrorCodes.FORBIDDEN) }
       );
     }
 
