@@ -26,6 +26,8 @@ function RolesManagementContent() {
   const [roles, setRoles] = useState<Role[]>([]);
   const [permissions, setPermissions] = useState<Permission[]>([]);
   const [loading, setLoading] = useState(true);
+  const [submitting, setSubmitting] = useState(false);
+  const [deletingRoleId, setDeletingRoleId] = useState<string | null>(null);
   const [error, setError] = useState('');
   const [showCreateModal, setShowCreateModal] = useState(false);
   const [editingRole, setEditingRole] = useState<Role | null>(null);
@@ -86,6 +88,8 @@ function RolesManagementContent() {
   // Create or update role
   const handleSubmitRole = async (e: React.FormEvent) => {
     e.preventDefault();
+    setSubmitting(true);
+    setError('');
 
     try {
       const url = editingRole ? `/api/roles/${editingRole.id}` : '/api/roles';
@@ -100,7 +104,7 @@ function RolesManagementContent() {
 
       if (!response.ok) {
         const data = await response.json();
-        throw new Error(data.error || 'Failed to save role');
+        throw new Error(data.error || `Failed to ${editingRole ? 'update' : 'create'} role`);
       }
 
       setFormData({
@@ -114,12 +118,18 @@ function RolesManagementContent() {
       fetchData(currentPage);
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Failed to save role');
+      console.error('[Roles] Submit error:', err);
+    } finally {
+      setSubmitting(false);
     }
   };
 
   // Delete role
   const handleDeleteRole = async (roleId: string) => {
     if (!confirm('Are you sure you want to deactivate this role?')) return;
+
+    setDeletingRoleId(roleId);
+    setError('');
 
     try {
       const response = await fetch(`/api/roles/${roleId}`, {
@@ -128,12 +138,14 @@ function RolesManagementContent() {
       });
 
       if (!response.ok) {
-        throw new Error('Failed to delete role');
+        throw new Error('Failed to deactivate role');
       }
 
       fetchData(currentPage);
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Failed to delete role');
+      setError(err instanceof Error ? err.message : 'Failed to deactivate role');
+    } finally {
+      setDeletingRoleId(null);
     }
   };
 
@@ -226,9 +238,21 @@ function RolesManagementContent() {
                   {role.isActive && (
                     <button
                       onClick={() => handleDeleteRole(role.id)}
-                      className="text-red-600 hover:text-red-800 text-sm font-medium"
+                      disabled={deletingRoleId === role.id}
+                      className={`text-sm font-medium flex items-center gap-2 ${
+                        deletingRoleId === role.id
+                          ? 'text-gray-500 cursor-not-allowed'
+                          : 'text-red-600 hover:text-red-800'
+                      }`}
                     >
-                      Deactivate
+                      {deletingRoleId === role.id ? (
+                        <>
+                          <div className="h-4 w-4 border-2 border-gray-400 border-t-red-600 rounded-full animate-spin"></div>
+                          Deactivating...
+                        </>
+                      ) : (
+                        'Deactivate'
+                      )}
                     </button>
                   )}
                 </div>
@@ -401,15 +425,24 @@ function RolesManagementContent() {
                 <button
                   type="button"
                   onClick={() => setShowCreateModal(false)}
-                  className="flex-1 px-4 py-2 border border-gray-300 rounded-lg hover:bg-gray-50"
+                  disabled={submitting}
+                  className="flex-1 px-4 py-2 border border-gray-300 rounded-lg hover:bg-gray-50 disabled:opacity-50 disabled:cursor-not-allowed"
                 >
                   Cancel
                 </button>
                 <button
                   type="submit"
-                  className="flex-1 px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700"
+                  disabled={submitting}
+                  className="flex-1 px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 disabled:opacity-60 disabled:cursor-not-allowed transition"
                 >
-                  {editingRole ? 'Update' : 'Create'}
+                  {submitting ? (
+                    <span className="flex items-center justify-center gap-2">
+                      <span className="inline-block w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin"></span>
+                      {editingRole ? 'Updating...' : 'Creating...'}
+                    </span>
+                  ) : (
+                    editingRole ? 'Update' : 'Create'
+                  )}
                 </button>
               </div>
             </form>

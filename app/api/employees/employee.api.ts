@@ -3,22 +3,49 @@
  * Centralized API calls for employee-related operations
  */
 
+import { extractResponseError, handleEmployeeDataError } from '@/lib/employee-error-handler';
+
 export const employeeApi = {
   /**
    * Fetch single employee by ID
+   * Provides detailed error information for debugging
    */
   getById: async (id: string) => {
-    const res = await fetch(`/api/employees?limit=100`);
-    if (!res.ok) throw new Error(`Failed to fetch employees (${res.status})`);
-    
-    const json = await res.json();
-    if (!json?.success) throw new Error(json?.error || 'Invalid response');
-    
-    const employees = json.data?.employees || [];
-    const found = employees.find((emp: any) => emp.id === id);
-    
-    if (!found) throw new Error('Employee not found');
-    return found;
+    try {
+      const res = await fetch(`/api/employees?limit=100`);
+      
+      if (!res.ok) {
+        const errorCtx = await extractResponseError(res);
+        const error = handleEmployeeDataError(errorCtx);
+        // Re-throw with enhanced information
+        const err = new Error(error.userMessage);
+        (err as any).type = error.type;
+        (err as any).statusCode = res.status;
+        (err as any).detail = error.detail;
+        throw err;
+      }
+      
+      const json = await res.json();
+      if (!json?.success) {
+        const err = new Error(json?.error || 'Invalid response from server');
+        (err as any).type = 'INVALID_RESPONSE';
+        throw err;
+      }
+      
+      const employees = json.data?.employees || [];
+      const found = employees.find((emp: any) => emp.id === id);
+      
+      if (!found) {
+        const err = new Error(`Employee with ID ${id} not found in the system`);
+        (err as any).type = 'NOT_FOUND';
+        throw err;
+      }
+      
+      return found;
+    } catch (error) {
+      // Re-throw with context preserved
+      throw error;
+    }
   },
 
   /**
@@ -68,14 +95,33 @@ export const employeeApi = {
   },
 
   /**
-   * Fetch consolidated salary data
+   * Fetch consolidated salary data for employee
+   * Includes employment, charges, attendance, and salary info
    */
   getSalary: async (id: string) => {
-    const res = await fetch(`/api/employees/${id}/consolidated`);
-    if (!res.ok) throw new Error('Failed to fetch salary data');
+    try {
+      const res = await fetch(`/api/employees/${id}/consolidated`);
+      
+      if (!res.ok) {
+        const errorCtx = await extractResponseError(res);
+        const error = handleEmployeeDataError(errorCtx);
+        const err = new Error(error.userMessage);
+        (err as any).type = error.type;
+        (err as any).statusCode = res.status;
+        (err as any).detail = error.detail;
+        (err as any).suggestion = error.suggestion;
+        throw err;
+      }
 
-    const json = await res.json();
-    return json.data;
+      const json = await res.json();
+      if (!json?.success && !json?.data) {
+        throw new Error('Invalid response from server');
+      }
+
+      return json.data;
+    } catch (error) {
+      throw error;
+    }
   },
 
   /**

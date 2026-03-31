@@ -3,14 +3,7 @@
 import { useEffect, useState } from 'react';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
-import {
-  AlertCircle,
-  Clock,
-  TrendingUp,
-  Calendar,
-  CheckCircle2,
-  AlertTriangle,
-} from 'lucide-react';
+import { AlertCircle, Clock, TrendingUp, Calendar, CheckCircle2, AlertTriangle, RefreshCw } from 'lucide-react';
 import { formatTablePrice } from '@/lib/formatters';
 import { OutstandingChargesPayment } from '@/components/employees/OutstandingChargesPayment';
 
@@ -113,6 +106,8 @@ export function EmployeeConsolidationView({ employeeId }: EmployeeConsolidationV
   const [data, setData] = useState<ConsolidatedEmployee | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [errorDetail, setErrorDetail] = useState<string | null>(null);
+  const [isRetrying, setIsRetrying] = useState(false);
   const [processingEarlyPayment, setProcessingEarlyPayment] = useState(false);
   const [showPayCharges, setShowPayCharges] = useState(false);
 
@@ -123,22 +118,62 @@ export function EmployeeConsolidationView({ employeeId }: EmployeeConsolidationV
   const fetchConsolidatedData = async () => {
     try {
       setLoading(true);
+      setError(null);
+      setErrorDetail(null);
+      
       const response = await fetch(`/api/employees/${employeeId}/consolidated`);
 
       if (!response.ok) {
-        throw new Error('Failed to fetch employee data');
+        let errorMsg = `Failed to fetch employee data (${response.status})`;
+        let detailMsg: string | null = null;
+
+        try {
+          const errorBody = await response.json();
+          errorMsg = errorBody?.error || errorMsg;
+          
+          // Provide specific error messages based on status
+          if (response.status === 401) {
+            errorMsg = 'Your session has expired. Please log in again.';
+          } else if (response.status === 403) {
+            errorMsg = 'You do not have permission to view this employee\'s financial information.';
+            detailMsg = 'Contact your administrator if you believe this is incorrect.';
+          } else if (response.status === 404) {
+            errorMsg = 'Employee or employment data not found.';
+            detailMsg = 'The employee record may have been deleted or the employment information is incomplete.';
+          } else if (response.status >= 500) {
+            errorMsg = 'Server error while fetching employee data.';
+            detailMsg = 'Please try again later or contact support.';
+          }
+        } catch (e) {
+          // Response body parsing failed
+        }
+
+        throw new Error(errorMsg);
       }
 
       const result = await response.json();
-      // The endpoint returns data directly, not nested under "employee"
-      setData(result.data || null);
+      
+      if (!result?.data) {
+        throw new Error('Invalid response format from server');
+      }
+
+      setData(result.data);
       setError(null);
     } catch (err: any) {
-      setError(err.message);
+      console.error('[EmployeeConsolidationView] Error:', err);
+      const message = err.message || 'Failed to load employee details';
+      setError(message);
+      setErrorDetail(err?.detail || null);
       setData(null);
     } finally {
       setLoading(false);
+      setIsRetrying(false);
     }
+  };
+
+  const handleRetry = async () => {
+    setIsRetrying(true);
+    await fetchConsolidatedData();
   };
 
   const handleEarlyPayment = async () => {
@@ -146,6 +181,7 @@ export function EmployeeConsolidationView({ employeeId }: EmployeeConsolidationV
 
     try {
       setProcessingEarlyPayment(true);
+      setError(null);
 
       const response = await fetch('/api/employees/early-payment', {
         method: 'POST',
@@ -158,14 +194,40 @@ export function EmployeeConsolidationView({ employeeId }: EmployeeConsolidationV
       });
 
       if (!response.ok) {
-        throw new Error('Failed to process early payment');
+        let errorMsg = 'Failed to process early payment';
+        let detail: string | null = null;
+        
+        try {
+          const errorBody = await response.json();
+          errorMsg = errorBody?.error || errorMsg;
+          
+          if (response.status === 400) {
+            detail = 'Please check the payment details and try again.';
+          } else if (response.status === 403) {
+            errorMsg = 'You do not have permission to process payments.';
+          } else if (response.status === 409) {
+            errorMsg = 'A payment is already being processed for this employee.';
+            detail = 'Please wait and try again.';
+          } else if (response.status >= 500) {
+            errorMsg = 'Server error while processing payment.';
+            detail = 'Please try again later.';
+          }
+        } catch (e) {
+          // Response parsing failed
+        }
+
+        setError(errorMsg);
+        setErrorDetail(detail);
+        throw new Error(errorMsg);
       }
 
       // Refresh data
       await fetchConsolidatedData();
       // Show success message (you can use a toast here)
+      setError(null);
     } catch (err: any) {
-      setError(err.message);
+      console.error('[handleEarlyPayment] Error:', err);
+      // Error already set above
     } finally {
       setProcessingEarlyPayment(false);
     }
@@ -185,13 +247,58 @@ export function EmployeeConsolidationView({ employeeId }: EmployeeConsolidationV
 
   if (error) {
     return (
-      <div className="flex gap-3 p-4 bg-red-50 border border-red-200 rounded-lg">
-        <AlertCircle className="h-5 w-5 text-red-600 flex-shrink-0 mt-0.5" />
-        <div>
-          <p className="text-red-800 font-semibold text-sm">Error</p>
-          <p className="text-red-700 text-sm">{error}</p>
-        </div>
-      </div>
+      <Card className="border-red-200 bg-red-50">
+        <CardContent className="pt-6">
+          <div className="flex gap-4">
+            <AlertCircle className="h-6 w-6 text-red-600 flex-shrink-0 mt-0.5" />
+            <div className="flex-1">
+              <h3 className="font-semibold text-red-900 text-base">Unable to Load Employee Details</h3>
+              <p className="text-red-800 mt-2 text-sm">{error}</p>
+              
+              {errorDetail && (
+                <p className="text-red-700 mt-2 text-xs italic">{errorDetail}</p>
+              )}
+              
+              {/* Error context hints */}
+              <div className="mt-3 p-3 bg-red-100 rounded border border-red-200 text-xs text-red-900 space-y-1">
+                {error.includes('permission') && (
+                  <>
+                    <p>• You may not have access to financial data</p>
+                    <p>• Check with your administrator for permission</p>
+                  </>
+                )}
+                {error.includes('not found') && (
+                  <>
+                    <p>• The employee record may be incomplete</p>
+                    <p>• Ensure all employment data is configured</p>
+                  </>
+                )}
+                {error.includes('401') && (
+                  <p>• Please log in again to continue</p>
+                )}
+                {error.includes('Server error') && (
+                  <>
+                    <p>• The server is experiencing issues</p>
+                    <p>• Try again in a few moments</p>
+                  </>
+                )}
+              </div>
+              
+              {/* Retry Button */}
+              <div className="mt-4 flex gap-2">
+                <button
+                  onClick={handleRetry}
+                  disabled={isRetrying}
+                  className="flex items-center gap-2 px-4 py-2 bg-red-600 text-white rounded hover:bg-red-700 disabled:opacity-50 disabled:cursor-not-allowed font-medium text-sm"
+                >
+                  <RefreshCw size={16} className={isRetrying ? 'animate-spin' : ''} />
+                  {isRetrying ? 'Retrying...' : 'Try Again'}
+                </button>
+              </div>
+            </div>
+          </div>
+        </CardContent>
+      </Card>
     );
   }
 

@@ -398,6 +398,21 @@ export const pageAccessRules: Record<string, PageAccessRule> = {
     adminBypass: true,
   },
 
+  "/employees/charges": {
+    requiredPermissions: ["charges.view"],
+    adminBypass: true,
+  },
+
+  "/employees/salary-payments": {
+    requiredPermissions: ["salary.view"],
+    adminBypass: true,
+  },
+
+  "/employees/leaves": {
+    requiredPermissions: ["attendance.view"],
+    adminBypass: true,
+  },
+
   "/employees/*": {
     requiredPermissions: ["employees.read"],
     adminBypass: true,

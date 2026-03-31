@@ -7,7 +7,7 @@ import { errorResponse, successResponse, ErrorCodes, getStatusCode } from '@/lib
 /**
  * GET /api/employees/[id]/charges
  * Get all charges/debts for an employee
- * Requires: employees.read permission
+ * Requires: charges.view permission
  */
 export async function GET(
   req: NextRequest,
@@ -31,13 +31,13 @@ export async function GET(
       );
     }
 
-    // Check permission to read employee data
+    // Check permission to view charges
     const permCtx: PermissionContext = {
       userId: ctx.userId,
       userType: userWithRoles.isAdmin ? 'admin' : 'employee',
     };
 
-    const canRead = await checkPermission(permCtx, 'employees.read');
+    const canRead = await checkPermission(permCtx, 'charges.view');
     if (!canRead) {
       return NextResponse.json(
         errorResponse(ErrorCodes.FORBIDDEN, 'Insufficient permissions to view employee charges'),

@@ -9,6 +9,7 @@ import { checkPermission, type PermissionContext } from '@/lib/auth/rbac';
  * GET /api/employees
  * List employees with their roles and employment data
  * Requires: employees.read permission
+ * Optional: charges.view (for charge data), salary.view (for salary data)
  */
 export async function GET(req: NextRequest) {
   try {
@@ -33,6 +34,10 @@ export async function GET(req: NextRequest) {
     if (!canRead) {
       return NextResponse.json(errorResponse('FORBIDDEN', 'Insufficient permissions to view employees'), { status: 403 });
     }
+
+    // Check for optional financial view permissions
+    const canViewCharges = await checkPermission(permCtx, 'charges.view');
+    const canViewSalary = await checkPermission(permCtx, 'salary.view');
 
     const searchParams = req.nextUrl.searchParams;
     const status = searchParams.get('status'); // active, inactive, on_leave, terminated
@@ -133,7 +138,7 @@ export async function GET(req: NextRequest) {
             }
           }
 
-          return {
+          const employeeObj: any = {
             id: emp.id,
             email: emp.email,
             username: emp.username,
@@ -148,18 +153,25 @@ export async function GET(req: NextRequest) {
               departmentId: ur.departmentId,
               departmentName: ur.department?.name,
             })),
-            // Financial summary
-            totalCharges: allCharges.reduce((sum, c) => sum + Number(c.amount), 0),
-            totalOutstandingCharges,
-            totalPaidCharges,
-            chargesBreakdown,
-            // Salary info
-            lastPaidDate: lastSalaryPayment?.paymentDate || null,
-            nextSalaryDueDate,
-            // Leave info
+            // Leave info (accessible with employees.read)
             activeLeaves: emp.employmentData?.leaves.length || 0,
             createdAt: emp.createdAt,
           };
+
+          // Include financial data only if user has appropriate permissions
+          if (canViewCharges) {
+            employeeObj.totalCharges = allCharges.reduce((sum, c) => sum + Number(c.amount), 0);
+            employeeObj.totalOutstandingCharges = totalOutstandingCharges;
+            employeeObj.totalPaidCharges = totalPaidCharges;
+            employeeObj.chargesBreakdown = chargesBreakdown;
+          }
+
+          if (canViewSalary) {
+            employeeObj.lastPaidDate = lastSalaryPayment?.paymentDate || null;
+            employeeObj.nextSalaryDueDate = nextSalaryDueDate;
+          }
+
+          return employeeObj;
         })
       ) || [];
 

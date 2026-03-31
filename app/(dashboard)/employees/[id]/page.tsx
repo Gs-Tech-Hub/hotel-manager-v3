@@ -22,7 +22,7 @@ export default function EmployeeDetailPage() {
   const employeeId = params.id as string
 
   // Use custom hooks
-  const { employee, loading, error } = useEmployee(employeeId)
+  const { employee, loading, error, errorType, errorDetail, isRetryable } = useEmployee(employeeId)
   const { activeCheckIn, monthlyCheckIns, monthlyCheckOuts, clockInLoading, dataLoading, checkIn, checkOut, error: attendanceError } =
     useAttendance(employeeId)
   const { salaryData, loading: salaryLoading, fetchSalary } = useSalary()
@@ -83,6 +83,11 @@ export default function EmployeeDetailPage() {
     )
   }
 
+  const handleRetry = () => {
+    // Refetch by updating state
+    window.location.reload();
+  }
+
   if (error || !employee) {
     return (
       <div className="min-h-screen bg-gray-50 p-6">
@@ -92,13 +97,89 @@ export default function EmployeeDetailPage() {
         >
           <ArrowLeft size={18} /> Back
         </button>
-        <div className="bg-white rounded-lg border border-red-200 p-6">
-          <div className="flex items-start gap-3">
-            <AlertCircle className="text-red-600 flex-shrink-0 mt-0.5" size={20} />
-            <div>
-              <h2 className="font-semibold text-red-900">Error</h2>
-              <p className="text-red-700 mt-1">{error || 'Employee not found'}</p>
+        <div className="max-w-2xl">
+          {/* Error Card */}
+          <div className="bg-white rounded-lg border border-red-200 p-6 shadow-sm">
+            <div className="flex items-start gap-4">
+              <AlertCircle className="text-red-600 flex-shrink-0 mt-0.5" size={24} />
+              <div className="flex-1">
+                <h2 className="font-semibold text-red-900 text-lg">Unable to Load Employee</h2>
+                <p className="text-red-700 mt-2 text-base">{error || 'Employee not found'}</p>
+                
+                {/* Error Details Section */}
+                {errorDetail && (
+                  <div className="mt-3 p-3 bg-red-50 rounded border border-red-100">
+                    <p className="text-xs font-mono text-red-600 break-words">{errorDetail}</p>
+                  </div>
+                )}
+                
+                {/* Error-specific suggestions */}
+                <div className="mt-4 space-y-2 text-sm text-red-700">
+                  {errorType === 'NOT_FOUND' && (
+                    <>
+                      <p>• The employee record may have been deleted</p>
+                      <p>• Please verify the employee ID and try again</p>
+                      <p>• Return to the employee list to select a valid employee</p>
+                    </>
+                  )}
+                  {errorType === 'UNAUTHORIZED' && (
+                    <>
+                      <p>• Your session has expired</p>
+                      <p>• Please log in again to continue</p>
+                    </>
+                  )}
+                  {errorType === 'FORBIDDEN' && (
+                    <>
+                      <p>• You do not have permission to view this employee</p>
+                      <p>• Contact your administrator to request access</p>
+                    </>
+                  )}
+                  {errorType === 'EMPLOYMENT_DATA_MISSING' && (
+                    <>
+                      <p>• This employee employment record is incomplete</p>
+                      <p>• Contact your administrator to complete the record</p>
+                    </>
+                  )}
+                  {errorType === 'NETWORK_ERROR' && (
+                    <>
+                      <p>• Please check your internet connection</p>
+                      <p>• Try refreshing the page</p>
+                    </>
+                  )}
+                  {(errorType === 'TIMEOUT' || errorType === 'SERVER_ERROR') && (
+                    <>
+                      <p>• The server may be experiencing issues</p>
+                      <p>• Please try again in a few moments</p>
+                    </>
+                  )}
+                </div>
+                
+                {/* Action Buttons */}
+                <div className="mt-5 flex gap-3">
+                  {isRetryable && (
+                    <button
+                      onClick={handleRetry}
+                      className="px-4 py-2 bg-blue-600 text-white rounded hover:bg-blue-700 font-medium text-sm"
+                    >
+                      Try Again
+                    </button>
+                  )}
+                  <button
+                    onClick={() => router.push('/employees')}
+                    className="px-4 py-2 bg-gray-200 text-gray-800 rounded hover:bg-gray-300 font-medium text-sm"
+                  >
+                    Back to Employees
+                  </button>
+                </div>
+              </div>
             </div>
+          </div>
+          
+          {/* Help Section */}
+          <div className="mt-4 p-4 bg-blue-50 border border-blue-200 rounded-lg">
+            <p className="text-sm text-blue-800">
+              <strong>Need help?</strong> If this error persists, please contact your system administrator or check the browser console for more details.
+            </p>
           </div>
         </div>
       </div>

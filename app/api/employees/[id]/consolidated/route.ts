@@ -19,7 +19,7 @@ import { normalizeToCents } from '@/lib/price';
  * - Charge summary and history
  * - Attendance summary
  * - Salary payment history
- * Requires: employees.read permission
+ * Requires: salary.view permission (financial data access)
  */
 export async function GET(
   request: NextRequest,
@@ -43,16 +43,16 @@ export async function GET(
       );
     }
 
-    // Check permission to view consolidated employee details
+    // Check permission to view salary/financial data
     const permCtx: PermissionContext = {
       userId: ctx.userId,
       userType: userWithRoles.isAdmin ? 'admin' : 'employee',
       departmentId: undefined,
     };
-    const canRead = await checkPermission(permCtx, 'employees.read');
+    const canRead = await checkPermission(permCtx, 'salary.view');
     if (!canRead) {
       return NextResponse.json(
-        errorResponse(ErrorCodes.FORBIDDEN, 'Insufficient permissions to view employee consolidated data'),
+        errorResponse(ErrorCodes.FORBIDDEN, 'Insufficient permissions to view employee financial data'),
         { status: getStatusCode(ErrorCodes.FORBIDDEN) }
       );
     }

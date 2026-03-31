@@ -8,6 +8,7 @@ import { checkPermission, type PermissionContext } from '@/lib/auth/rbac';
  * GET /api/employees/[id]
  * Get detailed employee information including employment, leaves, charges
  * Requires: employees.read permission
+ * Optional: charges.view (for charge data)
  */
 export async function GET(
   req: NextRequest,
@@ -35,6 +36,9 @@ export async function GET(
     if (!canRead) {
       return NextResponse.json(errorResponse('FORBIDDEN', 'Insufficient permissions to view employee details'), { status: 403 });
     }
+
+    // Check for optional financial view permissions
+    const canViewCharges = await checkPermission(permCtx, 'charges.view');
 
     const { id } = await params;
 
@@ -66,40 +70,50 @@ export async function GET(
       include: { role: true, department: true },
     });
 
-    // Calculate totals
-    const totalDebt = employee.employmentData?.charges
-      .filter((c) => c.status !== 'waived' && c.status !== 'cancelled')
-      .reduce((sum, c) => sum + (Number(c.amount) - Number(c.paidAmount)), 0) || 0;
+    // Calculate financial totals
+    const totalDebt = canViewCharges 
+      ? employee.employmentData?.charges
+          .filter((c) => c.status !== 'waived' && c.status !== 'cancelled')
+          .reduce((sum, c) => sum + (Number(c.amount) - Number(c.paidAmount)), 0) || 0
+      : 0;
 
-    const totalCharges = employee.employmentData?.charges.length || 0;
+    const totalCharges = canViewCharges ? employee.employmentData?.charges.length || 0 : 0;
+
+    // Build response with conditional financial fields
+    const responseData: any = {
+      id: employee.id,
+      email: employee.email,
+      username: employee.username,
+      firstname: employee.firstname,
+      lastname: employee.lastname,
+      blocked: employee.blocked,
+      employment: employee.employmentData,
+      summary: employee.employeeSummary,
+      records: employee.employeeRecords,
+      roles: userRoles.map((ur) => ({
+        roleId: ur.role.id,
+        roleName: ur.role.name,
+        departmentId: ur.departmentId,
+        departmentName: ur.department?.name,
+      })),
+      statistics: {
+        approvedLeaves: employee.employmentData?.leaves.filter((l) => l.status === 'approved').length || 0,
+        totalLeaves: employee.employmentData?.leaves.length || 0,
+      },
+      createdAt: employee.createdAt,
+      updatedAt: employee.updatedAt,
+    };
+
+    // Include charge data only if user has charges.view permission
+    if (canViewCharges) {
+      responseData.statistics.totalDebt = totalDebt;
+      responseData.statistics.totalCharges = totalCharges;
+    }
 
     return NextResponse.json(
       successResponse({
-        data:  {
-        id: employee.id,
-        email: employee.email,
-        username: employee.username,
-        firstname: employee.firstname,
-        lastname: employee.lastname,
-        blocked: employee.blocked,
-        employment: employee.employmentData,
-        summary: employee.employeeSummary,
-        records: employee.employeeRecords,
-        roles: userRoles.map((ur) => ({
-          roleId: ur.role.id,
-          roleName: ur.role.name,
-          departmentId: ur.departmentId,
-          departmentName: ur.department?.name,
-        })),
-        statistics: {
-          totalDebt,
-          totalCharges,
-          approvedLeaves: employee.employmentData?.leaves.filter((l) => l.status === 'approved').length || 0,
-          totalLeaves: employee.employmentData?.leaves.length || 0,
-        },
-        createdAt: employee.createdAt,
-        updatedAt: employee.updatedAt,
-      }}),
+        data: responseData
+      }),
       { status: 200 }
     );
   } catch (error) {
