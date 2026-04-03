@@ -49,7 +49,7 @@ export async function GET(
     }
 
     const url = new URL(request.url)
-    const type = url.searchParams.get('type') || ''
+    let type = url.searchParams.get('type') || ''
     const pageSize = Math.min(100, Math.max(5, Number(url.searchParams.get('pageSize') || '20')))
     const fromDate = url.searchParams.get('fromDate') || null
     const toDate = url.searchParams.get('toDate') || null
@@ -102,6 +102,18 @@ export async function GET(
         }
       } catch (err) {
         // ignore
+      }
+    }
+
+    // Auto-detect product type based on department type if not explicitly provided
+    if (!type && dept && dept.type) {
+      const deptTypeMap: Record<string, string> = {
+        'games': 'service',
+        'services': 'service',
+        'facility': 'service',
+      }
+      if (deptTypeMap[String(dept.type).toLowerCase()]) {
+        type = deptTypeMap[String(dept.type).toLowerCase()]
       }
     }
 

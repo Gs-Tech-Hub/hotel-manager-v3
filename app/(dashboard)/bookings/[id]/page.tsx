@@ -9,6 +9,7 @@ import { Loader2, ArrowLeft, LogIn, LogOut, CreditCard, Printer } from "lucide-r
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { formatTablePrice } from "@/lib/formatters";
+import { BookingReceiptModal } from "@/components/rooms/BookingReceiptModal";
 import { 
 	getGuestStatus, 
 	getGuestStatusColor, 
@@ -143,13 +144,13 @@ export default function BookingDetailPage({
 		
 		setIsSaving(true);
 		try {
-			// Update booking to set check-in time
-			// Note: bookingStatus remains 'confirmed' (payment status)
+			// Update booking to set check-in time and mark as in_progress
 			const bookingRes = await fetch(`/api/bookings/${bookingId}`, {
 				method: "PUT",
 				headers: { "Content-Type": "application/json" },
 				body: JSON.stringify({
 					timeIn: new Date().toISOString(),
+					bookingStatus: 'in_progress', // Mark booking as in_progress when guest checks in
 				}),
 			});
 
@@ -186,13 +187,13 @@ export default function BookingDetailPage({
 		if (!booking || !booking.unit?.id) return;
 		setIsSaving(true);
 		try {
-			// Update booking to set check-out time
-			// Note: bookingStatus remains 'confirmed' (payment status)
+			// Update booking to set check-out time and mark as completed
 			const bookingRes = await fetch(`/api/bookings/${bookingId}`, {
 				method: "PUT",
 				headers: { "Content-Type": "application/json" },
 				body: JSON.stringify({
 					timeOut: new Date().toISOString(),
+					bookingStatus: 'completed', // Mark booking as completed when guest checks out
 				}),
 			});
 
@@ -565,7 +566,7 @@ export default function BookingDetailPage({
 								Status
 							</Label>
 							<p className="font-semibold">
-								{isCheckedIn ? "Checked In" : isCheckedOut ? "Checked Out" : "Pending"}
+								{isCheckedOut ? "Checked Out" : isCheckedIn ? "Checked In" : "Pending"}
 							</p>
 						</div>
 					</div>
@@ -775,281 +776,12 @@ export default function BookingDetailPage({
 			</Card>
 		)}
 
-			{/* Receipt Modal */}
-			{showReceipt && booking && (
-				<div className="fixed inset-0 bg-black bg-opacity-40 flex items-center justify-center z-50">
-					<div className="bg-white rounded-lg p-6 w-96 shadow-lg max-h-[80vh] overflow-auto">
-						<div className="font-mono text-sm space-y-2">
-							{/* Header */}
-							<div className="text-center border-b pb-3 mb-3">
-								<div className="font-bold text-lg">HOTEL RECEIPT</div>
-								<div className="text-xs text-muted-foreground">Booking Confirmation</div>
-								<div className="text-xs text-muted-foreground mt-1">
-									{new Date().toLocaleDateString()} {new Date().toLocaleTimeString()}
-								</div>
-							</div>
-
-							{/* Booking Info */}
-							<div className="space-y-1 border-b pb-2">
-								<div className="flex justify-between text-xs">
-									<span className="font-semibold">Booking ID:</span>
-									<span>{booking.bookingId}</span>
-								</div>
-								<div className="flex justify-between text-xs">
-									<span className="font-semibold">Status:</span>
-									<span className="capitalize">{booking.bookingStatus.replace(/_/g, ' ')}</span>
-								</div>
-							</div>
-
-							{/* Guest Info */}
-							<div className="space-y-1 border-b pb-2">
-								<div className="text-xs font-semibold mb-1">Guest Information</div>
-								<div className="flex justify-between text-xs">
-									<span>Name:</span>
-									<span>{`${booking.customer?.firstName || ''} ${booking.customer?.lastName || ''}`.trim()}</span>
-								</div>
-								<div className="flex justify-between text-xs">
-									<span>Email:</span>
-									<span className="text-right max-w-[150px] truncate">{booking.customer?.email}</span>
-								</div>
-								{booking.customer?.phone && (
-									<div className="flex justify-between text-xs">
-										<span>Phone:</span>
-										<span>{booking.customer.phone}</span>
-									</div>
-								)}
-							</div>
-
-							{/* Room & Dates */}
-							<div className="space-y-1 border-b pb-2">
-								<div className="text-xs font-semibold mb-1">Accommodation Details</div>
-								<div className="flex justify-between text-xs">
-									<span>Room Number:</span>
-									<span>{booking.unit?.roomNumber || 'N/A'}</span>
-								</div>
-								<div className="flex justify-between text-xs">
-									<span>Room Type:</span>
-									<span>{booking.unit?.roomType?.name || 'N/A'}</span>
-								</div>
-								<div className="flex justify-between text-xs">
-									<span>Check-in:</span>
-									<span>{new Date(booking.checkin).toLocaleDateString()}</span>
-								</div>
-								<div className="flex justify-between text-xs">
-									<span>Check-out:</span>
-									<span>{new Date(booking.checkout).toLocaleDateString()}</span>
-								</div>
-								<div className="flex justify-between text-xs">
-									<span>Nights:</span>
-									<span>{booking.nights}</span>
-								</div>
-								<div className="flex justify-between text-xs">
-									<span>Guests:</span>
-									<span>{booking.guests}</span>
-								</div>
-							</div>
-
-							{/* Pricing */}
-							<div className="space-y-1 border-b pb-2">
-								<div className="flex justify-between text-xs font-semibold">
-									<span>Per Night:</span>
-									<span>{formatTablePrice(Math.round(booking.totalPrice / booking.nights))}</span>
-								</div>
-								<div className="flex justify-between font-bold text-sm">
-									<span>Total:</span>
-									<span>{formatTablePrice(booking.totalPrice)}</span>
-								</div>
-							</div>
-
-							{/* Payment Info */}
-							{booking.payment && (
-								<div className="space-y-1 border-b pb-2">
-									<div className="text-xs font-semibold mb-1">Payment Information</div>
-									<div className="flex justify-between text-xs">
-										<span>Method:</span>
-										<span className="capitalize">{booking.payment.paymentMethod}</span>
-									</div>
-									<div className="flex justify-between text-xs">
-										<span>Status:</span>
-										<span className="text-green-600 font-semibold">✓ {booking.payment.paymentStatus}</span>
-									</div>
-									{booking.payment.transactionID && (
-										<div className="flex justify-between text-xs">
-											<span>Reference:</span>
-											<span className="font-mono">{booking.payment.transactionID}</span>
-										</div>
-									)}
-								</div>
-							)}
-
-							{/* Footer */}
-							<div className="text-center text-xs text-muted-foreground pt-2 border-t">
-								<div>Thank you for your stay!</div>
-								<div className="mt-1">Please keep this receipt for your records</div>
-							</div>
-						</div>
-
-						{/* Buttons */}
-						<div className="flex gap-2 mt-4">
-							<Button
-								onClick={() => {
-									const receiptContent = document.querySelector('.font-mono');
-									if (!receiptContent) return;
-									const printWindow = window.open('', '', 'width=600,height=800');
-									if (!printWindow) return;
-									
-									// 80mm thermal printer paper = 226px at 96dpi
-									const thermalPaperWidthMm = '80mm'
-									const thermalPaperWidthPx = '226px'
-									const html = `
-										<!DOCTYPE html>
-										<html>
-											<head>
-												<meta charset="UTF-8">
-												<style>
-													/* Reset all defaults */
-													* {
-														margin: 0;
-														padding: 0;
-														box-sizing: border-box;
-													}
-													
-													/* Document setup for 80mm thermal paper */
-													@page {
-														size: ${thermalPaperWidthMm} auto;
-														margin: 0;
-														padding: 0;
-														orphans: 0;
-														widows: 0;
-													}
-													
-													html {
-														width: ${thermalPaperWidthPx};
-														margin: 0;
-														padding: 0;
-													}
-													
-													body {
-														width: ${thermalPaperWidthPx};
-														height: auto;
-														margin: 0;
-														padding: 2px;
-														font-family: 'Courier New', 'Courier', monospace;
-														font-size: 10px;
-														line-height: 1.2;
-														color: #000;
-														background: white;
-														overflow: hidden;
-													}
-													
-													.receipt-container {
-														width: 100%;
-														max-width: ${thermalPaperWidthPx};
-														padding: 2px;
-														overflow: hidden;
-														word-wrap: break-word;
-														white-space: normal;
-													}
-													
-													.font-mono { font-family: 'Courier New', 'Courier', monospace; }
-													.text-sm { font-size: 10px; }
-													.text-xs { font-size: 9px; }
-													.text-lg { font-size: 11px; }
-													.text-center { text-align: center; }
-													.text-right { text-align: right; }
-													.font-bold { font-weight: bold; }
-													.font-semibold { font-weight: 600; }
-													.border-b { border-bottom: 1px solid #000; }
-													.border-b-2 { border-bottom: 2px solid #000; }
-													.border-t { border-top: 1px solid #000; }
-													.border-t-2 { border-top: 2px solid #000; }
-													.px-2 { padding-left: 2px; padding-right: 2px; }
-													.px-3 { padding-left: 3px; padding-right: 3px; }
-													.py-1 { padding-top: 1px; padding-bottom: 1px; }
-													.py-2 { padding-top: 2px; padding-bottom: 2px; }
-													.p-2 { padding: 2px; }
-													.pb-2 { padding-bottom: 2px; }
-													.pt-2 { padding-top: 2px; }
-													.mt-1 { margin-top: 1px; }
-													.mb-1 { margin-bottom: 1px; }
-													.space-y-1 > * + * { margin-top: 1px; }
-													.space-y-2 > * + * { margin-top: 2px; }
-													.space-y-3 > * + * { margin-top: 3px; }
-													.flex { display: flex !important; flex-direction: row; flex-wrap: nowrap; width: 100%; }
-													.justify-between { justify-content: space-between; width: 100%; }
-													.capitalize { text-transform: capitalize; }
-													.text-green-600 { color: #16a34a; }
-													.text-muted-foreground { color: #6b7280; }
-													
-													@media print {
-														* {
-															-webkit-print-color-adjust: exact !important;
-															print-color-adjust: exact !important;
-															color-adjust: exact !important;
-														}
-														@page {
-															size: ${thermalPaperWidthMm} auto;
-															margin: 0;
-															padding: 0;
-														}
-														html, body {
-															width: ${thermalPaperWidthPx};
-															max-width: ${thermalPaperWidthPx};
-															height: auto;
-															margin: 0;
-															padding: 2px;
-														}
-														.flex {
-															display: flex !important;
-															flex-direction: row;
-															flex-wrap: nowrap !important;
-															width: 100%;
-														}
-														.justify-between {
-															justify-content: space-between !important;
-															width: 100%;
-														}
-														.space-y-1 > *, 
-														.space-y-2 > *,
-														.space-y-3 > * {
-															page-break-inside: avoid;
-														}
-													}
-												</style>
-											</head>
-											<body>
-												<div class="receipt-container font-mono">
-													${receiptContent.innerHTML}
-												</div>
-											</body>
-										</html>
-									`;
-									printWindow.document.write(html);
-									printWindow.document.close();
-									printWindow.onload = () => {
-										setTimeout(() => {
-											printWindow.print();
-										}, 200);
-									};
-								}}
-								size="sm"
-								className="flex-1"
-							>
-								<Printer className="h-4 w-4 mr-2" />
-								Print
-							</Button>
-							<Button
-								onClick={() => setShowReceipt(false)}
-								variant="outline"
-								size="sm"
-								className="flex-1"
-							>
-								Close
-							</Button>
-						</div>
-					</div>
-				</div>
-			)}
-		</div>
-	);
+		{/* Receipt Modal */}
+		<BookingReceiptModal
+			open={showReceipt}
+			onOpenChange={setShowReceipt}
+			booking={booking}
+		/>
+	</div>
+);
 }

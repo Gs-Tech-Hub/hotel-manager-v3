@@ -260,10 +260,10 @@ export default function SectionProductsTable({ products: initialProducts, depart
                   )}
                 </td>
                 <td className="text-right py-2 px-2">
-                  {isService ? '—' : (p.unitsSold ?? 0)}
+                  {p.unitsSold ?? 0}
                 </td>
                 <td className="text-right py-2 px-2">
-                  {isService ? '—' : (p.amountSold ? formatTablePrice(p.amountSold) : formatTablePrice(0))}
+                  {p.amountSold ? formatTablePrice(p.amountSold) : formatTablePrice(0)}
                 </td>
                 <td className="text-right py-2 px-2">
                   {isService ? '—' : (p.pendingQuantity ?? 0)}

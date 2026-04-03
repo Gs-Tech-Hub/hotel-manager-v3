@@ -1,7 +1,7 @@
 "use client"
 
 import { useRef, useEffect, useState } from "react"
-import Price from '@/components/ui/Price'
+import { formatTablePrice } from "@/lib/formatters"
 
 interface HotelInfo {
   name?: string
@@ -55,8 +55,8 @@ export function POSReceipt({ receipt, onClose }: { receipt: any; onClose?: () =>
     if (!w) return
     
     // For 80mm POS printer paper (commonly used)
-    const posPaperWidthMm = 80;
-    const posPaperWidthPx = '226px'; // 80mm at 96dpi
+    const posPaperWidthMm = 100;
+    const posPaperWidthPx = '342px'; // 80mm at 96dpi
     
     const html = `
       <!DOCTYPE html>
@@ -160,7 +160,7 @@ export function POSReceipt({ receipt, onClose }: { receipt: any; onClose?: () =>
               }
               
               body {
-                font-size: 11px;
+                font-size: 12px;
                 line-height: 1.2;
               }
               
@@ -220,10 +220,36 @@ export function POSReceipt({ receipt, onClose }: { receipt: any; onClose?: () =>
               <span className="font-semibold">Time:</span>
               <span>{new Date().toLocaleTimeString()}</span>
             </div>
+            {receipt?.customerName && receipt.customerName !== 'Guest' && (
+              <div className="flex justify-between">
+                <span className="font-semibold">Customer:</span>
+                <span>{receipt.customerName}</span>
+              </div>
+            )}
           </div>
 
+          {/* Booking Info Section (for booking receipts) */}
+          {receipt?.checkinDate && (
+            <div className="text-xs space-y-1 border-b border-gray-300 pb-2">
+              <div className="flex justify-between">
+                <span className="font-semibold">Check-in:</span>
+                <span>{receipt.checkinDate}</span>
+              </div>
+              <div className="flex justify-between">
+                <span className="font-semibold">Check-out:</span>
+                <span>{receipt.checkoutDate}</span>
+              </div>
+              <div className="flex justify-between">
+                <span className="font-semibold">Status:</span>
+                <span className="font-bold text-green-700">
+                  {receipt.isCheckedIn && receipt.isCheckedOut ? '✓ Checked Out' : receipt.isCheckedIn ? '✓ Checked In' : 'Pending'}
+                </span>
+              </div>
+            </div>
+          )}
+
           {/* Status Badges */}
-          <div className="flex gap-2 justify-center">
+          <div className="flex gap-2 justify-center flex-wrap">
             {receipt?.orderTypeDisplay === 'ITEMS ADDED' && (
               <div className="px-2 py-1 bg-green-100 border border-green-400 rounded text-xs font-bold text-green-900">
                 ✓ ITEMS ADDED
@@ -251,38 +277,53 @@ export function POSReceipt({ receipt, onClose }: { receipt: any; onClose?: () =>
                 <div className="col-span-3 text-right">TOTAL</div>
               </div>
             </div>
-            {(receipt?.items ?? []).map((it: any) => (
-              <div key={it.lineId} className="grid grid-cols-12 gap-1 text-xs py-1 border-b border-gray-200">
+            {(receipt?.items ?? []).map((it: any, idx: number) => (
+              <div key={it.lineId || it.id || `item-${idx}`} className="grid grid-cols-12 gap-1 text-xs py-1 border-b border-gray-200">
                 <div className="col-span-5 break-words">{it.productName}</div>
                 <div className="col-span-2 text-center">{it.quantity}</div>
                 <div className="col-span-2 text-right">
-                  <Price amount={it.unitPrice} isMinor={true} />
+                  {formatTablePrice(it.unitPrice)}
                 </div>
                 <div className="col-span-3 text-right font-semibold">
-                  <Price amount={it.unitPrice * it.quantity} isMinor={true} />
+                  {formatTablePrice(it.unitPrice * it.quantity)}
                 </div>
               </div>
             ))}
           </div>
 
+          {/* Overstay Charges Section */}
+          {receipt?.overstayCharge && receipt.overstayCharge > 0 && (
+            <div className="bg-orange-50 border border-orange-300 rounded p-2 text-xs space-y-1">
+              <div className="font-bold text-orange-900">OVERSTAY CHARGES</div>
+              <div className="flex justify-between">
+                <span>Extra Stay Days:</span>
+                <span className="font-semibold">{receipt.extraNightsDays} day{receipt.extraNightsDays > 1 ? 's' : ''}</span>
+              </div>
+              <div className="flex justify-between border-t border-orange-300 pt-1 font-bold text-orange-900">
+                <span>Overstay Charge:</span>
+                <span>{formatTablePrice(receipt.overstayCharge)}</span>
+              </div>
+            </div>
+          )}
+
           {/* Calculations Section */}
           <div className="space-y-1 text-xs border-b border-gray-300 pb-2">
             <div className="flex justify-between">
               <span>Subtotal:</span>
-              <span className="font-semibold"><Price amount={subtotal} isMinor={true} /></span>
+              <span className="font-semibold">{formatTablePrice(subtotal)}</span>
             </div>
             {taxAmount > 0 && (
               <div className="flex justify-between text-blue-600">
                 <span>Tax:</span>
-                <span className="font-semibold"><Price amount={taxAmount} isMinor={true} /></span>
+                <span className="font-semibold"> {formatTablePrice (taxAmount)} </span>
               </div>
             )}
             {discounts.length > 0 && (
               <>
                 {discounts.map((d: any, idx: number) => (
-                  <div key={idx} className="flex justify-between text-green-700">
+                  <div key={d.id || d.code || `discount-${idx}`} className="flex justify-between text-green-700">
                     <span>{d.code} {d.type === 'percentage' ? `(${d.value}%)` : ''}:</span>
-                    <span className="font-semibold">-<Price amount={d.discountAmount || 0} isMinor={true} /></span>
+                    <span className="font-semibold">-{formatTablePrice(d.discountAmount || 0)} </span>
                   </div>
                 ))}
               </>
@@ -293,7 +334,7 @@ export function POSReceipt({ receipt, onClose }: { receipt: any; onClose?: () =>
           <div className="bg-gray-100 border-2 border-gray-800 rounded p-3 my-2 text-center">
             <div className="text-xs text-gray-600 mb-1">TOTAL AMOUNT</div>
             <div className="text-3xl font-bold text-blue-600">
-              <Price amount={receipt?.total ?? 0} isMinor={true} />
+              {formatTablePrice(receipt?.total ?? 0)}
             </div>
           </div>
 

@@ -2,7 +2,7 @@
 
 import { useState, useEffect } from 'react'
 import { useRouter, useSearchParams } from 'next/navigation'
-import { formatTablePrice, formatOrderTotal } from '@/lib/formatters'
+import { formatTablePrice } from '@/lib/formatters'
 import { normalizeToCents } from '@/lib/price'
 import { POSPayment } from '@/components/admin/pos/pos-payment'
 import { POSReceipt } from '@/components/admin/pos/pos-receipt'

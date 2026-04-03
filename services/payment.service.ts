@@ -262,6 +262,22 @@ export class PaymentService extends BaseService<IPayment> {
         });
       }
 
+      // ==================== ASYNC SERVICE SALES COUNT UPDATE ====================
+      // Task 2: When payment received, update service sales count from fulfillment records
+      if (payment.paymentStatus === 'paid') {
+        console.log(`[Payment] Order ${orderId} is now PAID - updating service sales counts`);
+        try {
+          const { serviceSalesService } = await import('./service-sales.service');
+          // Fire-and-forget: Update service sales count based on fulfillments
+          serviceSalesService.updateServiceSalesCountAfterPayment(orderId).catch((err) => {
+            console.error(`[Payment] Error updating service sales count for order ${orderId}:`, err);
+          });
+        } catch (e) {
+          console.error('[Payment] Error triggering service sales count update:', e);
+          // Don't fail payment - this is non-critical
+        }
+      }
+
       const totalTime = Date.now() - startTime;
       console.log(`[Payment] recordOrderPayment COMPLETE (${totalTime}ms total) - Timeline:`, timeline);
 
@@ -465,6 +481,22 @@ export class PaymentService extends BaseService<IPayment> {
         ).catch((err) => {
           console.error('[Deferred Payment] Error in concurrent section stats recalculation:', err);
         });
+      }
+
+      // ==================== ASYNC SERVICE SALES COUNT UPDATE ====================
+      // Task 2: When payment received, update service sales count from fulfillment records
+      if (payment.paymentStatus === 'paid') {
+        console.log(`[Deferred Payment] Order ${orderId} is now PAID - updating service sales counts`);
+        try {
+          const { serviceSalesService } = await import('./service-sales.service');
+          // Fire-and-forget: Update service sales count based on fulfillments
+          serviceSalesService.updateServiceSalesCountAfterPayment(orderId).catch((err) => {
+            console.error(`[Deferred Payment] Error updating service sales count for order ${orderId}:`, err);
+          });
+        } catch (e) {
+          console.error('[Deferred Payment] Error triggering service sales count update:', e);
+          // Don't fail payment - this is non-critical
+        }
       }
 
       const totalTime = Date.now() - startTime;

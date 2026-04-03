@@ -44,7 +44,6 @@ export default function PosOrdersPage() {
     const [paymentStatusFilter, setPaymentStatusFilter] = useState(""); // Payment status (empty = all)
     const [departmentFilter, setDepartmentFilter] = useState("");
     const [departmentSectionFilter, setDepartmentSectionFilter] = useState("");
-    const [departmentsList, setDepartmentsList] = useState<{ code: string; name?: string }[]>([]);
     const [departmentSectionsList, setDepartmentSectionsList] = useState<{ id: string; name?: string; slug?: string }[]>([]);
     const [page, setPage] = useState(1);
     const [total, setTotal] = useState(0);
@@ -73,7 +72,7 @@ export default function PosOrdersPage() {
     const [showAddItemsModal, setShowAddItemsModal] = useState(false);
     const [selectedOrderForItems, setSelectedOrderForItems] = useState<Order | null>(null);
     
-    const limit = 10;
+    const limit = 100;
 
     useEffect(() => {
         const fetchOrders = async () => {
@@ -182,18 +181,6 @@ export default function PosOrdersPage() {
     };
 
     useEffect(() => {
-        const fetchDepartments = async () => {
-            try {
-                const res = await fetch(`/api/departments?limit=200`);
-                const data = await res.json();
-                if (data?.success) {
-                    const list = (data.data?.items || []).map((d: any) => ({ code: d.code, name: d.name }));
-                    setDepartmentsList(list);
-                }
-            } catch (err) {
-                console.error("Failed to load departments", err);
-            }
-        };
 
         const fetchDepartmentSections = async () => {
             try {
@@ -212,7 +199,6 @@ export default function PosOrdersPage() {
             }
         };
 
-        fetchDepartments();
         fetchDepartmentSections();
     }, []);
 
@@ -320,15 +306,11 @@ export default function PosOrdersPage() {
                     // amountDue is calculated in cents
                     const amountDueCents = item.amountDue ?? ((item.total ?? 0) - (item.totalPaid ?? 0));
                     const isUnpaid = amountDueCents > 0;
-                    const isPaid = item.paymentStatus === 'paid' || item.paymentStatus === 'partial' || item.paymentStatus === 'completed';
                     const isRefunded = item.paymentStatus === 'refunded' || item.status === 'refunded';
                     const isCancelledOrRefunded = item.status === 'cancelled' || item.status === 'refunded';
                     
                     // Determine which buttons to show
-                    const canPay = isUnpaid && !isCancelledOrRefunded && !isRefunded;
-                    const canAddItem = !isCancelledOrRefunded && item.status === 'pending';
-                    const canRefund = item.status === 'pending' && isPaid && !isRefunded;
-                    
+                    const canPay = isUnpaid && !isCancelledOrRefunded && !isRefunded;                
                     return (
                         <div className="flex gap-2">
                             {canPay && (
@@ -436,15 +418,6 @@ export default function PosOrdersPage() {
                                     { value: "fulfilled", label: "Fulfilled" },
                                     { value: "completed", label: "Completed" },
                                     { value: "cancelled", label: "Cancelled" },
-                                ],
-                            },
-                            {
-                                key: "department",
-                                label: "Department",
-                                value: departmentFilter || "all",
-                                options: [
-                                    { value: "all", label: "All Departments" },
-                                    ...departmentsList.map((d) => ({ value: d.code, label: d.name || d.code })),
                                 ],
                             },
                             {

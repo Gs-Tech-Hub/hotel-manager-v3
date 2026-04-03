@@ -24,7 +24,7 @@ export class SectionService {
     const page = Math.max(1, params.page || this.DEFAULT_PAGE)
     const pageSize = Math.min(this.MAX_PAGE_SIZE, Math.max(5, params.pageSize || this.DEFAULT_PAGE_SIZE))
     const skip = (page - 1) * pageSize
-    const type = (params.type || '').toString()
+    const type = params.type || '' // Keep as is, don't force string conversion from undefined
     const search = params.search || ''
     const includeDetails = Boolean(params.includeDetails)
     const sectionFilter = params.sectionFilter || null
@@ -355,7 +355,7 @@ export class SectionService {
         })
 
         // Map services to product format
-        const mapped = services.map((service: any) => {
+        let mapped = services.map((service: any) => {
           let unitPrice = 0
           if (service.pricingModel === 'per_count' && service.pricePerCount) {
             unitPrice = Math.round(Number(service.pricePerCount) * 100)
@@ -372,8 +372,59 @@ export class SectionService {
             pricingModel: service.pricingModel,
             serviceType: service.serviceType,
             description: service.description,
+            isService: true,
           }
         })
+
+        // Add date-filtered sales data if includeDetails is true
+        if (includeDetails && mapped.length > 0) {
+          const serviceIds = mapped.map((m: any) => m.id)
+          
+          let dateWhere = buildDateFilter(params.fromDate, params.toDate)
+          if (!params.fromDate && !params.toDate) {
+            const today = getTodayDate()
+            dateWhere = buildDateFilter(today, today)
+          }
+
+          const soldGroups = await prisma.orderLine.groupBy({
+            by: ['productId'],
+            where: {
+              productId: { in: serviceIds },
+              status: 'fulfilled',
+              orderHeader: {
+                status: { in: ['processing', 'fulfilled', 'completed'] },
+                paymentStatus: { in: ['paid', 'partial'] },
+                ...dateWhere,
+              },
+              ...(resolvedSectionId ? { departmentSectionId: resolvedSectionId } : {}),
+            },
+            _sum: { quantity: true, lineTotal: true },
+          })
+
+          const pendingGroups = await prisma.orderLine.groupBy({
+            by: ['productId'],
+            where: {
+              productId: { in: serviceIds },
+              status: { in: ['pending', 'processing'] },
+              orderHeader: { status: { not: 'cancelled' }, ...dateWhere },
+              ...(resolvedSectionId ? { departmentSectionId: resolvedSectionId } : {}),
+            },
+            _sum: { quantity: true },
+          })
+
+          const soldMap = new Map(soldGroups.map((g: any) => [g.productId, g._sum]))
+          const pendingMap = new Map(pendingGroups.map((g: any) => [g.productId, g._sum]))
+
+          mapped = mapped.map((m: any) => {
+            const sold = soldMap.get(m.id)
+            return {
+              ...m,
+              unitsSold: sold?.quantity || 0,
+              amountSold: (m.unitPrice * (sold?.quantity || 0)),
+              pendingQuantity: (pendingMap.get(m.id) as any)?.quantity || 0,
+            }
+          })
+        }
 
         return { items: mapped, total, page, pageSize }
       }
@@ -401,7 +452,7 @@ export class SectionService {
       })
 
       // Map services to product format
-      const mapped = services.map((service: any) => {
+      let mapped = services.map((service: any) => {
         let unitPrice = 0
         if (service.pricingModel === 'per_count' && service.pricePerCount) {
           unitPrice = Math.round(Number(service.pricePerCount) * 100)
@@ -418,8 +469,57 @@ export class SectionService {
           pricingModel: service.pricingModel,
           serviceType: service.serviceType,
           description: service.description,
+          isService: true,
         }
       })
+
+      // Add date-filtered sales data if includeDetails is true
+      if (includeDetails && mapped.length > 0) {
+        const serviceIds = mapped.map((m: any) => m.id)
+        
+        let dateWhere = buildDateFilter(params.fromDate, params.toDate)
+        if (!params.fromDate && !params.toDate) {
+          const today = getTodayDate()
+          dateWhere = buildDateFilter(today, today)
+        }
+
+        const soldGroups = await prisma.orderLine.groupBy({
+          by: ['productId'],
+          where: {
+            productId: { in: serviceIds },
+            status: 'fulfilled',
+            orderHeader: {
+              status: { in: ['processing', 'fulfilled', 'completed'] },
+              paymentStatus: { in: ['paid', 'partial'] },
+              ...dateWhere,
+            },
+          },
+          _sum: { quantity: true, lineTotal: true },
+        })
+
+        const pendingGroups = await prisma.orderLine.groupBy({
+          by: ['productId'],
+          where: {
+            productId: { in: serviceIds },
+            status: { in: ['pending', 'processing'] },
+            orderHeader: { status: { not: 'cancelled' }, ...dateWhere },
+          },
+          _sum: { quantity: true },
+        })
+
+        const soldMap = new Map(soldGroups.map((g: any) => [g.productId, g._sum]))
+        const pendingMap = new Map(pendingGroups.map((g: any) => [g.productId, g._sum]))
+
+        mapped = mapped.map((m: any) => {
+          const sold = soldMap.get(m.id)
+          return {
+            ...m,
+            unitsSold: sold?.quantity || 0,
+            amountSold: (m.unitPrice * (sold?.quantity || 0)),
+            pendingQuantity: (pendingMap.get(m.id) as any)?.quantity || 0,
+          }
+        })
+      }
 
       return { items: mapped, total, page, pageSize }
     }
@@ -494,7 +594,7 @@ export class SectionService {
 
         // If section has no items, check for services
         if (items.length === 0) {
-          const servicesResult = await this.getServicesForSection(dept.id, resolvedSectionId, search, skip, pageSize)
+          const servicesResult = await this.getServicesForSection(dept.id, resolvedSectionId, search, skip, pageSize, params.fromDate, params.toDate)
           if (servicesResult.items.length > 0) {
             return { items: servicesResult.items, total: servicesResult.total, page, pageSize }
           }
@@ -610,14 +710,22 @@ export class SectionService {
     resolvedSectionId: string | undefined,
     search: string = '',
     skip: number = 0,
-    pageSize: number = 20
+    pageSize: number = 20,
+    fromDate?: string | null,
+    toDate?: string | null
   ) {
     // Helper to calculate service stats from OrderLine records
     const getServiceStats = async (serviceId: string) => {
+      // Build date filter
+      const dateFilter = buildDateFilter(fromDate, toDate)
+      
       const orderLines = await prisma.orderLine.findMany({
         where: {
           productId: serviceId,
           productType: 'service',
+          orderHeader: {
+            ...dateFilter,
+          },
         },
         include: {
           orderHeader: {

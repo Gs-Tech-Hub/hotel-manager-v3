@@ -50,8 +50,22 @@ export async function GET(
     const status = searchParams.get('status') || undefined;
     const fromDate = searchParams.get('fromDate') || undefined;
     const toDate = searchParams.get('toDate') || undefined;
+    const customerId = searchParams.get('customerId') || undefined;
+    const paymentStatus = searchParams.get('paymentStatus') || undefined;
+    
+    // Detect if any filter is active
+    const hasActiveFilter = Boolean(status || fromDate || toDate || customerId || paymentStatus);
+    
+    // If filters are active, load all results (up to max of 9999)
+    // Otherwise use pagination (default 20, max 100)
+    let limit: number;
+    if (hasActiveFilter) {
+      limit = 9999; // Load all matching results when filtering
+    } else {
+      limit = Math.min(100, Math.max(1, parseInt(searchParams.get('limit') || '20', 10)));
+    }
+    
     const page = Math.max(1, parseInt(searchParams.get('page') || '1', 10));
-    const limit = Math.min(100, Math.max(1, parseInt(searchParams.get('limit') || '20', 10)));
 
     // Build date filter using centralized utility
     const dateWhere = buildDateFilter(fromDate, toDate);

@@ -4,7 +4,7 @@ import { useEffect, useState } from "react";
 import { useParams, useRouter } from "next/navigation";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-import { Loader2, CheckCircle2, AlertCircle, Plus } from "lucide-react";
+import { Loader2, CheckCircle2, AlertCircle, Plus, Printer, Edit } from "lucide-react";
 import { formatCents } from '@/lib/price';
 import Link from "next/link";
 import { Badge } from "@/components/ui/badge";
@@ -18,6 +18,8 @@ import {
 } from "@/components/ui/dialog";
 import { OrderExtrasDialog } from "@/components/pos/orders/OrderExtrasDialog";
 import { OrderLineExtras } from "@/components/pos/orders/OrderLineExtras";
+import { POSReceipt } from "@/components/admin/pos/pos-receipt";
+import { EditCustomerModal } from "@/components/pos/orders/EditCustomerModal";
 
 export default function OrderDetailPage() {
     const params = useParams();
@@ -37,6 +39,8 @@ export default function OrderDetailPage() {
     const [selectedLineId, setSelectedLineId] = useState<string | null>(null);
     const [selectedSectionId, setSelectedSectionId] = useState<string | null>(null);
     const [selectedDepartmentCode, setSelectedDepartmentCode] = useState<string | null>(null);
+    const [receiptOpen, setReceiptOpen] = useState(false);
+    const [editCustomerOpen, setEditCustomerOpen] = useState(false);
 
     useEffect(() => {
         if (!id) return;
@@ -70,10 +74,11 @@ export default function OrderDetailPage() {
     const refreshOrder = async () => {
         if (!order?.id) return;
         try {
-            const res = await fetch(`/api/orders/${order.id}`, { credentials: 'same-origin' });
+            const res = await fetch(`/api/orders/${order.id}?t=${Date.now()}`, { credentials: 'same-origin' });
             const data = await res.json();
             if (res.ok && data && data.success) {
                 setOrder(data.data);
+                console.log("Order refreshed with customer:", data.data?.customer);
             }
         } catch (e) {
             console.error("Error refreshing order:", e);
@@ -248,7 +253,7 @@ export default function OrderDetailPage() {
     
     // Determine available actions
     const canCancel = order.status === 'pending' || order.status === 'processing';
-    const canRefund = (order.status === 'pending' || order.status === 'processing' || order.status === 'fulfilled' || order.status === 'completed') && 
+    const canRefund = (order.status === 'pending' || order.status === 'processing' || order.status === 'completed') && 
                       (order.paymentStatus === 'paid' || order.paymentStatus === 'partial' || order.paymentStatus === 'completed');
 
     return (
@@ -266,6 +271,26 @@ export default function OrderDetailPage() {
                     <Button variant="outline" onClick={() => router.push('/pos/orders')}>Back</Button>
                     <Button onClick={fulfillAll} disabled={isUpdating || order.status === 'cancelled' || order.status === 'refunded' || (order.lines && order.lines.every((l: any) => l.status === 'fulfilled'))}>
                         {isUpdating ? 'Working...' : 'Mark All Fulfilled'}
+                    </Button>
+                    <Button
+                        variant="outline"
+                        size="sm"
+                        onClick={() => setReceiptOpen(true)}
+                        disabled={isUpdating}
+                        title="Print or view receipt for this order"
+                    >
+                        <Printer className="h-4 w-4 mr-1" />
+                        Print Receipt
+                    </Button>
+                    <Button
+                        variant="outline"
+                        size="sm"
+                        onClick={() => setEditCustomerOpen(true)}
+                        disabled={isUpdating}
+                        title="Edit customer information"
+                    >
+                        <Edit className="h-4 w-4 mr-1" />
+                        Edit Customer
                     </Button>
                     {canRefund && (
                         <Button 
@@ -292,7 +317,18 @@ export default function OrderDetailPage() {
             <div className="grid gap-6 md:grid-cols-2">
                 <Card>
                     <CardHeader>
-                        <CardTitle>Customer</CardTitle>
+                        <div className="flex items-center justify-between">
+                            <CardTitle>Customer</CardTitle>
+                            <Button
+                                size="sm"
+                                variant="ghost"
+                                onClick={() => setEditCustomerOpen(true)}
+                                disabled={isUpdating}
+                                title="Edit customer information"
+                            >
+                                <Edit className="h-4 w-4" />
+                            </Button>
+                        </div>
                     </CardHeader>
                     <CardContent>
                         <p className="font-semibold">{(order.customer as any)?.firstName || (order.customer as any)?.name || 'Guest'} {(order.customer as any)?.lastName || ''}</p>
@@ -622,6 +658,40 @@ export default function OrderDetailPage() {
                 orderLineId={selectedLineId || ''}
                 departmentCode={selectedDepartmentCode || undefined}
                 sectionId={selectedSectionId || undefined}
+                onSuccess={refreshOrder}
+            />
+
+            {/* Print Receipt Modal */}
+            {receiptOpen && order && (
+                <POSReceipt
+                    receipt={{
+                        orderNumber: order.orderNumber || order.id,
+                        items: (order.lines || []).map((line: any) => ({
+                            ...line,
+                            lineId: line.id || line.lineId,
+                        })),
+                        discounts: order.discounts || [],
+                        total: order.total || 0,
+                        taxAmount: order.tax || 0,
+                        subtotal: order.subtotal || 0,
+                        orderTypeDisplay: order.orderType || 'Order',
+                        isDeferred: order.status === 'pending',
+                        paymentStatus: order.paymentStatus,
+                        customerName: order.customer
+                            ? `${order.customer.firstName || ''} ${order.customer.lastName || ''}`.trim()
+                            : 'Guest',
+                        createdAt: order.createdAt,
+                    }}
+                    onClose={() => setReceiptOpen(false)}
+                />
+            )}
+
+            {/* Edit Customer Modal */}
+            <EditCustomerModal
+                open={editCustomerOpen}
+                onOpenChange={setEditCustomerOpen}
+                customer={order?.customer || null}
+                orderId={order?.id || ''}
                 onSuccess={refreshOrder}
             />
         </div>
