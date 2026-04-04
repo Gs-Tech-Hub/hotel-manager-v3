@@ -115,12 +115,13 @@ export async function POST(request: NextRequest, { params }: { params: Promise<{
     const foodItems = mappedItems.filter(m => m.productType === 'food')
     const extraItems = mappedItems.filter(m => m.productType === 'extra')
 
-    // Check drinks
+    // Check drinks - use consolidated inventory (null = all departments)
+    // Validation matches what display endpoint shows
     if (drinkItems.length > 0) {
       const availabilityChecks = await stockService.checkAvailabilityBatch(
         'drink',
         drinkItems.map(m => ({ productId: m.productId, requiredQuantity: m.quantity })),
-        fromDept.id
+        null
       )
       for (const check of availabilityChecks) {
         if (!check.hasStock) {
@@ -129,9 +130,9 @@ export async function POST(request: NextRequest, { params }: { params: Promise<{
       }
     }
 
-    // Check inventory items separately
+    // Check inventory items separately - use consolidated inventory (null = all departments)
     if (invItems.length > 0) {
-      const invChecks = await stockService.checkAvailabilityBatch('inventoryItem', invItems.map(m => ({ productId: m.productId, requiredQuantity: m.quantity })), fromDept.id)
+      const invChecks = await stockService.checkAvailabilityBatch('inventoryItem', invItems.map(m => ({ productId: m.productId, requiredQuantity: m.quantity })), null)
       for (const check of invChecks) {
         if (!check.hasStock) {
           return NextResponse.json(errorResponse(ErrorCodes.VALIDATION_ERROR, check.message || `Insufficient inventory for product ${check.productId}`), { status: getStatusCode(ErrorCodes.VALIDATION_ERROR) })
@@ -140,8 +141,9 @@ export async function POST(request: NextRequest, { params }: { params: Promise<{
     }
 
     // Check food items - NOW UNIVERSALLY TRANSFERABLE (not restricted to restaurant departments)
+    // Use consolidated inventory (null = all departments)
     if (foodItems.length > 0) {
-      const foodChecks = await stockService.checkAvailabilityBatch('food', foodItems.map(m => ({ productId: m.productId, requiredQuantity: m.quantity })), fromDept.id)
+      const foodChecks = await stockService.checkAvailabilityBatch('food', foodItems.map(m => ({ productId: m.productId, requiredQuantity: m.quantity })), null)
       for (const check of foodChecks) {
         if (!check.hasStock) {
           return NextResponse.json(errorResponse(ErrorCodes.VALIDATION_ERROR, check.message || `Insufficient food stock for ${check.productId}`), { status: getStatusCode(ErrorCodes.VALIDATION_ERROR) })

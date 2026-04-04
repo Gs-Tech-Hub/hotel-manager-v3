@@ -9,6 +9,7 @@ import { DepartmentExtrasService } from './department-extras.service'
  * 
  * KEY PRINCIPLE: Always use stockService for ALL stock validation and balance queries.
  * Never query Drink.barStock, InventoryItem.quantity directly - use DepartmentInventory through stockService.
+ * DepartmentInventory is the single source of truth for all inventory quantities.
  */
 export class TransferService {
   constructor() {}
@@ -121,37 +122,53 @@ export class TransferService {
         // Preflight: fetch all referenced records to validate availability and prepare batched payloads.
         const inventoryItemIds: string[] = []
         const drinkIds: string[] = []
-        for (const it of transfer.items) {
+        for (const it of transfer.items as Array<{ productType: string; productId: string; quantity: number }>) {
           if (it.productType === 'inventoryItem') inventoryItemIds.push(it.productId)
           if (it.productType === 'drink') drinkIds.push(it.productId)
         }
 
         const allProductIds = [...inventoryItemIds, ...drinkIds]
-        const [inventoryItems, drinks, deptInventories] = await Promise.all([
+        const [inventoryItems, drinks, deptInventories, allDeptInventories] = await Promise.all([
           inventoryItemIds.length ? prisma.inventoryItem.findMany({ where: { id: { in: inventoryItemIds } } }) : Promise.resolve([]),
           drinkIds.length ? prisma.drink.findMany({ where: { id: { in: drinkIds } } }) : Promise.resolve([]),
-          // Fetch all department inventories for the products being transferred, from source and destination departments
+          // Load source + destination records for destination lookup logic
           allProductIds.length ? prisma.departmentInventory.findMany({ 
             where: { 
               inventoryItemId: { in: allProductIds },
               departmentId: { in: [transfer.fromDepartmentId, transfer.toDepartmentId] }
             } 
           }) : Promise.resolve([]),
+          // Load all departments for consolidated deduction lookups
+          allProductIds.length ? prisma.departmentInventory.findMany({ 
+            where: { 
+              inventoryItemId: { in: allProductIds },
+              sectionId: null  // Only department-level stock, not section allocations
+            } 
+          }) : Promise.resolve([]),
         ])
 
         const invMap = new Map(inventoryItems.map((i: any) => [i.id, i]))
         const drinkMap = new Map(drinks.map((d: any) => [d.id, d]))
+        
+        // deptInvMap: source + destination only (for destination lookup)
         const deptInvMap = new Map<string, any>()
         for (const di of (deptInventories as any[])) {
           const key = `${di.departmentId}::${di.sectionId ? di.sectionId + '::' : ''}${di.inventoryItemId}`
           deptInvMap.set(key, di)
+        }
+        
+        // allDeptInvMap: all departments (for consolidated deduction)
+        const allDeptInvMap = new Map<string, any>()
+        for (const di of (allDeptInventories as any[])) {
+          const key = `${di.departmentId}::${di.sectionId ? di.sectionId + '::' : ''}${di.inventoryItemId}`
+          allDeptInvMap.set(key, di)
         }
 
         // Validate availability outside the transaction to fail fast for obvious errors.
         // Use stockService for all balance checks - this ensures consistency between display and validation
         // For extras and services, validate existence directly without checking quantities
         let validationError: string | null = null
-        for (const it of transfer.items) {
+        for (const it of transfer.items as Array<{ productType: string; productId: string; quantity: number }>) {
           if (it.productType === 'extra') {
             // For extras, check DepartmentExtras allocation at department level (sectionId = null)
             const deptExtra = await prisma.departmentExtra.findFirst({
@@ -204,8 +221,9 @@ export class TransferService {
               break
             }
           } else {
-            // For drinks and inventory, use stockService (which properly checks department-level stock)
-            const check = await stockService.checkAvailability(it.productType, it.productId, transfer.fromDepartmentId, it.quantity)
+            // For drinks and inventory, use consolidated inventory check (matches display)
+            // Validate against total available across all departments, not just source
+            const check = await stockService.checkAvailability(it.productType, it.productId, null, it.quantity)
 
             if (!check.hasStock) {
               validationError = check.message || `Insufficient stock for product ${it.productId}`
@@ -220,6 +238,7 @@ export class TransferService {
 
         // Build minimal write payloads to run in the interactive transaction.
         // CRITICAL: We must update DepartmentInventory ONLY, not Drink or InventoryItem tables
+        // In consolidated mode: find stock from ANY department, not just source
         const sourceDecrements: Array<{ departmentId: string; sectionId?: string | null; inventoryItemId: string; amount: number }> = []
         const destCreates: Array<{ departmentId: string; sectionId?: string | null; inventoryItemId: string; quantity: number; unitPrice: any }> = []
         const destIncrements: Array<{ departmentId: string; sectionId?: string | null; inventoryItemId: string; amount: number }> = []
@@ -229,7 +248,7 @@ export class TransferService {
         const extrasToTransfer: Array<{ departmentId: string; extraId: string; sourceSectionId: string | null; destinationSectionId: string | null; quantity: number }> = []
         const servicesToTransfer: Array<{ serviceId: string; targetDepartmentId: string; targetSectionId: string | null }> = []
 
-        for (const it of transfer.items) {
+        for (const it of transfer.items as Array<{ productType: string; productId: string; quantity: number }>) {
           if (it.productType === 'service') {
             // Services: CLONE into destination scope (keep original)
             const toSectionId = (toDept as any).isSection ? (toDept as any).id : null
@@ -251,33 +270,128 @@ export class TransferService {
             })
           } else if (it.productType === 'drink') {
             const drink = drinkMap.get(it.productId)
-            // For drinks: update DepartmentInventory, not Drink table
-            // SOURCE is always a DEPARTMENT (sectionId = null)
-            sourceDecrements.push({ departmentId: transfer.fromDepartmentId, sectionId: null, inventoryItemId: it.productId, amount: it.quantity })
+            // CONSOLIDATED MODE: Find this product in any department's allocation
+            // PRIORITY: Try source department first, then spillover to other departments
+            let remainingQty = it.quantity
+            
+            // 1) Try source department first
+            const sourceKey = `${transfer.fromDepartmentId}::${it.productId}`
+            const sourceRecord = allDeptInvMap.get(sourceKey)
+            if (sourceRecord && sourceRecord.quantity >= remainingQty) {
+              // Source has all we need
+              sourceDecrements.push({ 
+                departmentId: transfer.fromDepartmentId, 
+                sectionId: null, 
+                inventoryItemId: it.productId, 
+                amount: remainingQty 
+              })
+              remainingQty = 0
+            } else if (sourceRecord && sourceRecord.quantity > 0) {
+              // Source has partial amount
+              sourceDecrements.push({ 
+                departmentId: transfer.fromDepartmentId, 
+                sectionId: null, 
+                inventoryItemId: it.productId, 
+                amount: sourceRecord.quantity 
+              })
+              remainingQty -= sourceRecord.quantity
+            }
+            
+            // 2) If still needed, find other departments
+            if (remainingQty > 0) {
+              for (const [key, record] of allDeptInvMap.entries()) {
+                if (record.inventoryItemId === it.productId && record.departmentId !== transfer.fromDepartmentId && record.quantity > 0 && remainingQty > 0) {
+                  const toDeduct = Math.min(record.quantity, remainingQty)
+                  sourceDecrements.push({ 
+                    departmentId: record.departmentId, 
+                    sectionId: null, 
+                    inventoryItemId: it.productId, 
+                    amount: toDeduct 
+                  })
+                  remainingQty -= toDeduct
+                }
+              }
+            }
 
             const toSectionId = (toDept as any).isSection ? (toDept as any).id : null
-            const keyTo = `${transfer.toDepartmentId}::${toSectionId ? toSectionId + '::' : ''}${it.productId}`
+            const toDeptId = (toDept as any).isSection ? (toDept as any).parentDeptId : transfer.toDepartmentId
+            
+            // Build destination key exactly as it's stored in deptInvMap
+            let keyTo = `${toDeptId}::`
+            if (toSectionId) {
+              keyTo += `${toSectionId}::`
+            }
+            keyTo += `${it.productId}`
+            
             const toRecord = deptInvMap.get(keyTo)
             if (toRecord) {
-              destIncrements.push({ departmentId: transfer.toDepartmentId, sectionId: toSectionId, inventoryItemId: it.productId, amount: it.quantity })
+              destIncrements.push({ departmentId: toDeptId, sectionId: toSectionId, inventoryItemId: it.productId, amount: it.quantity })
             } else {
-              destCreates.push({ departmentId: transfer.toDepartmentId, sectionId: toSectionId, inventoryItemId: it.productId, quantity: it.quantity, unitPrice: drink?.price ?? 0 })
+              destCreates.push({ departmentId: toDeptId, sectionId: toSectionId, inventoryItemId: it.productId, quantity: it.quantity, unitPrice: drink?.price ?? 0 })
             }
 
             movementRows.push({ movementType: 'out', quantity: it.quantity, reason: 'transfer-out', reference: transferId, inventoryItemId: it.productId })
             movementRows.push({ movementType: 'in', quantity: it.quantity, reason: 'transfer-in', reference: transferId, inventoryItemId: it.productId })
           } else {
             const inv = invMap.get(it.productId)
-            // SOURCE is always a DEPARTMENT (sectionId = null)
-            sourceDecrements.push({ departmentId: transfer.fromDepartmentId, sectionId: null, inventoryItemId: it.productId, amount: it.quantity })
+            // CONSOLIDATED MODE: Find this product in any department's allocation
+            // PRIORITY: Try source department first, then spillover to other departments
+            let remainingQty = it.quantity
+            
+            // 1) Try source department first
+            const sourceKey = `${transfer.fromDepartmentId}::${it.productId}`
+            const sourceRecord = allDeptInvMap.get(sourceKey)
+            if (sourceRecord && sourceRecord.quantity >= remainingQty) {
+              // Source has all we need
+              sourceDecrements.push({ 
+                departmentId: transfer.fromDepartmentId, 
+                sectionId: null, 
+                inventoryItemId: it.productId, 
+                amount: remainingQty 
+              })
+              remainingQty = 0
+            } else if (sourceRecord && sourceRecord.quantity > 0) {
+              // Source has partial amount
+              sourceDecrements.push({ 
+                departmentId: transfer.fromDepartmentId, 
+                sectionId: null, 
+                inventoryItemId: it.productId, 
+                amount: sourceRecord.quantity 
+              })
+              remainingQty -= sourceRecord.quantity
+            }
+            
+            // 2) If still needed, find other departments
+            if (remainingQty > 0) {
+              for (const [key, record] of allDeptInvMap.entries()) {
+                if (record.inventoryItemId === it.productId && record.departmentId !== transfer.fromDepartmentId && record.quantity > 0 && remainingQty > 0) {
+                  const toDeduct = Math.min(record.quantity, remainingQty)
+                  sourceDecrements.push({ 
+                    departmentId: record.departmentId, 
+                    sectionId: null, 
+                    inventoryItemId: it.productId, 
+                    amount: toDeduct 
+                  })
+                  remainingQty -= toDeduct
+                }
+              }
+            }
 
             const toSectionId = (toDept as any).isSection ? (toDept as any).id : null
-            const keyTo = `${transfer.toDepartmentId}::${toSectionId ? toSectionId + '::' : ''}${it.productId}`
+            const toDeptId = (toDept as any).isSection ? (toDept as any).parentDeptId : transfer.toDepartmentId
+            
+            // Build destination key exactly as it's stored in deptInvMap
+            let keyTo = `${toDeptId}::`
+            if (toSectionId) {
+              keyTo += `${toSectionId}::`
+            }
+            keyTo += `${it.productId}`
+            
             const toRecord = deptInvMap.get(keyTo)
             if (toRecord) {
-              destIncrements.push({ departmentId: transfer.toDepartmentId, sectionId: toSectionId, inventoryItemId: it.productId, amount: it.quantity })
+              destIncrements.push({ departmentId: toDeptId, sectionId: toSectionId, inventoryItemId: it.productId, amount: it.quantity })
             } else {
-              destCreates.push({ departmentId: transfer.toDepartmentId, sectionId: toSectionId, inventoryItemId: it.productId, quantity: it.quantity, unitPrice: inv?.unitPrice ?? 0 })
+              destCreates.push({ departmentId: toDeptId, sectionId: toSectionId, inventoryItemId: it.productId, quantity: it.quantity, unitPrice: inv?.unitPrice ?? 0 })
             }
 
             movementRows.push({ movementType: 'out', quantity: it.quantity, reason: 'transfer-out', reference: transferId, inventoryItemId: it.productId })
@@ -399,6 +513,7 @@ export class TransferService {
           }
 
           const took = Date.now() - start
+          
           // success
           return { success: true, message: `Transfer executed in ${took}ms` }
         } catch (txErr: any) {

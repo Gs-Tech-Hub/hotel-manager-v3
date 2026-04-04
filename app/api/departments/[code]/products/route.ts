@@ -39,7 +39,14 @@ export async function GET(request: NextRequest, { params }: { params: Promise<{ 
     })
     return NextResponse.json(successResponse({ data: result }))
   } catch (err: any) {
-    console.error('GET /api/departments/[code]/products error', err)
-    return NextResponse.json(errorResponse(ErrorCodes.INTERNAL_ERROR, 'Failed to fetch products'), { status: getStatusCode(ErrorCodes.INTERNAL_ERROR) })
+    console.error('GET /api/departments/[code]/products error', {
+      message: err?.message,
+      code: err?.code,
+      stack: err?.stack
+    })
+    return NextResponse.json(
+      errorResponse(ErrorCodes.INTERNAL_ERROR, `Failed to fetch products: ${err?.message}`),
+      { status: getStatusCode(ErrorCodes.INTERNAL_ERROR) }
+    )
   }
 }

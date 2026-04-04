@@ -16,7 +16,6 @@ import { Decimal } from '@prisma/client/runtime/library'
 export class StockService {
   /**
    * Get the current balance for a product in a department/section.
-   * This is the CANONICAL way to check stock levels.
    * 
    * @param productType - 'drink' or 'inventoryItem'
    * @param productId - The product ID
@@ -30,9 +29,10 @@ export class StockService {
     // Normalize sectionId: convert string 'null' to actual null
     const normalizedSectionId = sectionId === 'null' ? null : sectionId;
 
-    // First, check DepartmentInventory (the authoritative source)
+    // SINGLE SOURCE OF TRUTH: DepartmentInventory only
+    // No fallback to legacy tables (Drink.barStock, InventoryItem.quantity)
+    // This ensures display and transfer validation use the same source
     try {
-      // For drinks and inventoryItems, they're tracked in DepartmentInventory by inventoryItemId
       const record = await prisma.departmentInventory.findFirst({
         where: {
           departmentId,
@@ -43,106 +43,11 @@ export class StockService {
 
       if (record) return record.quantity ?? 0
     } catch (e) {
-      // DepartmentInventory query failed, will fall back below
+      console.error(`[STOCK] getBalance error for ${productType}/${productId}:`, e)
     }
 
-    // If section ID is provided (and not null), return 0 - sections should ONLY have transferred items
-    // Do NOT fall back to department or legacy stock for sections
-    if (normalizedSectionId && normalizedSectionId !== 'null') {
-      return 0
-    }
-
-    // If no DepartmentInventory record exists for DEPARTMENT level, fall back to legacy tables (for backward compatibility)
-    // But initialize DepartmentInventory from legacy data on first access
-    if (productType === 'drink') {
-      const drink = await prisma.drink.findUnique({ where: { id: productId } })
-      if (drink) {
-        const legacyBalance = drink.barStock ?? drink.quantity ?? 0
-
-        // Initialize DepartmentInventory from legacy data if it doesn't exist
-        if (legacyBalance > 0) {
-          try {
-            const createData: any = {
-              departmentId,
-              inventoryItemId: productId,
-              quantity: legacyBalance,
-            }
-            // unitPrice needs to be Decimal type
-            if (drink.price) {
-              createData.unitPrice = new Decimal(Math.round(Number(drink.price) * 100) / 100)
-            }
-
-            // For upsert with nullable sectionId, we need to query first
-            const existing = await prisma.departmentInventory.findFirst({
-              where: {
-                departmentId,
-                sectionId: undefined,
-                inventoryItemId: productId,
-              },
-            })
-
-            if (existing) {
-              await prisma.departmentInventory.update({
-                where: { id: existing.id },
-                data: { quantity: legacyBalance },
-              })
-            } else {
-              await prisma.departmentInventory.create({
-                data: createData,
-              })
-            }
-          } catch (e) {
-            // Initialization failed, just return the legacy value
-          }
-        }
-
-        return legacyBalance
-      }
-    } else if (productType === 'inventoryItem') {
-      const inv = await prisma.inventoryItem.findUnique({ where: { id: productId } })
-      if (inv) {
-        const legacyBalance = inv.quantity ?? 0
-
-        // Initialize DepartmentInventory from legacy data if it doesn't exist
-        if (legacyBalance > 0) {
-          try {
-            const createData: any = {
-              departmentId,
-              inventoryItemId: productId,
-              quantity: legacyBalance,
-            }
-            if (inv.unitPrice) {
-              createData.unitPrice = inv.unitPrice
-            }
-
-            // For upsert with nullable sectionId, we need to query first
-            const existing = await prisma.departmentInventory.findFirst({
-              where: {
-                departmentId,
-                sectionId: undefined,
-                inventoryItemId: productId,
-              },
-            })
-
-            if (existing) {
-              await prisma.departmentInventory.update({
-                where: { id: existing.id },
-                data: { quantity: legacyBalance },
-              })
-            } else {
-              await prisma.departmentInventory.create({
-                data: createData,
-              })
-            }
-          } catch (e) {
-            // Initialization failed, just return the legacy value
-          }
-        }
-
-        return legacyBalance
-      }
-    }
-
+    // If no record in DepartmentInventory, return 0
+    // Do NOT fall back to legacy tables - they are not authoritative
     return 0
   }
 
@@ -152,14 +57,14 @@ export class StockService {
    * 
    * @param productType - 'drink' or 'inventoryItem'
    * @param productIds - Array of product IDs
-   * @param departmentId - The department ID
+   * @param departmentId - The department ID (or null for consolidated across all depts)
    * @param sectionId - Optional section ID
    * @returns Map of productId -> balance
    */
   async getBalances(
     productType: string,
     productIds: string[],
-    departmentId: string,
+    departmentId: string | null,
     sectionId?: string | null
   ): Promise<Map<string, number>> {
     const balances = new Map<string, number>()
@@ -169,7 +74,36 @@ export class StockService {
     // Normalize sectionId: convert string 'null' to actual null
     const normalizedSectionId = sectionId === 'null' ? null : sectionId;
 
-    // Get from DepartmentInventory first
+    // If departmentId is null, sum across all departments (consolidated inventory)
+    if (departmentId === null) {
+      const totals = await prisma.departmentInventory.groupBy({
+        by: ['inventoryItemId'],
+        where: {
+          inventoryItemId: { in: productIds },
+          sectionId: null,  // ALWAYS exclude sections for consolidated inventory
+        },
+        _sum: {
+          quantity: true,
+        },
+      });
+
+      console.log(`[STOCK] getBalances consolidated query found ${totals.length} items`);
+      
+      for (const total of totals) {
+        balances.set(total.inventoryItemId, total._sum.quantity ?? 0);
+      }
+
+      // Set missing IDs to 0
+      for (const id of productIds) {
+        if (!balances.has(id)) {
+          balances.set(id, 0);
+        }
+      }
+
+      return balances;
+    }
+
+    // Get from DepartmentInventory first (specific department)
     const whereClause = {
       departmentId,
       inventoryItemId: { in: productIds },
@@ -203,114 +137,12 @@ export class StockService {
       foundInDeptInv.add(record.inventoryItemId)
     }
 
-    // For products not found in DepartmentInventory, handle differently based on section filter
+    // For products not found in DepartmentInventory, return 0
+    // Do NOT fall back to legacy tables - they are not authoritative
+    // SINGLE SOURCE OF TRUTH: DepartmentInventory only
     const missingIds = productIds.filter((id) => !foundInDeptInv.has(id))
-
-    // If section ID is provided (and not null), return 0 for missing items - sections should ONLY have transferred items
-    // Do NOT fall back to department or legacy stock for sections
-    if (normalizedSectionId && normalizedSectionId !== 'null') {
-      for (const id of missingIds) {
-        balances.set(id, 0)
-      }
-      return balances
-    }
-
-    // For department-level queries, check legacy tables as fallback
-    if (missingIds.length > 0) {
-      if (productType === 'drink') {
-        const drinks = await prisma.drink.findMany({
-          where: { id: { in: missingIds } },
-        })
-
-        for (const drink of drinks) {
-          const legacyBalance = drink.barStock ?? drink.quantity ?? 0
-          balances.set(drink.id, legacyBalance)
-
-          // Initialize DepartmentInventory from legacy data
-          if (legacyBalance > 0) {
-            try {
-              const createData: any = {
-                departmentId,
-                inventoryItemId: drink.id,
-                quantity: legacyBalance,
-              }
-              if (drink.price) {
-                createData.unitPrice = new Decimal(Math.round(Number(drink.price) * 100) / 100)
-              }
-
-              // Avoid composite-key upsert issues with nullable sectionId by
-              // doing an explicit lookup and then update/create.
-              const existing = await prisma.departmentInventory.findFirst({
-                where: {
-                  departmentId,
-                  inventoryItemId: drink.id,
-                  sectionId: null,
-                },
-              })
-
-              if (existing) {
-                await prisma.departmentInventory.update({
-                  where: { id: existing.id },
-                  data: { quantity: legacyBalance },
-                })
-              } else {
-                await prisma.departmentInventory.create({
-                  data: createData,
-                })
-              }
-            } catch (e) {
-              // Initialization failed, continue
-            }
-          }
-        }
-      } else if (productType === 'inventoryItem') {
-        // Only consider active inventory items when falling back to legacy table
-        const items = await prisma.inventoryItem.findMany({
-          where: { id: { in: missingIds }, isActive: true },
-        })
-
-        for (const item of items) {
-          const legacyBalance = item.quantity ?? 0
-          balances.set(item.id, legacyBalance)
-
-          // Initialize DepartmentInventory from legacy data
-          if (legacyBalance > 0) {
-            try {
-              const createData: any = {
-                departmentId,
-                inventoryItemId: item.id,
-                quantity: legacyBalance,
-              }
-              if (item.unitPrice) {
-                createData.unitPrice = item.unitPrice
-              }
-
-              // Avoid composite-key upsert issues with nullable sectionId by
-              // doing an explicit lookup and then update/create.
-              const existing = await prisma.departmentInventory.findFirst({
-                where: {
-                  departmentId,
-                  inventoryItemId: item.id,
-                  sectionId: null,
-                },
-              })
-
-              if (existing) {
-                await prisma.departmentInventory.update({
-                  where: { id: existing.id },
-                  data: { quantity: legacyBalance },
-                })
-              } else {
-                await prisma.departmentInventory.create({
-                  data: createData,
-                })
-              }
-            } catch (e) {
-              // Initialization failed, continue
-            }
-          }
-        }
-      }
+    for (const id of missingIds) {
+      balances.set(id, 0)
     }
 
     // Ensure all product IDs have an entry (default to 0 if not found)
@@ -337,11 +169,18 @@ export class StockService {
   async checkAvailability(
     productType: string,
     productId: string,
-    departmentId: string,
+    departmentId: string | null,
     requiredQuantity: number,
     sectionId?: string | null
   ): Promise<{ hasStock: boolean; available: number; required: number; message?: string }> {
-    const available = await this.getBalance(productType, productId, departmentId, sectionId)
+    // For consolidated mode (departmentId === null), use getBalances to sum across all depts
+    let available: number
+    if (departmentId === null) {
+      const balances = await this.getBalances(productType, [productId], null, sectionId)
+      available = balances.get(productId) ?? 0
+    } else {
+      available = await this.getBalance(productType, productId, departmentId, sectionId)
+    }
     const hasStock = available >= requiredQuantity
 
     return {
@@ -364,7 +203,7 @@ export class StockService {
   async checkAvailabilityBatch(
     productType: string,
     items: Array<{ productId: string; requiredQuantity: number }>,
-    departmentId: string,
+    departmentId: string | null,
     sectionId?: string | null
   ): Promise<Array<{ productId: string; hasStock: boolean; available: number; required: number; message?: string }>> {
     const productIds = items.map((i) => i.productId)

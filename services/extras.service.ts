@@ -283,6 +283,15 @@ export class ExtrasService extends BaseService<any> {
         return errorResponse(ErrorCodes.NOT_FOUND, 'Order line not found');
       }
 
+      // Get the department for this order line
+      const dept = await prisma.department.findFirst({
+        where: { code: orderLine.departmentCode },
+        select: { id: true }
+      });
+      if (!dept) {
+        return errorResponse(ErrorCodes.NOT_FOUND, 'Department not found for order line');
+      }
+
       // Create order extras
       const orderExtras = await Promise.all(
         data.extras.map(async (extra) => {
@@ -299,22 +308,35 @@ export class ExtrasService extends BaseService<any> {
 
           // If extra is linked to inventory and tracking enabled, deduct from inventory
           if (extraRecord.productId && extraRecord.trackInventory && extraRecord.product) {
-            // Check if sufficient inventory available
-            if (extraRecord.product.quantity < extra.quantity) {
+            // Check if sufficient inventory available in DepartmentInventory (single source of truth)
+            const deptInvRecord = await prisma.departmentInventory.findFirst({
+              where: {
+                departmentId: dept.id,
+                inventoryItemId: extraRecord.productId,
+                sectionId: null, // Check department-level stock
+              }
+            });
+            
+            const available = deptInvRecord?.quantity ?? 0;
+            if (available < extra.quantity) {
               throw new Error(
-                `Insufficient inventory for ${extraRecord.name}. Available: ${extraRecord.product.quantity}, Requested: ${extra.quantity}`
+                `Insufficient inventory for ${extraRecord.name}. Available: ${available}, Requested: ${extra.quantity}`
               );
             }
 
-            // Deduct from inventory
-            await prisma.inventoryItem.update({
-              where: { id: extraRecord.productId },
-              data: {
-                quantity: {
-                  decrement: extra.quantity
+            // Deduct from DepartmentInventory (single source of truth)
+            if (deptInvRecord) {
+              await prisma.departmentInventory.update({
+                where: { id: deptInvRecord.id },
+                data: {
+                  quantity: {
+                    decrement: extra.quantity
+                  }
                 }
-              }
-            });
+              });
+            } else {
+              throw new Error(`No inventory allocation found for ${extraRecord.name} in this department`);
+            }
 
             // Log the movement
             await prisma.inventoryMovement.create({

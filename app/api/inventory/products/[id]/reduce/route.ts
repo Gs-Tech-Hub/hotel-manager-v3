@@ -56,54 +56,56 @@ export async function POST(
       )
     }
 
-    // Reduce the quantity
-    const newQuantity = Math.max(0, product.quantity - quantity)
-    const updated = await prisma.inventoryItem.update({
-      where: { id },
-      data: {
-        quantity: newQuantity
-      }
-    })
-
-    // Get restaurant department for DepartmentInventory tracking
+    // Get the restaurant department for DepartmentInventory reduction
     const restaurantDept = await prisma.department.findFirst({
       where: { code: 'restaurant' }
     })
 
-    // Update DepartmentInventory (authoritative stock source)
-    if (restaurantDept) {
-      const existingDeptInv = await prisma.departmentInventory.findFirst({
-        where: {
-          inventoryItemId: id,
-          departmentId: restaurantDept.id,
-          sectionId: null
-        }
-      })
-
-      if (existingDeptInv) {
-        await prisma.departmentInventory.update({
-          where: { id: existingDeptInv.id },
-          data: {
-            quantity: Math.max(0, existingDeptInv.quantity - quantity)
-          }
-        })
-      }
-
-      // Log inventory movement for audit trail
-      await inventoryMovementService.create({
-        inventoryItemId: id,
-        movementType: 'out',
-        quantity: quantity,
-        reason: `Manual inventory reduction by admin`,
-        reference: `reduction-${ctx.userId}`
-      })
+    if (!restaurantDept) {
+      return NextResponse.json(
+        errorResponse(ErrorCodes.INTERNAL_ERROR, 'Restaurant department not found'),
+        { status: 500 }
+      )
     }
+
+    // Check current stock in DepartmentInventory
+    const deptInventory = await prisma.departmentInventory.findFirst({
+      where: {
+        inventoryItemId: id,
+        departmentId: restaurantDept.id,
+        sectionId: null
+      }
+    })
+
+    if (!deptInventory || deptInventory.quantity < quantity) {
+      return NextResponse.json(
+        errorResponse(ErrorCodes.BAD_REQUEST, 'Insufficient inventory to reduce'),
+        { status: 400 }
+      )
+    }
+
+    // Reduce in DepartmentInventory (source of truth)
+    const updated = await prisma.departmentInventory.update({
+      where: { id: deptInventory.id },
+      data: {
+        quantity: deptInventory.quantity - quantity
+      }
+    })
+
+    // Log inventory movement for audit trail
+    await inventoryMovementService.create({
+      inventoryItemId: id,
+      movementType: 'out',
+      quantity: quantity,
+      reason: `Manual inventory reduction by admin`,
+      reference: `reduction-${ctx.userId}`
+    })
 
     return NextResponse.json(
       successResponse({
         data: {
-          product: updated,
-          message: `Reduced ${product.name} by ${quantity}. New quantity: ${newQuantity}`
+          product: product,
+          message: `Reduced ${product.name} by ${quantity}. New quantity: ${updated.quantity}`
         }
       }),
       { status: 200 }

@@ -234,9 +234,16 @@ export class InventoryItemService extends BaseService<IInventoryItem> {
   }
 
   /**
-   * Update item quantity
+   * @deprecated Use DepartmentInventory for all quantity operations instead.
+   * InventoryItem.quantity is metadata only and should not be updated directly.
+   * 
+   * SINGLE SOURCE OF TRUTH: DepartmentInventory
+   * - Display, validation, and deduction all use DepartmentInventory
+   * - InventoryItem contains product metadata (name, SKU, category, unitPrice)
+   * - Sections track allocations via DepartmentInventory.sectionId
    */
   async updateQuantity(itemId: string, quantity: number): Promise<IInventoryItem | null> {
+    console.warn('[DEPRECATED] updateQuantity() should not be used. Use DepartmentInventory operations instead.');
     try {
       const row = await prisma.inventoryItem.update({
         where: { id: itemId },

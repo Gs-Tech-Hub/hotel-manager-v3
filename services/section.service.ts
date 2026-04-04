@@ -88,6 +88,7 @@ export class SectionService {
       return { items: [], total: 0, page, pageSize }
     }
 
+    // Get main inventory (consolidated from all departments)
     // ALL PRODUCTS - Return mixed types (drinks, food, inventory items, extras)
     // Used for transfer panel "All Products" filter
     if (type === 'all') {
@@ -100,7 +101,7 @@ export class SectionService {
         where: search ? { name: { contains: search, mode: 'insensitive' } } : {},
         orderBy: { name: 'asc' }
       })
-      const drinkBalances = await stockService.getBalances('drink', drinks.map(d => d.id), dept.id, resolvedSectionId)
+      const drinkBalances = await stockService.getBalances('drink', drinks.map(d => d.id), resolvedSectionId ? dept.id : null, resolvedSectionId || null)
       allItems.push(...drinks.map((d: any) => ({ 
         id: d.id, 
         name: d.name, 
@@ -116,7 +117,7 @@ export class SectionService {
         where: search ? { name: { contains: search, mode: 'insensitive' } } : {},
         orderBy: { name: 'asc' }
       })
-      const foodBalances = await stockService.getBalances('food', foods.map(f => f.id), dept.id, resolvedSectionId)
+      const foodBalances = await stockService.getBalances('food', foods.map(f => f.id), resolvedSectionId ? dept.id : null, resolvedSectionId || null)
       allItems.push(...foods.map((f: any) => ({ 
         id: f.id, 
         name: f.name, 
@@ -135,7 +136,7 @@ export class SectionService {
         },
         orderBy: { name: 'asc' }
       })
-      const invBalances = await stockService.getBalances('inventoryItem', inventoryItems.map(i => i.id), dept.id, resolvedSectionId)
+      const invBalances = await stockService.getBalances('inventoryItem', inventoryItems.map(i => i.id), resolvedSectionId ? dept.id : null, resolvedSectionId || null)
       allItems.push(...inventoryItems.map((i: any) => ({ 
         id: i.id, 
         name: i.name, 
@@ -172,8 +173,8 @@ export class SectionService {
       }
     }
 
-    // UNIFIED INVENTORY SYSTEM: All items (drinks, food, inventory) are discoverable by any department
-    // Drinks - available to any department (not just BarAndClub)
+    // UNIFIED INVENTORY SYSTEM: All items read from main inventory source
+    // Drinks - available from main inventory source
     if (type === 'drink') {
       const where: any = { isActive: true }
       if (search) where.name = { contains: search, mode: 'insensitive' }
@@ -182,9 +183,9 @@ export class SectionService {
         prisma.drink.count({ where }),
       ])
 
-      // Use stockService for drink balances
+      // Get balances from section-specific or consolidated inventory
       const drinkIds = items.map((d: any) => d.id)
-      const drinkBalances = await stockService.getBalances('drink', drinkIds, dept.id, resolvedSectionId)
+      const drinkBalances = await stockService.getBalances('drink', drinkIds, resolvedSectionId ? dept.id : null, resolvedSectionId || null)
 
       let mapped = items.map((d: any) => ({ id: d.id, name: d.name, type: 'drink', available: drinkBalances.get(d.id) ?? 0, unitPrice: Math.round(Number(d.price) * 100) }))
 
@@ -250,9 +251,9 @@ export class SectionService {
         prisma.foodItem.count({ where }),
       ])
 
-      // Use stockService for food balances
+      // Use stockService for food balances from section-specific or consolidated inventory
       const foodIds = items.map((f: any) => f.id)
-      const foodBalances = await stockService.getBalances('food', foodIds, dept.id, resolvedSectionId)
+      const foodBalances = await stockService.getBalances('food', foodIds, resolvedSectionId ? dept.id : null, resolvedSectionId || null)
 
       let mapped = items.map((f: any) => ({ id: f.id, name: f.name, type: 'food', available: foodBalances.get(f.id) ?? 0, unitPrice: Math.round(Number(f.price) * 100) }))
 
@@ -608,7 +609,7 @@ export class SectionService {
       }
 
       const itemIds = items.map((i: any) => i.id)
-      const balances = await stockService.getBalances('inventoryItem', itemIds, dept.id, resolvedSectionId)
+      const balances = await stockService.getBalances('inventoryItem', itemIds, resolvedSectionId ? dept.id : null, resolvedSectionId || null)
 
       let mapped = items.map((it: any) => ({ 
         id: it.id, 

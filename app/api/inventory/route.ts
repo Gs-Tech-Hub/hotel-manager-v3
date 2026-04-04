@@ -139,19 +139,28 @@ export async function GET(req: NextRequest) {
       }));
     }
 
-    // Enrich items with quantities from DepartmentInventory (authoritative source)
-    if (activeDeptId && items.length > 0) {
-      const enrichedItems = await Promise.all(
-        items.map(async (item: any) => {
-          // Get quantity from DepartmentInventory via StockService
-          const balance = await stockService.getBalance('inventoryItem', item.id, activeDeptId!);
-          return {
-            ...item,
-            quantity: balance,
-          };
-        })
-      );
-      items = enrichedItems;
+    // Enrich items with quantities from consolidated inventory (sum across all departments)
+    if (items.length > 0) {
+      const itemIds = items.map((item: any) => item.id);
+      
+      // Get total quantities by summing across all departments for each item
+      const totals = await prisma.departmentInventory.groupBy({
+        by: ['inventoryItemId'],
+        where: {
+          inventoryItemId: { in: itemIds },
+          sectionId: null  // Only department-level, not sections
+        },
+        _sum: {
+          quantity: true
+        }
+      });
+      
+      const quantityMap = new Map(totals.map(t => [t.inventoryItemId, t._sum.quantity ?? 0]));
+      
+      items = items.map((item: any) => ({
+        ...item,
+        quantity: quantityMap.get(item.id) ?? 0,
+      }));
     }
 
     // Apply pagination

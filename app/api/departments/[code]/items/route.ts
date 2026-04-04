@@ -54,34 +54,41 @@ export async function GET(
       );
     }
 
-    // Fetch inventory items for this department
-    const deptInvWhere: any = { departmentId: dept.id };
-    if (sectionId) {
-      deptInvWhere.sectionId = sectionId;
-    } else {
-      // Only fetch parent-level (department-level) inventory when no section specified
-      deptInvWhere.sectionId = null;
-    }
+    // Fetch inventory items - consolidated from all departments (single source of truth)
+    // This shows total inventory regardless of which department is selected
 
-    const inventoryRecords = await prisma.departmentInventory.findMany({
+    // Get all inventory items from all departments and sum quantities
+    const allInventories = await prisma.departmentInventory.groupBy({
+      by: ['inventoryItemId'],
       where: {
-        ...deptInvWhere,
-        inventoryItem: {
-          isActive: true  // Filter only active (not deleted) items
-        }
+        sectionId: null,  // Only department-level, not sections
       },
-      include: {
-        inventoryItem: {
-          select: {
-            id: true,
-            name: true,
-            sku: true,
-            category: true,
-          },
-        },
-      },
-      take: limit,
+      _sum: {
+        quantity: true
+      }
     });
+
+    // Get the inventory item details
+    const inventoryItemIds = allInventories.map(inv => inv.inventoryItemId);
+    const inventoryItems = await prisma.inventoryItem.findMany({
+      where: {
+        id: { in: inventoryItemIds },
+        isActive: true
+      },
+      take: limit
+    });
+
+    // Map totals to items
+    const totalsMap = new Map(allInventories.map(inv => [inv.inventoryItemId, inv._sum.quantity ?? 0]));
+    
+    const inventoryRecords = inventoryItems.map(item => ({
+      id: item.id,
+      name: item.name,
+      sku: item.sku,
+      category: item.category,
+      totalQuantity: totalsMap.get(item.id) ?? 0,
+      totalReserved: 0  // Not tracking reserved separately
+    }));
 
     // Fetch extras for this department
     const deptExtrasWhere: any = { departmentId: dept.id };
@@ -111,16 +118,15 @@ export async function GET(
 
     // Combine and format response
     let items = [
-      // Inventory items
+      // Inventory items (consolidated totals)
       ...inventoryRecords.map((record) => ({
-        id: record.inventoryItem.id,
-        name: record.inventoryItem.name,
-        sku: record.inventoryItem.sku,
-        category: record.inventoryItem.category,
-        quantity: record.quantity,
-        available: record.quantity - record.reserved,
+        id: record.id,
+        name: record.name,
+        sku: record.sku,
+        category: record.category,
+        quantity: record.totalQuantity,
+        available: record.totalQuantity - record.totalReserved,
         itemType: 'inventory' as const,
-        departmentInventoryId: record.id, // For transfers
       })),
 
       // Extras (treated as items)
