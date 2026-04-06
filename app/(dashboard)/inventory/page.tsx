@@ -90,26 +90,20 @@ export default function InventoryPage() {
     setLoading(true)
     setError(null)
     try {
-      let url: string
+      // Build URL based on whether department or global inventory is selected
+      const urlObj = new URL(dept ? `/api/departments/${encodeURIComponent(dept)}/items` : '/api/inventory', window.location.origin);
       
-      // If department is selected, fetch combined inventory + extras from department endpoint
-      if (dept) {
-        url = `/api/departments/${encodeURIComponent(dept)}/items`
+      // Always use pagination
+      if (search) {
+        urlObj.searchParams.set('search', search)
+        urlObj.searchParams.set('page', page.toString())
+        urlObj.searchParams.set('limit', '100')
       } else {
-        // Otherwise fetch global inventory with search and pagination
-        const urlObj = new URL('/api/inventory', window.location.origin)
-        if (search) {
-          // For search: fetch first page only (API pagination)
-          urlObj.searchParams.set('search', search)
-          urlObj.searchParams.set('page', page.toString())
-          urlObj.searchParams.set('limit', '100')
-        } else {
-          // For default view: fetch all items (client-side pagination)
-          urlObj.searchParams.set('page', '1')
-          urlObj.searchParams.set('limit', '10000')  // Fetch all at once for client-side pagination
-        }
-        url = urlObj.toString()
+        urlObj.searchParams.set('page', '1')
+        urlObj.searchParams.set('limit', '10000')  // Fetch all at once for client-side pagination
       }
+      
+      const url = urlObj.toString()
       
       const res = await fetch(url)
       if (!res.ok) throw new Error(`Failed to fetch inventory (${res.status})`)
@@ -118,25 +112,15 @@ export default function InventoryPage() {
       
       const fetched: any[] = json.data?.items || []
       
-      // When using department endpoint, show all items (both inventory with qty > 0 AND extras with qty 0)
-      // When using global endpoint, filter to qty > 0 only
-      if (dept) {
-        // Show all items - inventory and extras
-        setItems(fetched)
-        setSearchTotal(0)
-        setDefaultTotal(0)
+      // Show all items regardless of quantity (including items with 0 quantity)
+      setItems(fetched)
+      
+      // Get total from response metadata
+      const total = json.data?.total || fetched.length
+      if (search) {
+        setSearchTotal(total)
       } else {
-        // Global inventory: only show items with quantity > 0
-        const filtered = fetched.filter((it) => Number(it?.quantity ?? 0) > 0)
-        setItems(filtered)
-        
-        // Update total from response metadata based on search or default view
-        const total = json.data?.total || filtered.length
-        if (search) {
-          setSearchTotal(total)
-        } else {
-          setDefaultTotal(total)
-        }
+        setDefaultTotal(total)
       }
     } catch (err: any) {
       console.error('Failed to load inventory', err)
@@ -281,7 +265,10 @@ export default function InventoryPage() {
     )
   )
 
-  const filteredItems = items.filter((it) => !categoryFilter || it.category === categoryFilter)
+  // When searching, show all items; otherwise filter by category
+  const filteredItems = searchQuery.trim() 
+    ? items // When searching, show all search results without category filtering
+    : items.filter((it) => !categoryFilter || it.category === categoryFilter)
 
   // Calculate paginated items for display (client-side pagination)
   const itemsPerPage = 100
@@ -316,14 +303,13 @@ export default function InventoryPage() {
 
   // Handle manual search button click
   const handleSearchClick = async () => {
-    if (!selectedDept) {
-      setSearchPage(1)
-      setIsSearching(true)
-      try {
-        await fetchItems(undefined, searchQuery.trim(), 1)
-      } finally {
-        setIsSearching(false)
-      }
+    setSearchPage(1)
+    setCategoryFilter('') // Reset category filter when searching
+    setIsSearching(true)
+    try {
+      await fetchItems(selectedDept, searchQuery.trim(), 1)
+    } finally {
+      setIsSearching(false)
     }
   }
 
@@ -336,7 +322,7 @@ export default function InventoryPage() {
         setSearchPage(newPage)
         setIsSearching(true)
         try {
-          await fetchItems(undefined, searchQuery.trim(), newPage)
+          await fetchItems(selectedDept, searchQuery.trim(), newPage)
         } finally {
           setIsSearching(false)
         }
@@ -359,7 +345,7 @@ export default function InventoryPage() {
         setSearchPage(newPage)
         setIsSearching(true)
         try {
-          await fetchItems(undefined, searchQuery.trim(), newPage)
+          await fetchItems(selectedDept, searchQuery.trim(), newPage)
         } finally {
           setIsSearching(false)
         }
@@ -410,10 +396,10 @@ export default function InventoryPage() {
           )}
           <button onClick={() => {
             if (activeTab === 'items') {
-              if (searchQuery && !selectedDept) {
-                // Refresh search results
+              if (searchQuery) {
+                // Refresh search results (works with or without department filter)
                 setSearchPage(1)
-                fetchItems(undefined, searchQuery.trim(), 1)
+                fetchItems(selectedDept, searchQuery.trim(), 1)
               } else {
                 // Refresh normal items
                 setCurrentPage(1)
@@ -520,7 +506,7 @@ export default function InventoryPage() {
             ))}
           </select>
         </div>
-        {!selectedDept && activeTab === 'items' && (
+        {activeTab === 'items' && (
           <div className="flex-1 min-w-[300px]">
             <label className="text-sm mr-2">Search inventory</label>
             <div className="flex gap-2 items-end">

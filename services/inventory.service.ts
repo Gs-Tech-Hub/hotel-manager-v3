@@ -689,7 +689,8 @@ export class InventoryMovementService extends BaseService<IInventoryMovement> {
 
   /**
    * Record a movement and update DepartmentInventory
-   * CRITICAL: Updates DepartmentInventory for the restaurant department
+   * CRITICAL: Updates consolidated DepartmentInventory across ALL departments
+   * The movement applies globally to reduce/increase total stock available
    */
   async recordMovement(
     itemId: string,
@@ -702,16 +703,6 @@ export class InventoryMovementService extends BaseService<IInventoryMovement> {
       // Validate quantity is non-zero
       if (quantity === 0) {
         console.error('Movement quantity cannot be zero');
-        return null;
-      }
-
-      // Get the restaurant department
-      const restaurantDept = await prisma.department.findFirst({
-        where: { code: 'restaurant' },
-      });
-
-      if (!restaurantDept) {
-        console.error('Restaurant department not found');
         return null;
       }
 
@@ -742,30 +733,60 @@ export class InventoryMovementService extends BaseService<IInventoryMovement> {
       // Update DepartmentInventory based on normalized movement type
       const delta = normalizedType === 'in' || normalizedType === 'adjustment' ? normalizedQuantity : -normalizedQuantity;
       
-      const existing = await prisma.departmentInventory.findFirst({
+      // IMPORTANT: Get ALL departments that have this item in inventory
+      // This ensures consolidated deduction from wherever stock exists
+      const allDeptInventories = await prisma.departmentInventory.findMany({
         where: {
-          departmentId: restaurantDept.id,
           inventoryItemId: itemId,
-          sectionId: null,
+          sectionId: null, // Only department-level, not sections
         },
       });
 
-      if (existing) {
-        const newQuantity = Math.max(0, (existing.quantity ?? 0) + delta);
-        await prisma.departmentInventory.update({
-          where: { id: existing.id },
-          data: { quantity: newQuantity },
+      // If item has no allocation anywhere, deduct from restaurant department
+      if (allDeptInventories.length === 0) {
+        const restaurantDept = await prisma.department.findFirst({
+          where: { code: 'restaurant' },
         });
+
+        if (restaurantDept) {
+          const newQuantity = Math.max(0, 0 + delta);
+          await prisma.departmentInventory.create({
+            data: {
+              departmentId: restaurantDept.id,
+              inventoryItemId: itemId,
+              quantity: newQuantity,
+            },
+          });
+        }
       } else {
-        // Create if doesn't exist
-        const newQuantity = Math.max(0, 0 + delta);
-        await prisma.departmentInventory.create({
-          data: {
-            departmentId: restaurantDept.id,
-            inventoryItemId: itemId,
-            quantity: newQuantity,
-          },
-        });
+        // Deduct/add from departments in order of existence
+        let remainingDelta = delta;
+        
+        for (const deptRecord of allDeptInventories) {
+          if (remainingDelta === 0) break;
+          
+          if (remainingDelta > 0) {
+            // Adding stock - distribute to the first department
+            const newQuantity = (deptRecord.quantity ?? 0) + remainingDelta;
+            await prisma.departmentInventory.update({
+              where: { id: deptRecord.id },
+              data: { quantity: newQuantity },
+            });
+            remainingDelta = 0;
+          } else {
+            // Removing stock - deplete from departments in order
+            const currentQty = deptRecord.quantity ?? 0;
+            if (currentQty > 0) {
+              const deduction = Math.min(currentQty, Math.abs(remainingDelta));
+              const newQuantity = Math.max(0, currentQty - deduction);
+              await prisma.departmentInventory.update({
+                where: { id: deptRecord.id },
+                data: { quantity: newQuantity },
+              });
+              remainingDelta += deduction; // remainingDelta is negative, so += reduces it
+            }
+          }
+        }
       }
 
       return mapInventoryMovement(row as any);

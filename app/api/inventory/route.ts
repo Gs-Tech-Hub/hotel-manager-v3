@@ -80,6 +80,7 @@ export async function GET(req: NextRequest) {
       items = await prisma.inventoryItem.findMany({
         where: {
           isActive: true,
+          deletedAt: null,
           OR: [
             { name: { contains: search, mode: 'insensitive' } },
             { sku: { contains: search, mode: 'insensitive' } },
@@ -100,8 +101,8 @@ export async function GET(req: NextRequest) {
     } else if (expired) {
       items = await inventoryItemService.getExpiredItems();
     } else {
-      // Query directly from Prisma to ensure isActive filter
-      const where: any = { isActive: true };
+      // Query directly from Prisma to ensure isActive filter and exclude soft-deleted items
+      const where: any = { isActive: true, deletedAt: null };
       if (inventoryTypeId) where.inventoryTypeId = inventoryTypeId;
       if (category) where.category = category;
       if (itemType) where.itemType = itemType;

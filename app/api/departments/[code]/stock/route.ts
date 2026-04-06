@@ -120,7 +120,13 @@ export async function GET(request: NextRequest, { params }: { params: Promise<{ 
       summary = { low, high, empty, totalProducts: total }
     } else {
       // Fallback: Generic inventory fallback using InventoryItem quantity
-      const items = await prisma.inventoryItem.findMany({ where: { category: dept.type || undefined } })
+      const items = await prisma.inventoryItem.findMany({
+        where: {
+          category: dept.type || undefined,
+          isActive: true,
+          deletedAt: null
+        }
+      })
       const total = items.length
       let empty = 0
       let low = 0

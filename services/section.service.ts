@@ -89,88 +89,35 @@ export class SectionService {
     }
 
     // Get main inventory (consolidated from all departments)
-    // ALL PRODUCTS - Return mixed types (drinks, food, inventory items, extras)
-    // Used for transfer panel "All Products" filter
-    if (type === 'all') {
-      const allItems: any[] = []
+    // INVENTORY ITEMS ONLY - Matches main inventory endpoint
+    if (type === 'all' || type === 'inventoryItem' || type === '') {
+      const where: any = { isActive: true, deletedAt: null }
+      if (search) where.name = { contains: search, mode: 'insensitive' }
       
-      // Get all drinks
-      const drinks = await prisma.drink.findMany({
-        skip,
-        take: pageSize,
-        where: search ? { name: { contains: search, mode: 'insensitive' } } : {},
-        orderBy: { name: 'asc' }
-      })
-      const drinkBalances = await stockService.getBalances('drink', drinks.map(d => d.id), resolvedSectionId ? dept.id : null, resolvedSectionId || null)
-      allItems.push(...drinks.map((d: any) => ({ 
-        id: d.id, 
-        name: d.name, 
-        type: 'drink', 
-        available: drinkBalances.get(d.id) ?? 0, 
-        unitPrice: Math.round(Number(d.price) * 100) 
-      })))
-      
-      // Get all food items
-      const foods = await prisma.foodItem.findMany({
-        skip,
-        take: pageSize,
-        where: search ? { name: { contains: search, mode: 'insensitive' } } : {},
-        orderBy: { name: 'asc' }
-      })
-      const foodBalances = await stockService.getBalances('food', foods.map(f => f.id), resolvedSectionId ? dept.id : null, resolvedSectionId || null)
-      allItems.push(...foods.map((f: any) => ({ 
-        id: f.id, 
-        name: f.name, 
-        type: 'food', 
-        available: foodBalances.get(f.id) ?? 0, 
-        unitPrice: Math.round(Number(f.price) * 100) 
-      })))
-      
-      // Get all inventory items (exclude soft-deleted)
-      const inventoryItems = await prisma.inventoryItem.findMany({
-        skip,
-        take: pageSize,
-        where: {
-          isActive: true,
-          ...(search ? { name: { contains: search, mode: 'insensitive' } } : {}),
-        },
-        orderBy: { name: 'asc' }
-      })
-      const invBalances = await stockService.getBalances('inventoryItem', inventoryItems.map(i => i.id), resolvedSectionId ? dept.id : null, resolvedSectionId || null)
-      allItems.push(...inventoryItems.map((i: any) => ({ 
-        id: i.id, 
-        name: i.name, 
-        type: i.category, // Use actual category: food, drinks, supplies, etc.
-        available: invBalances.get(i.id) ?? 0, 
-        unitPrice: Math.round(Number(i.unitPrice) * 100),
-        category: i.category,
-        sku: i.sku
-      })))
-      
-      // Get all extras
-      const extras = await prisma.extra.findMany({
-        skip,
-        take: pageSize,
-        where: {
-          isActive: true,
-          ...(search ? { name: { contains: search, mode: 'insensitive' } } : {}),
-        },
-        orderBy: { name: 'asc' }
-      })
-      allItems.push(...extras.map((e: any) => ({
-        id: e.id,
-        name: e.name,
-        type: 'extra',
-        available: 1,
-        unitPrice: Math.round(Number(e.pricePerCount || e.pricePerMinute || 0) * 100),
-      })))
-      
-      return { 
-        items: allItems.slice(0, pageSize), 
-        total: allItems.length, 
-        page, 
-        pageSize 
-      }
+      const [items, total] = await Promise.all([
+        prisma.inventoryItem.findMany({
+          where,
+          skip,
+          take: pageSize,
+          orderBy: { name: 'asc' }
+        }),
+        prisma.inventoryItem.count({ where }),
+      ])
+
+      const itemIds = items.map((i: any) => i.id)
+      const balances = await stockService.getBalances('inventoryItem', itemIds, resolvedSectionId ? dept.id : null, resolvedSectionId || null)
+
+      const mapped = items.map((it: any) => ({ 
+        id: it.id, 
+        name: it.name, 
+        type: it.category,
+        available: balances.get(it.id) ?? 0, 
+        unitPrice: Math.round(Number(it.unitPrice) * 100),
+        category: it.category,
+        sku: it.sku
+      }))
+
+      return { items: mapped, total, page, pageSize }
     }
 
     // UNIFIED INVENTORY SYSTEM: All items read from main inventory source
@@ -527,7 +474,7 @@ export class SectionService {
 
     // Generic inventory fallback - includes services if items are empty
     {
-      const where: any = { isActive: true }
+      const where: any = { isActive: true, deletedAt: null }
       if (search) where.name = { contains: search, mode: 'insensitive' }
 
       const deptToCategoryMap: Record<string, string> = {
@@ -587,7 +534,7 @@ export class SectionService {
 
           // Fetch the actual inventory items (no pagination - IDs already paginated)
           items = await prisma.inventoryItem.findMany({
-            where: { ...where, isActive: true, id: { in: inventoryItemIds } },
+            where: { ...where, isActive: true, deletedAt: null, id: { in: inventoryItemIds } },
             orderBy: { name: 'asc' },
           })
           total = totalInSection
@@ -603,8 +550,13 @@ export class SectionService {
       } else {
         // For parent departments: get all items in the category
         [items, total] = await Promise.all([
-          prisma.inventoryItem.findMany({ where, skip, take: pageSize, orderBy: { name: 'asc' } }),
-          prisma.inventoryItem.count({ where }),
+          prisma.inventoryItem.findMany({
+            where: { ...where, isActive: true, deletedAt: null },
+            skip,
+            take: pageSize,
+            orderBy: { name: 'asc' }
+          }),
+          prisma.inventoryItem.count({ where: { ...where, isActive: true, deletedAt: null } }),
         ])
       }
 

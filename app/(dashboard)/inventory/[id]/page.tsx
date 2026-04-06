@@ -61,7 +61,9 @@ export default function InventoryDetail(...args: any[]) {
 
   const handleEditClick = () => {
     if (item) {
-      setEditForm({ name: item.name, unitPrice: String(item.unitPrice || 0), quantity: '' })
+      // Convert dollars to cents for edit form display
+      const unitPriceInCents = Math.round(Number(item.unitPrice) * 100);
+      setEditForm({ name: item.name, unitPrice: String(unitPriceInCents), quantity: '' })
       setIsEditing(true)
       setEditError(null)
     }
@@ -82,7 +84,7 @@ export default function InventoryDetail(...args: any[]) {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           name: editForm.name,
-          unitPrice: Number(editForm.unitPrice),
+          unitPrice: Number(editForm.unitPrice) / 100, // Convert cents to dollars for API
           // Quantity must be changed through /api/inventory/movements only
         }),
       })
@@ -230,7 +232,7 @@ export default function InventoryDetail(...args: any[]) {
               />
             </div>
             <div>
-              <label className="block text-sm font-medium">Unit Price (in cents)</label>
+              <label className="block text-sm font-medium">Unit Price (in cents, e.g., 1500 = $15.00)</label>
               <input
                 type="number"
                 value={editForm.unitPrice}

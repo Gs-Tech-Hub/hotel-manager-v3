@@ -34,6 +34,8 @@ export async function GET(
     const { code: departmentCode } = await params;
     let sectionId = request.nextUrl.searchParams.get('sectionId');
     const limit = parseInt(request.nextUrl.searchParams.get('limit') || '999');
+    const page = parseInt(request.nextUrl.searchParams.get('page') || '1');
+    const search = request.nextUrl.searchParams.get('search') || undefined;
     const forTransfer = request.nextUrl.searchParams.get('forTransfer') === 'true';
 
     // Convert string 'null' to actual null
@@ -54,10 +56,38 @@ export async function GET(
       );
     }
 
-    // Fetch inventory items - consolidated from all departments (single source of truth)
-    // This shows total inventory regardless of which department is selected
+    // Fetch inventory items - show ALL active inventory items as single source of truth
+    // Include items with AND without department allocations
+    // This ensures every global inventory item is visible for potential transfer/allocation to this department
 
-    // Get all inventory items from all departments and sum quantities
+    // First, get ALL active inventory items (global source of truth)
+    // Exclude soft-deleted items (deletedAt is not null)
+    const inventoryWhere: any = {
+      isActive: true,
+      deletedAt: null
+    };
+    
+    // Apply search filter if provided
+    if (search) {
+      inventoryWhere.OR = [
+        { name: { contains: search, mode: 'insensitive' } },
+        { sku: { contains: search, mode: 'insensitive' } },
+        { description: { contains: search, mode: 'insensitive' } },
+      ];
+    }
+    
+    const allInventoryItems = await prisma.inventoryItem.findMany({
+      where: inventoryWhere,
+      select: {
+        id: true,
+        name: true,
+        sku: true,
+        category: true,
+      },
+      orderBy: { name: 'asc' }
+    });
+
+    // Then get quantities summed across all departments for these items
     const allInventories = await prisma.departmentInventory.groupBy({
       by: ['inventoryItemId'],
       where: {
@@ -68,20 +98,10 @@ export async function GET(
       }
     });
 
-    // Get the inventory item details
-    const inventoryItemIds = allInventories.map(inv => inv.inventoryItemId);
-    const inventoryItems = await prisma.inventoryItem.findMany({
-      where: {
-        id: { in: inventoryItemIds },
-        isActive: true
-      },
-      take: limit
-    });
-
-    // Map totals to items
+    // Map totals for lookup
     const totalsMap = new Map(allInventories.map(inv => [inv.inventoryItemId, inv._sum.quantity ?? 0]));
     
-    const inventoryRecords = inventoryItems.map(item => ({
+    const inventoryRecords = allInventoryItems.map(item => ({
       id: item.id,
       name: item.name,
       sku: item.sku,
@@ -100,7 +120,18 @@ export async function GET(
     }
 
     const extraRecords = await prisma.departmentExtra.findMany({
-      where: deptExtrasWhere,
+      where: {
+        ...deptExtrasWhere,
+        extra: {
+          isActive: true,
+          // Apply search filter to extras as well
+          ...(search && {
+            OR: [
+              { name: { contains: search, mode: 'insensitive' } },
+            ]
+          })
+        }
+      },
       include: {
         extra: {
           select: {
@@ -113,39 +144,24 @@ export async function GET(
           },
         },
       },
-      take: limit,
     });
 
     // Combine and format response
+    // NOTE: Return ONLY inventory items here (not extras)
+    // Extras are fetched separately via /api/departments/[code]/extras
+    // This ensures consistency with global inventory view - return all active items regardless of quantity
     let items = [
-      // Inventory items (consolidated totals)
-      ...inventoryRecords.map((record) => ({
-        id: record.id,
-        name: record.name,
-        sku: record.sku,
-        category: record.category,
-        quantity: record.totalQuantity,
-        available: record.totalQuantity - record.totalReserved,
-        itemType: 'inventory' as const,
-      })),
-
-      // Extras (treated as items)
-      ...extraRecords.map((record) => ({
-        id: record.extra.id,
-        name: `${record.extra.name} (Extra)`,
-        sku: '', // Extras don't have SKU
-        category: 'extra',
-        // Non-tracked extras use quantity: 1 as persistent state (not countable)
-        // Tracked extras have actual countable quantity
-        quantity: record.extra.trackInventory ? record.quantity : 1,
-        available: record.extra.trackInventory ? (record.quantity - record.reserved) : 1,
-        itemType: 'extra' as const,
-        unit: record.extra.unit,
-        price: record.extra.price,
-        productId: record.extra.productId,
-        trackInventory: record.extra.trackInventory,
-        departmentExtraId: record.id, // For transfers
-      })),
+      // Inventory items (consolidated totals) - ALL active items shown
+      ...inventoryRecords
+        .map((record) => ({
+          id: record.id,
+          name: record.name,
+          sku: record.sku,
+          category: record.category,
+          quantity: record.totalQuantity,
+          available: record.totalQuantity - record.totalReserved,
+          itemType: 'inventory' as const,
+        })),
     ];
 
     // Filter out items with zero available quantity if loading for transfer
@@ -153,11 +169,22 @@ export async function GET(
       items = items.filter((item) => (item.available ?? 0) > 0);
     }
 
+    // Apply pagination to results
+    const total = items.length;
+    const startIdx = (page - 1) * limit;
+    const endIdx = startIdx + limit;
+    const paginatedItems = items.slice(startIdx, endIdx);
+    const pages = Math.ceil(total / limit);
+
     return NextResponse.json(
       successResponse({
         data: {
-          items,
-          count: items.length,
+          items: paginatedItems,
+          count: paginatedItems.length,
+          total,
+          page,
+          limit,
+          pages,
         },
       }),
       { status: 200 }

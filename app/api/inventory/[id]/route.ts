@@ -43,7 +43,7 @@ export async function GET(
       );
     }
 
-    // Get the department for quantity lookup (default to restaurant)
+    // Get the department for quantity lookup (default to restaurant for display context)
     let activeDeptId = departmentId;
     if (!activeDeptId) {
       const restaurantDept = await prisma.department.findFirst({ where: { code: 'restaurant' } });
@@ -52,15 +52,18 @@ export async function GET(
       }
     }
 
-    // Enrich with current quantity from DepartmentInventory (authoritative source)
+    // Enrich with CONSOLIDATED current quantity from DepartmentInventory (authoritative source)
+    // Use null departmentId to get sum across ALL departments
     let enrichedItem = item;
-    if (activeDeptId) {
-      const balance = await stockService.getBalance('inventoryItem', id, activeDeptId);
-      enrichedItem = {
-        ...item,
-        quantity: balance,
-      };
-    }
+    const consolidatedBalance = await stockService.getBalance('inventoryItem', id, activeDeptId || '');
+    // Also get the truly consolidated balance across all departments
+    const consolidatedBalances = await stockService.getBalances('inventoryItem', [id], null);
+    const globalConsolidatedQty = consolidatedBalances.get(id) ?? 0;
+    
+    enrichedItem = {
+      ...item,
+      quantity: globalConsolidatedQty,  // Use global consolidated quantity, not department-specific
+    };
 
     if (includeMovements) {
       const movements = await inventoryMovementService.getByItem(id);
