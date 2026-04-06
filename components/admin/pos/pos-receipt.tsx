@@ -56,7 +56,7 @@ export function POSReceipt({ receipt, onClose }: { receipt: any; onClose?: () =>
     
     // For 80mm POS printer paper (commonly used)
     const posPaperWidthMm = 100;
-    const posPaperWidthPx = '342px'; // 80mm at 96dpi
+    const posPaperWidthPx = '342px'; 
     
     const html = `
       <!DOCTYPE html>
@@ -93,9 +93,9 @@ export function POSReceipt({ receipt, onClose }: { receipt: any; onClose?: () =>
             }
             
             .font-mono { font-family: 'Courier New', monospace; }
-            .text-sm { font-size: 11px; }
-            .text-xs { font-size: 9px; }
-            .text-lg { font-size: 13px; }
+            .text-sm { font-size: 12px; }
+            .text-xs { font-size: 11px; }
+            .text-lg { font-size: 14px; }
             .text-3xl { font-size: 18px; }
             .text-center { text-align: center; }
             .text-right { text-align: right; }

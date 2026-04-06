@@ -698,26 +698,34 @@ export default function SalesTerminal() {
       const orderId = createJson.data.id
       console.log('[SalesTerminal] Order created successfully:', orderId)
 
-      // Step 2: Process payment for the created order
-      const settleRes = await fetch('/api/orders/settle', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          orderId,
-          paymentMethod: payment.method,
-          amount: amountCents,
-        }),
-        credentials: 'include',
-      })
+      // Step 2: Handle deferred vs immediate payment
+      let paymentDetails: any = { orderId }
+      
+      if (payment.isDeferred) {
+        // Deferred payment - order stays in pending status, no settlement needed
+        console.log('[SalesTerminal] Deferred payment - order stays pending')
+      } else {
+        // Step 2B: Process immediate payment for the created order
+        const settleRes = await fetch('/api/orders/settle', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            orderId,
+            paymentMethod: payment.method,
+            amount: amountCents,
+          }),
+          credentials: 'include',
+        })
 
-      if (!settleRes.ok) {
-        const json = await settleRes.json()
-        throw new Error(json.error?.message || 'Payment settlement failed')
+        if (!settleRes.ok) {
+          const json = await settleRes.json()
+          throw new Error(json.error?.message || 'Payment settlement failed')
+        }
+
+        const settleJson = await settleRes.json()
+        paymentDetails = settleJson.data || {}
+        console.log('[SalesTerminal] Payment settled with allocations:', paymentDetails.sectionAllocations)
       }
-
-      const settleJson = await settleRes.json()
-      const paymentDetails = settleJson.data || {}
-      console.log('[SalesTerminal] Payment settled with allocations:', paymentDetails.sectionAllocations)
 
       // Step 2.5: Create employee charge if employee was selected
       if (selectedEmployee?.id) {
@@ -794,6 +802,7 @@ export default function SalesTerminal() {
       // Format receipt data for POSReceipt component
       const formattedReceipt = {
         ...finalReceipt,
+        isDeferred: payment.isDeferred || false,
         items: (finalReceipt.lines || []).map((line: any) => ({
           lineId: line.id,
           productName: line.productName,

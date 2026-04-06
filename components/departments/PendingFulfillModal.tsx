@@ -11,12 +11,20 @@ export default function PendingFulfillModal({ line, open, onClose, onFulfilled }
         headers: { 'content-type': 'application/json' },
         body: JSON.stringify({ lineId: line.id }),
       })
-      if (!res.ok) throw new Error('Failed')
+      
+      const json = await res.json()
+      
+      if (!res.ok) {
+        const errorMsg = json.message || json.error?.message || 'Failed to fulfill line'
+        alert(errorMsg)
+        return
+      }
+      
       onFulfilled?.(line)
       onClose?.()
     } catch (err) {
       console.error(err)
-      alert('Could not fulfill line')
+      alert(err instanceof Error ? err.message : 'Could not fulfill line')
     }
   }
 

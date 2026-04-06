@@ -95,11 +95,19 @@ export default function OrderDetailPage() {
                 headers: { "Content-Type": "application/json" },
                 body: JSON.stringify({ lineItemId: lineId, status }),
             });
+            
+            const data = await res.json();
+            
             if (res.ok) {
-                const data = await res.json();
                 if (data.success) setOrder(data.data);
+            } else {
+                const errorMsg = data.message || data.error?.message || 'Failed to update fulfillment';
+                alert(errorMsg);
+                console.error("Fulfillment error:", errorMsg);
             }
         } catch (e) {
+            const msg = e instanceof Error ? e.message : 'Error updating fulfillment';
+            alert(msg);
             console.error("Error updating fulfillment:", e);
         } finally {
             setIsUpdating(false);
@@ -110,20 +118,40 @@ export default function OrderDetailPage() {
         if (!order || !order.lines || order.lines.length === 0) return;
         setIsUpdating(true);
         try {
-            const promises = order.lines.map((l: any) =>
-                fetch(`/api/orders/${order.id}/fulfillment`, {
+            const promises = order.lines.map(async (l: any) => {
+                const res = await fetch(`/api/orders/${order.id}/fulfillment`, {
                     method: "PUT",
                     credentials: 'same-origin',
                     headers: { "Content-Type": "application/json" },
                     body: JSON.stringify({ lineItemId: l.id, status: 'fulfilled' }),
-                })
-            );
-            await Promise.all(promises);
+                });
+                
+                const data = await res.json();
+                
+                if (!res.ok) {
+                    const errorMsg = data.message || data.error?.message || `Failed to fulfill ${l.productName}`;
+                    throw new Error(errorMsg);
+                }
+                return data;
+            });
+            
+            const results = await Promise.allSettled(promises);
+            const errors = results
+                .filter((r): r is PromiseRejectedResult => r.status === 'rejected')
+                .map(r => (r.reason as Error).message);
+            
+            if (errors.length > 0) {
+                alert(`Failed to fulfill some items:\n${errors.join('\n')}`);
+                console.error('Fulfillment errors:', errors);
+            }
+            
             // refresh
             const r = await fetch(`/api/orders/${order.id}`, { credentials: 'same-origin' });
             const d = await r.json();
             if (r.ok && d && d.success) setOrder(d.data);
         } catch (e) {
+            const msg = e instanceof Error ? e.message : 'Error fulfilling all lines';
+            alert(msg);
             console.error('Error fulfilling all lines:', e);
         } finally {
             setIsUpdating(false);

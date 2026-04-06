@@ -87,6 +87,7 @@ export async function POST(
         section: true,
         customer: true,
         service: true,
+        orderHeader: true,
       },
     });
 
@@ -105,13 +106,16 @@ export async function POST(
     }
 
     // Find the OrderHeader for this game session
-    // Query by customerId and look for order with game session context
-    // OrderHeader notes field contains "Game session started"
-    const orderHeader = await prisma.orderHeader.findFirst({
-      where: {
-        customerId: session.customerId,
-        notes: { contains: 'Game session started' },
-      },
+    // Use direct orderHeaderId link from game session
+    if (!session.orderHeaderId) {
+      return NextResponse.json(
+        errorResponse(ErrorCodes.NOT_FOUND, 'Order not created for this game session'),
+        { status: 404 }
+      );
+    }
+
+    const orderHeader = await prisma.orderHeader.findUnique({
+      where: { id: session.orderHeaderId },
       include: {
         customer: true,
       },
@@ -191,11 +195,13 @@ export async function POST(
     });
 
     // Update order line with final pricing
+    const unitPriceInCents = session.gameCount > 0 ? Math.round(totalInCents / session.gameCount) : totalInCents;
     await prisma.orderLine.updateMany({
       where: { orderHeaderId: orderHeader.id },
       data: {
-        unitPrice: totalInCents,
+        unitPrice: unitPriceInCents,
         lineTotal: totalInCents,
+        quantity: session.gameCount,
       },
     });
 

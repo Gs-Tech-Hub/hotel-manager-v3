@@ -268,30 +268,35 @@ export function OpenOrdersDashboard() {
                   <td className="px-4 py-3 text-sm text-gray-600">{order.createdAtFormatted}</td>
                   <td className="px-4 py-3 text-sm">
                     <div className="flex gap-1">
-                      <button
-                        onClick={() => {
-                          setSelectedOrder(order)
-                          setShowAddItems(true)
-                        }}
-                        title="Add more items to this order"
-                        className="px-2 py-1 bg-sky-500 text-white rounded text-xs hover:bg-sky-600 transition"
-                      >
-                        +Item
-                      </button>
-                      <button
-                        onClick={() => {
-                          setSelectedOrder(order)
-                          setShowPaymentDialog(true)
-                        }}
-                        disabled={order.amountDue <= 0}
-                        className={`px-3 py-1 rounded text-sm transition ${
-                          order.amountDue <= 0
-                            ? 'bg-gray-100 text-gray-400 cursor-not-allowed'
-                            : 'bg-blue-600 text-white hover:bg-blue-700'
+                      {/* Check if this is a games order - hide Add Item and Pay buttons for games */}
+                      {!order.departmentCodes?.some((code: string) => code.toLowerCase().includes('game')) && (
+                        <>
+                          <button
+                            onClick={() => {
+                              setSelectedOrder(order)
+                              setShowAddItems(true)
+                            }}
+                            title="Add more items to this order"
+                            className="px-2 py-1 bg-sky-500 text-white rounded text-xs hover:bg-sky-600 transition"
+                          >
+                            +Item
+                          </button>
+                          <button
+                            onClick={() => {
+                              setSelectedOrder(order)
+                              setShowPaymentDialog(true)
+                            }}
+                            disabled={order.amountDue <= 0}
+                            className={`px-3 py-1 rounded text-sm transition ${
+                              order.amountDue <= 0
+                                ? 'bg-gray-100 text-gray-400 cursor-not-allowed'
+                                : 'bg-blue-600 text-white hover:bg-blue-700'
                         }`}
                       >
                         {order.amountDue <= 0 ? '✓ Paid' : 'Pay'}
                       </button>
+                        </>
+                      )}
                     </div>
                     {order.amountDue <= 0 && (
                       <div className="text-xs text-green-600 mt-1 font-semibold">Payment Complete</div>

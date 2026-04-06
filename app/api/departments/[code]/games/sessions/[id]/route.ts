@@ -189,65 +189,65 @@ export async function PATCH(
       });
 
       // Update associated order header if exists
-      // Find OrderHeader by customerId and notes containing "Game session"
-      const orderHeader = await prisma.orderHeader.findFirst({
-        where: {
-          customerId: session.customerId,
-          notes: { contains: 'Game session started' },
-        },
-      });
+      // Use direct orderHeaderId link from game session
+      if (session.orderHeaderId) {
+        const orderHeader = await prisma.orderHeader.findUnique({
+          where: { id: session.orderHeaderId },
+        });
 
-      if (orderHeader) {
-        const totalInCents = Math.round(newTotalAmount.toNumber() * 100);
-        
-        // Recalculate tax
-        let taxRate = 0;
-        try {
-          const taxSettings = await (prisma as any).taxSettings.findFirst();
-          if (taxSettings) {
-            taxRate = taxSettings.taxRate ?? 0;
+        if (orderHeader) {
+          const totalInCents = Math.round(newTotalAmount.toNumber() * 100);
+          
+          // Recalculate tax
+          let taxRate = 0;
+          try {
+            const taxSettings = await (prisma as any).taxSettings.findFirst();
+            if (taxSettings) {
+              taxRate = taxSettings.taxRate ?? 0;
+            }
+          } catch (err) {
+            console.warn('TaxSettings fetch failed, using default tax rate');
           }
-        } catch (err) {
-          console.warn('TaxSettings fetch failed, using default tax rate');
-        }
 
-        const taxCents = Math.round(totalInCents * (taxRate / 100));
-        const finalTotalCents = totalInCents + taxCents;
+          const taxCents = Math.round(totalInCents * (taxRate / 100));
+          const finalTotalCents = totalInCents + taxCents;
 
-        await prisma.orderHeader.update({
-          where: { id: orderHeader.id },
-          data: {
-            subtotal: totalInCents,
-            tax: taxCents,
-            total: finalTotalCents,
-          },
-        });
-
-        // Update order line
-        const orderLine = await prisma.orderLine.findFirst({
-          where: { orderHeaderId: orderHeader.id },
-        });
-
-        if (orderLine) {
-          await prisma.orderLine.update({
-            where: { id: orderLine.id },
+          await prisma.orderHeader.update({
+            where: { id: orderHeader.id },
             data: {
-              unitPrice: totalInCents,
-              lineTotal: totalInCents,
-              quantity: newGameCount,
+              subtotal: totalInCents,
+              tax: taxCents,
+              total: finalTotalCents,
             },
           });
 
-          // Update fulfillment record with new quantity
-          await prisma.orderFulfillment.updateMany({
-            where: {
-              orderLineId: orderLine.id,
-              status: 'fulfilled',
-            },
-            data: {
-              fulfilledQuantity: newGameCount,
-            },
+          // Update order line
+          const orderLine = await prisma.orderLine.findFirst({
+            where: { orderHeaderId: orderHeader.id },
           });
+
+          if (orderLine) {
+            const unitPriceInCents = newGameCount > 0 ? Math.round(totalInCents / newGameCount) : totalInCents;
+            await prisma.orderLine.update({
+              where: { id: orderLine.id },
+              data: {
+                unitPrice: unitPriceInCents,
+                lineTotal: totalInCents,
+                quantity: newGameCount,
+              },
+            });
+
+            // Update fulfillment record with new quantity
+            await prisma.orderFulfillment.updateMany({
+              where: {
+                orderLineId: orderLine.id,
+                status: 'fulfilled',
+              },
+              data: {
+                fulfilledQuantity: newGameCount,
+              },
+            });
+          }
         }
       }
     } else if (action === 'decrement_game') {
@@ -281,62 +281,63 @@ export async function PATCH(
       });
 
       // Update associated order header if exists
-      const orderHeader = await prisma.orderHeader.findFirst({
-        where: {
-          customerId: session.customerId,
-          notes: { contains: 'Game session started' },
-        },
-      });
+      // Use direct orderHeaderId link from game session
+      if (session.orderHeaderId) {
+        const orderHeader = await prisma.orderHeader.findUnique({
+          where: { id: session.orderHeaderId },
+        });
 
-      if (orderHeader) {
-        const totalInCents = Math.round(newTotalAmount.toNumber() * 100);
+        if (orderHeader) {
+          const totalInCents = Math.round(newTotalAmount.toNumber() * 100);
 
-        // Recalculate tax
-        let taxRate = 0;
-        try {
-          const taxSettings = await (prisma as any).taxSettings.findFirst();
-          if (taxSettings) {
-            taxRate = taxSettings.taxRate ?? 0;
+          // Recalculate tax
+          let taxRate = 0;
+          try {
+            const taxSettings = await (prisma as any).taxSettings.findFirst();
+            if (taxSettings) {
+              taxRate = taxSettings.taxRate ?? 0;
+            }
+          } catch (err) {
+            console.warn('TaxSettings fetch failed, using default tax rate');
           }
-        } catch (err) {
-          console.warn('TaxSettings fetch failed, using default tax rate');
-        }
 
-        const taxCents = Math.round(totalInCents * (taxRate / 100));
-        const finalTotalCents = totalInCents + taxCents;
+          const taxCents = Math.round(totalInCents * (taxRate / 100));
+          const finalTotalCents = totalInCents + taxCents;
 
-        await prisma.orderHeader.update({
-          where: { id: orderHeader.id },
-          data: {
-            subtotal: totalInCents,
-            tax: taxCents,
-            total: finalTotalCents,
-          },
-        });
-
-        const orderLine = await prisma.orderLine.findFirst({
-          where: { orderHeaderId: orderHeader.id },
-        });
-
-        if (orderLine) {
-          await prisma.orderLine.update({
-            where: { id: orderLine.id },
+          await prisma.orderHeader.update({
+            where: { id: orderHeader.id },
             data: {
-              unitPrice: totalInCents,
-              lineTotal: totalInCents,
-              quantity: newGameCount,
+              subtotal: totalInCents,
+              tax: taxCents,
+              total: finalTotalCents,
             },
           });
 
-          await prisma.orderFulfillment.updateMany({
-            where: {
-              orderLineId: orderLine.id,
-              status: 'fulfilled',
-            },
-            data: {
-              fulfilledQuantity: newGameCount,
-            },
+          const orderLine = await prisma.orderLine.findFirst({
+            where: { orderHeaderId: orderHeader.id },
           });
+
+          if (orderLine) {
+            const unitPriceInCents = newGameCount > 0 ? Math.round(totalInCents / newGameCount) : totalInCents;
+            await prisma.orderLine.update({
+              where: { id: orderLine.id },
+              data: {
+                unitPrice: unitPriceInCents,
+                lineTotal: totalInCents,
+                quantity: newGameCount,
+              },
+            });
+
+            await prisma.orderFulfillment.updateMany({
+              where: {
+                orderLineId: orderLine.id,
+                status: 'fulfilled',
+              },
+              data: {
+                fulfilledQuantity: newGameCount,
+              },
+            });
+          }
         }
       }
     } else if (action === 'end_game') {

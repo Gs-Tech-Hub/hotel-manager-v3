@@ -134,6 +134,14 @@ export default function PosOrdersPage() {
         
         setIsPaymentProcessing(true);
         try {
+            // Handle deferred payments - just close modal without settlement
+            if (payment.isDeferred) {
+                setShowPaymentModal(false);
+                setSelectedOrderForPayment(null);
+                setRefreshTrigger(t => t + 1);
+                return;
+            }
+            
             // payment.amount is in cents (isMinor: true)
             const amountCents = payment.isMinor ? payment.amount : normalizeToCents(payment.amount);
             
@@ -309,8 +317,17 @@ export default function PosOrdersPage() {
                     const isRefunded = item.paymentStatus === 'refunded' || item.status === 'refunded';
                     const isCancelledOrRefunded = item.status === 'cancelled' || item.status === 'refunded';
                     
+                    // Check if this is a games order by checking department codes
+                    const isGamesOrder = item.departments?.some((od: any) => 
+                      od.department?.code?.toLowerCase().includes('game') ||
+                      od.department?.name?.toLowerCase().includes('game')
+                    ) || item.lines?.some((line: any) =>
+                      line.departmentSection?.department?.code?.toLowerCase().includes('game') ||
+                      line.departmentSection?.department?.name?.toLowerCase().includes('game')
+                    );
+                    
                     // Determine which buttons to show
-                    const canPay = isUnpaid && !isCancelledOrRefunded && !isRefunded;                
+                    const canPay = isUnpaid && !isCancelledOrRefunded && !isRefunded && !isGamesOrder;                
                     return (
                         <div className="flex gap-2">
                             {canPay && (

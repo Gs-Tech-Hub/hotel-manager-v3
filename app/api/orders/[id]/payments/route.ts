@@ -81,6 +81,21 @@ export async function POST(
       );
     }
 
+    // Check if this is a game order - block payment via this endpoint
+    const gameSession = await prisma.gameSession.findFirst({
+      where: { orderHeaderId: orderId },
+    });
+
+    if (gameSession) {
+      return NextResponse.json(
+        errorResponse(
+          ErrorCodes.FORBIDDEN,
+          'Game orders must be paid through the games payment endpoint'
+        ),
+        { status: getStatusCode(ErrorCodes.FORBIDDEN) }
+      );
+    }
+
     // Prevent recording payments on cancelled or refunded orders
     if (order.status === 'cancelled') {
       return NextResponse.json(
