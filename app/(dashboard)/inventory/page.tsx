@@ -5,13 +5,11 @@ import { useEffect, useState } from 'react'
 import { useAuth } from '@/components/auth-context'
 import { mapDeptCodeToCategory } from '@/lib/utils'
 import { getDisplayUnit, formatQuantityWithUnit } from '@/lib/unit-mapper'
-// avoid next/navigation useSearchParams here to prevent prerender/suspense issues
-import TransferAuditPanel from '@/components/departments/TransferAuditPanel'
+import { formatTablePrice } from '@/lib/formatters'
 import { ServiceTransferPanel } from '@/components/departments/ServiceTransferPanel'
 import { ExtraTransferPanel } from '@/components/departments/ExtraTransferPanel'
 import { ExtrasList } from '@/components/departments/ExtrasList'
-import Price from '@/components/ui/Price'
-import { Plus, Trash2, Zap, ArrowRight } from 'lucide-react'
+import { Plus, Zap, ArrowRight } from 'lucide-react'
 import { ExtrasFormDialog } from '@/components/admin/ExtrasFormDialog'
 import { ServiceInventoryForm } from '@/components/admin/ServiceInventoryForm'
 import { ServiceList } from '@/components/admin/ServiceList'
@@ -215,30 +213,6 @@ export default function InventoryPage() {
       setFormError(err?.message || 'Failed to create item')
     } finally {
       setFormLoading(false)
-    }
-  }
-
-  const handleDeleteInventoryItem = async (id: string) => {
-    if (!window.confirm('Are you sure you want to delete this inventory item?')) return
-    
-    try {
-      const deptCode = selectedDept || 'restaurant'
-      const url = new URL(
-        `/api/departments/${encodeURIComponent(deptCode)}/items`,
-        window.location.origin
-      )
-      url.searchParams.set('itemId', id)
-      url.searchParams.set('itemType', 'inventory')
-      
-      const res = await fetch(url.toString(), {
-        method: 'DELETE',
-      })
-      const json = await res.json()
-      if (!res.ok) throw new Error(json.message || `Failed to delete item (${res.status})`)
-      await fetchItems(selectedDept)
-    } catch (err: any) {
-      console.error('Failed to delete inventory item:', err)
-      setError(err?.message || 'Failed to delete item')
     }
   }
 
@@ -766,12 +740,12 @@ export default function InventoryPage() {
                     <td className="p-2 text-xs text-muted-foreground">{it.sku}</td>
                     <td className="p-2 text-sm">{it.category}</td>
                     <td className="p-2 text-right">
-                      <span className="inline-block bg-blue-50 px-3 py-1 rounded font-mono text-sm">
+                      <span className="inline-block bg-blue-50 px-3 py-1 rounded font-mono text-sm whitespace-nowrap">
                         {formatQuantityWithUnit(it.quantity, getDisplayUnit(it.category, it.itemType))}
                       </span>
                     </td>
-                    <td className="p-2 font-medium">
-                      <Price amount={Number(it.unitPrice)} isMinor={false} />
+                    <td className="p-2 font-medium text-right">
+                      {formatTablePrice(Math.round(Number(it.unitPrice) * 100))}
                     </td>
                     <td className="p-2">
                       {it.itemType === 'extra' ? (

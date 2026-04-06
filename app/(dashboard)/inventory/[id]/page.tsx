@@ -3,9 +3,8 @@
 import { useEffect, useState } from 'react'
 import { useRouter } from 'next/navigation'
 import { getDisplayUnit, formatQuantityWithUnit } from '@/lib/unit-mapper'
-import { formatPrice } from '@/lib/price'
-import { Trash2, Edit2 } from 'lucide-react'
 import { formatTablePrice } from '@/lib/formatters'
+import { Trash2, Edit2 } from 'lucide-react'
 
 type Movement = {
   id: string
@@ -198,7 +197,7 @@ export default function InventoryDetail(...args: any[]) {
           <div><strong>SKU:</strong> {item.sku}</div>
           <div><strong>Category:</strong> {item.category}</div>
           <div><strong>Quantity:</strong> {formatQuantityWithUnit(item.quantity, getDisplayUnit(item.category, item.itemType))}</div>
-          <div><strong>Unit price:</strong> {formatTablePrice(item.unitPrice)}</div>
+          <div><strong>Unit price:</strong> {formatTablePrice(Math.round(Number(item.unitPrice) * 100))}</div>
         </div>
 
         <div className="border rounded p-4 bg-white">
