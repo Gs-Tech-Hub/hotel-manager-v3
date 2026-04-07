@@ -81,7 +81,7 @@ export function POSReceipt({ receipt, onClose }: { receipt: any; onClose?: () =>
             
             body {
               font-family: 'Courier New', monospace;
-              font-size: 11px;
+              font-size: 12px;
               line-height: 1.2;
               width: ${posPaperWidthPx};
               color: #000;

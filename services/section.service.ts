@@ -88,6 +88,11 @@ export class SectionService {
       return { items: [], total: 0, page, pageSize }
     }
 
+    // Determine which department to query for inventories
+    // If filtering by section: use dept.id to get section-level quantities
+    // If NOT filtering by section: use null to get CONSOLIDATED quantities across all departments
+    const deptIdForInventory = resolvedSectionId ? dept.id : null
+
     // ALL PRODUCTS - Return mixed types (drinks, food, inventory items, extras)
     // Used for transfer panel "All Products" filter
     if (type === 'all') {
@@ -100,7 +105,7 @@ export class SectionService {
         where: search ? { name: { contains: search, mode: 'insensitive' } } : {},
         orderBy: { name: 'asc' }
       })
-      const drinkBalances = await stockService.getBalances('drink', drinks.map(d => d.id), dept.id, resolvedSectionId)
+      const drinkBalances = await stockService.getBalances('drink', drinks.map(d => d.id), deptIdForInventory, resolvedSectionId)
       allItems.push(...drinks.map((d: any) => ({ 
         id: d.id, 
         name: d.name, 
@@ -116,7 +121,7 @@ export class SectionService {
         where: search ? { name: { contains: search, mode: 'insensitive' } } : {},
         orderBy: { name: 'asc' }
       })
-      const foodBalances = await stockService.getBalances('food', foods.map(f => f.id), dept.id, resolvedSectionId)
+      const foodBalances = await stockService.getBalances('food', foods.map(f => f.id), deptIdForInventory, resolvedSectionId)
       allItems.push(...foods.map((f: any) => ({ 
         id: f.id, 
         name: f.name, 
@@ -135,7 +140,7 @@ export class SectionService {
         },
         orderBy: { name: 'asc' }
       })
-      const invBalances = await stockService.getBalances('inventoryItem', inventoryItems.map(i => i.id), dept.id, resolvedSectionId)
+      const invBalances = await stockService.getBalances('inventoryItem', inventoryItems.map(i => i.id), deptIdForInventory, resolvedSectionId)
       allItems.push(...inventoryItems.map((i: any) => ({ 
         id: i.id, 
         name: i.name, 
@@ -184,7 +189,7 @@ export class SectionService {
 
       // Use stockService for drink balances
       const drinkIds = items.map((d: any) => d.id)
-      const drinkBalances = await stockService.getBalances('drink', drinkIds, dept.id, resolvedSectionId)
+      const drinkBalances = await stockService.getBalances('drink', drinkIds, deptIdForInventory, resolvedSectionId)
 
       let mapped = items.map((d: any) => ({ id: d.id, name: d.name, type: 'drink', available: drinkBalances.get(d.id) ?? 0, unitPrice: Math.round(Number(d.price) * 100) }))
 
@@ -252,7 +257,7 @@ export class SectionService {
 
       // Use stockService for food balances
       const foodIds = items.map((f: any) => f.id)
-      const foodBalances = await stockService.getBalances('food', foodIds, dept.id, resolvedSectionId)
+      const foodBalances = await stockService.getBalances('food', foodIds, deptIdForInventory, resolvedSectionId)
 
       let mapped = items.map((f: any) => ({ id: f.id, name: f.name, type: 'food', available: foodBalances.get(f.id) ?? 0, unitPrice: Math.round(Number(f.price) * 100) }))
 
