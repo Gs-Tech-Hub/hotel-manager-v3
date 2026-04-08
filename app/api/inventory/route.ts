@@ -243,12 +243,13 @@ export async function POST(req: NextRequest) {
     }
 
     // Create inventory item directly via Prisma
+    // Forms already convert dollars to cents, API stores as-is
     const item = await prisma.inventoryItem.create({
       data: {
         name: body.name,
         sku,
         category: body.category,
-        unitPrice: Number(body.unitPrice),
+        unitPrice: Number(body.unitPrice),  // Store as Int (already cents from form conversion)
         quantity: body.quantity ? Number(body.quantity) : 0,
         description: body.description || null,
         itemType: body.itemType || null,

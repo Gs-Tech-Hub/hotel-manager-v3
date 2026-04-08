@@ -182,6 +182,7 @@ export default function InventoryPage() {
           category: formData.category,
           quantity: Number(formData.quantity),
           unitPrice: Number(formData.unitPrice),
+          itemType: formData.unit,  // Save unit type (pieces, bottles, liters, etc.)
         }),
       })
       const json = await res.json()
@@ -611,6 +612,7 @@ export default function InventoryPage() {
                 <option key={c} value={c}>{c}</option>
               ))}
             </select>
+            
             <div className="col-span-2 flex items-center gap-3 p-3 border rounded bg-blue-50">
               <label className="flex items-center gap-2 cursor-pointer">
                 <input
@@ -636,6 +638,35 @@ export default function InventoryPage() {
                 className="border rounded px-3 py-2"
               />
             )}
+
+            {/* PRICE PANEL - BEFORE QUANTITY */}
+            <div className="col-span-2 border rounded p-3 bg-blue-50">
+              <label className="block text-sm font-medium mb-2">Unit Price</label>
+              <div className="space-y-2">
+                <div className="flex items-center gap-2">
+                  <span className="text-lg font-semibold text-gray-600">$</span>
+                  <input
+                    type="number"
+                    placeholder="0.00"
+                    value={formData.unitPrice}
+                    onChange={(e) => setFormData({ ...formData, unitPrice: e.target.value })}
+                    className="w-full border px-3 py-1 rounded bg-white"
+                    step="0.01"
+                    min="0"
+                  />
+                </div>
+                <div className="text-xs text-gray-600">
+                  Enter the price as a normal currency amount (e.g., 15.00 for $15). The system automatically handles precision for calculations.
+                </div>
+                {formData.unitPrice && Number(formData.unitPrice) > 0 && (
+                  <div className="text-sm text-green-700 bg-green-50 px-3 py-2 rounded border border-green-200">
+                    Price will be saved as: <span className="font-semibold font-mono">{formatTablePrice(Math.round(Number(formData.unitPrice) * 100))}</span>
+                  </div>
+                )}
+              </div>
+            </div>
+
+            {/* QUANTITY & UNIT - AFTER PRICE */}
             <input
               type="number"
               placeholder="Quantity"
@@ -643,42 +674,23 @@ export default function InventoryPage() {
               onChange={(e) => setFormData({ ...formData, quantity: e.target.value })}
               className="border rounded px-3 py-2"
             />
-            <div className="flex items-center gap-2">
-              <div className="flex-1">
-                <input
-                  type="number"
-                  placeholder="0.00"
-                  value={formData.unitPrice}
-                  onChange={(e) => setFormData({ ...formData, unitPrice: e.target.value })}
-                  className="w-full border rounded px-3 py-2"
-                  step="0.01"
-                  min="0"
-                />
-                <div className="text-xs text-muted-foreground mt-1">Unit Price (USD) — e.g., 3000.00, 19.99, 0.50</div>
-              </div>
-              <div>
-                <select
-                  value={formData.unit}
-                  onChange={(e) => setFormData({ ...formData, unit: e.target.value })}
-                  className="border rounded px-3 py-2 bg-white"
-                >
-                  <option value="pieces">pieces</option>
-                  <option value="bottles">bottles</option>
-                  <option value="boxes">boxes</option>
-                  <option value="liters">liters</option>
-                  <option value="kg">kg</option>
-                  <option value="grams">grams</option>
-                  <option value="rolls">rolls</option>
-                  <option value="servings">servings</option>
-                  <option value="units">units</option>
-                </select>
-              </div>
+            <div>
+              <select
+                value={formData.unit}
+                onChange={(e) => setFormData({ ...formData, unit: e.target.value })}
+                className="w-full border rounded px-3 py-2 bg-white"
+              >
+                <option value="pieces">pieces</option>
+                <option value="bottles">bottles</option>
+                <option value="boxes">boxes</option>
+                <option value="liters">liters</option>
+                <option value="kg">kg</option>
+                <option value="grams">grams</option>
+                <option value="rolls">rolls</option>
+                <option value="servings">servings</option>
+                <option value="units">units</option>
+              </select>
             </div>
-            {formData.unitPrice && (
-              <div className="text-sm text-green-700 bg-green-50 px-3 py-2 rounded border border-green-200">
-                Price: ${Number(formData.unitPrice).toFixed(2)} per {formData.unit}
-              </div>
-            )}
           </div>
           <div className="flex gap-2">
             <button

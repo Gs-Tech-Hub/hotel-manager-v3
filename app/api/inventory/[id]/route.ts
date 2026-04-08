@@ -116,11 +116,18 @@ export async function PUT(
     // Quantity changes must go through /api/inventory/movements for audit trail
     const updateData: any = {};
     if (body.name !== undefined) updateData.name = body.name;
-    if (body.unitPrice !== undefined) updateData.unitPrice = body.unitPrice;
+    if (body.unitPrice !== undefined) {
+      // Forms already convert dollars to cents, API stores as-is
+      updateData.unitPrice = Number(body.unitPrice);
+    }
     // Explicitly ignore quantity field if provided
     delete body.quantity;
 
-    const item = await inventoryItemService.update(id, updateData);
+    // Apply updates directly via Prisma to ensure normalized prices are stored
+    const item = await prisma.inventoryItem.update({
+      where: { id },
+      data: updateData,
+    });
 
     if (!item) {
       return sendError(

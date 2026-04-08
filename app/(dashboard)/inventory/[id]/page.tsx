@@ -4,6 +4,7 @@ import { useEffect, useState } from 'react'
 import { useRouter } from 'next/navigation'
 import { getDisplayUnit, formatQuantityWithUnit } from '@/lib/unit-mapper'
 import { formatTablePrice } from '@/lib/formatters'
+import { normalizeToCents } from '@/lib/price'
 import { Trash2, Edit2 } from 'lucide-react'
 
 type Movement = {
@@ -61,9 +62,10 @@ export default function InventoryDetail(...args: any[]) {
 
   const handleEditClick = () => {
     if (item) {
-      // Convert dollars to cents for edit form display
-      const unitPriceInCents = Math.round(Number(item.unitPrice) * 100);
-      setEditForm({ name: item.name, unitPrice: String(unitPriceInCents), quantity: '' })
+      // Display price in dollars (divide cents by 100), without trailing zeros
+      const dollarAmount = Number(item.unitPrice) / 100;
+      const unitPriceInDollars = parseFloat(dollarAmount.toFixed(2));
+      setEditForm({ name: item.name, unitPrice: String(unitPriceInDollars), quantity: '' })
       setIsEditing(true)
       setEditError(null)
     }
@@ -84,7 +86,7 @@ export default function InventoryDetail(...args: any[]) {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           name: editForm.name,
-          unitPrice: Number(editForm.unitPrice) / 100, // Convert cents to dollars for API
+          unitPrice: Number(editForm.unitPrice), // User enters dollars; API normalizes to cents
           // Quantity must be changed through /api/inventory/movements only
         }),
       })
@@ -199,7 +201,7 @@ export default function InventoryDetail(...args: any[]) {
           <div><strong>SKU:</strong> {item.sku}</div>
           <div><strong>Category:</strong> {item.category}</div>
           <div><strong>Quantity:</strong> {formatQuantityWithUnit(item.quantity, getDisplayUnit(item.category, item.itemType))}</div>
-          <div><strong>Unit price:</strong> {formatTablePrice(Math.round(Number(item.unitPrice) * 100))}</div>
+          <div><strong>Unit price:</strong> {formatTablePrice(Math.round(Number(item.unitPrice)))}</div>
         </div>
 
         <div className="border rounded p-4 bg-white">
@@ -231,16 +233,37 @@ export default function InventoryDetail(...args: any[]) {
                 className="border px-2 py-1 w-full rounded"
               />
             </div>
-            <div>
-              <label className="block text-sm font-medium">Unit Price (in cents, e.g., 1500 = $15.00)</label>
-              <input
-                type="number"
-                value={editForm.unitPrice}
-                onChange={(e) => setEditForm({ ...editForm, unitPrice: e.target.value })}
-                className="border px-2 py-1 w-full rounded"
-              />
+
+            <div className="border rounded p-3 bg-blue-50">
+              <label className="block text-sm font-medium mb-2">Unit Price</label>
+              <div className="space-y-2">
+                <div className="flex items-center gap-2">
+                  <span className="text-lg font-semibold text-gray-600">$</span>
+                  <input
+                    type="number"
+                    value={Number(editForm.unitPrice || 0).toFixed(2)}
+                    onChange={(e) => setEditForm({ ...editForm, unitPrice: e.target.value })}
+                    className="border px-2 py-1 flex-1 rounded bg-white"
+                    placeholder="0.00"
+                    step="0.01"
+                    min="0"
+                  />
+                </div>
+                <div className="text-xs text-gray-600">
+                  Enter the price as a normal currency amount (e.g., 15.00 for $15). The system automatically handles precision for calculations.
+                </div>
+                {editForm.unitPrice && Number(editForm.unitPrice) > 0 && (
+                  <div className="text-sm text-green-700 bg-green-50 px-3 py-2 rounded border border-green-200">
+                    Price will be saved as: <span className="font-semibold font-mono">{formatTablePrice(Math.round(Number(editForm.unitPrice) * 100))}</span>
+                  </div>
+                )}
+              </div>
             </div>
-            <p className="text-xs text-gray-500 italics">To adjust stock quantity, use the &quot;Adjust Stock Quantity&quot; section below.</p>
+
+            <div className="text-xs text-gray-500 italics border-t pt-2">
+              To adjust stock quantity, use the &quot;Adjust Stock Quantity&quot; section below.
+            </div>
+
             <div className="flex gap-2">
               <button type="submit" disabled={editLoading} className="px-3 py-1 bg-blue-600 text-white rounded text-sm hover:bg-blue-700 disabled:opacity-50">
                 {editLoading ? 'Saving...' : 'Save'}

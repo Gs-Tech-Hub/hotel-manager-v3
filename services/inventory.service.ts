@@ -3,9 +3,10 @@
  * Handles inventory management for multiple item types (drinks, supplies, equipment, linens, etc.)
  * 
  * PRICE CONSISTENCY:
- * - All unitPrice values are stored in database as Decimal (dollars)
- * - Service normalizes to cents (Integer) for internal calculations
- * - Always validates prices and tracks updates
+ * - All unitPrice values are stored in database as Int (minor units = cents)
+ * - Input prices (decimals or strings) are normalized to cents by API routes before storage
+ * - Service always normalizes prices from database to ensure type safety
+ * - Never trust raw database values; always pass through normalization
  */
 
 import { BaseService } from './base.service';
