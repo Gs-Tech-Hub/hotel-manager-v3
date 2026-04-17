@@ -55,6 +55,7 @@ export function OutstandingChargesPayment({
   const [selectedCharges, setSelectedCharges] = useState<Set<string>>(new Set());
   const [paymentMethod, setPaymentMethod] = useState<string>('cash');
   const [notes, setNotes] = useState('');
+  const [customPaymentAmounts, setCustomPaymentAmounts] = useState<Record<string, number>>({});
 
   // Fetch charges on mount
   useEffect(() => {
@@ -93,7 +94,10 @@ export function OutstandingChargesPayment({
   const selectedTotal = Array.from(selectedCharges)
     .map((id) => {
       const charge = outstandingCharges.find((c) => c.id === id);
-      return charge ? charge.amount - charge.paidAmount : 0;
+      if (!charge) return 0;
+      // Use custom amount if provided, otherwise use full outstanding amount
+      const customAmount = customPaymentAmounts[id];
+      return customAmount !== undefined ? customAmount : charge.amount - charge.paidAmount;
     })
     .reduce((sum, val) => sum + val, 0);
 
@@ -115,6 +119,33 @@ export function OutstandingChargesPayment({
     }
   };
 
+  const handleCustomAmountChange = (chargeId: string, amount: string) => {
+    const numAmount = amount === '' ? 0 : parseFloat(amount);
+    
+    if (isNaN(numAmount) || numAmount < 0) {
+      return; // Ignore invalid input
+    }
+
+    const charge = outstandingCharges.find((c) => c.id === chargeId);
+    if (!charge) return;
+
+    const maxAmount = charge.amount - charge.paidAmount;
+    
+    if (numAmount > maxAmount) {
+      toast({
+        title: 'Amount Exceeds Outstanding',
+        description: `Maximum amount for this charge is ${formatTablePrice(Math.round(maxAmount * 100))}`,
+        variant: 'destructive',
+      });
+      return;
+    }
+
+    setCustomPaymentAmounts({
+      ...customPaymentAmounts,
+      [chargeId]: numAmount,
+    });
+  };
+
   const handlePayment = async () => {
     if (selectedCharges.size === 0) {
       toast({ title: 'Error', description: 'Please select at least one charge', variant: 'destructive' });
@@ -126,14 +157,32 @@ export function OutstandingChargesPayment({
       return;
     }
 
+    if (selectedTotal <= 0) {
+      toast({ title: 'Error', description: 'Payment amount must be greater than zero', variant: 'destructive' });
+      return;
+    }
+
     setProcessing(true);
 
     try {
+      // Prepare payment details with custom amounts
+      const paymentDetails = Array.from(selectedCharges).map((chargeId) => {
+        const charge = outstandingCharges.find((c) => c.id === chargeId);
+        const customAmount = customPaymentAmounts[chargeId];
+        const amount = customAmount !== undefined ? customAmount : (charge?.amount || 0) - (charge?.paidAmount || 0);
+        
+        return {
+          chargeId,
+          amount,
+        };
+      });
+
       const response = await fetch(`/api/employees/${employeeId}/charges/pay`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           chargeIds: Array.from(selectedCharges),
+          paymentDetails, // New: includes custom amounts per charge
           totalAmount: selectedTotal,
           paymentMethod,
           notes,
@@ -145,10 +194,11 @@ export function OutstandingChargesPayment({
       if (data.success) {
         toast({
           title: 'Success',
-          description: `Paid ${formatTablePrice(selectedTotal * 100)} for ${selectedCharges.size} charge(s)`,
+          description: `Paid ${formatTablePrice(Math.round(selectedTotal * 100))} for ${selectedCharges.size} charge(s)`,
         });
         setShowDialog(false);
         setSelectedCharges(new Set());
+        setCustomPaymentAmounts({});
         setNotes('');
         fetchCharges();
         onPaymentSuccess?.();
@@ -272,25 +322,48 @@ export function OutstandingChargesPayment({
           </DialogHeader>
 
           <div className="space-y-4">
-            {/* Selected Charges Summary */}
-            <div className="bg-gray-50 p-3 rounded-lg space-y-2">
+            {/* Selected Charges Summary with Custom Amount Inputs */}
+            <div className="bg-gray-50 p-3 rounded-lg space-y-3">
               {Array.from(selectedCharges).map((chargeId) => {
                 const charge = outstandingCharges.find((c) => c.id === chargeId);
                 if (!charge) return null;
                 const outstanding = charge.amount - charge.paidAmount;
+                const customAmount = customPaymentAmounts[chargeId];
+                const payingAmount = customAmount !== undefined ? customAmount : outstanding;
+
                 return (
-                  <div
-                    key={chargeId}
-                    className="flex items-center justify-between text-sm"
-                  >
-                    <span className="text-gray-700">{charge.chargeType}</span>
-                    <span className="font-medium">{formatTablePrice(Math.round(outstanding * 100))}</span>
+                  <div key={chargeId} className="space-y-2 pb-3 border-b last:border-b-0">
+                    <div className="flex items-center justify-between">
+                      <span className="text-gray-700 font-medium text-sm">{charge.chargeType}</span>
+                      <span className="text-xs text-gray-500">
+                        Outstanding: {formatTablePrice(Math.round(outstanding * 100))}
+                      </span>
+                    </div>
+                    <div className="flex items-center gap-2">
+                      <Label htmlFor={`amount-${chargeId}`} className="text-xs">
+                        Pay Amount:
+                      </Label>
+                      <Input
+                        id={`amount-${chargeId}`}
+                        type="number"
+                        step="0.01"
+                        min="0"
+                        max={outstanding}
+                        placeholder={formatTablePrice(Math.round(outstanding * 100))}
+                        value={customAmount !== undefined ? customAmount : ''}
+                        onChange={(e) => handleCustomAmountChange(chargeId, e.target.value)}
+                        className="flex-1 h-8 text-sm"
+                      />
+                      <span className="text-sm font-semibold text-orange-700 min-w-max">
+                        {formatTablePrice(Math.round(payingAmount * 100))}
+                      </span>
+                    </div>
                   </div>
                 );
               })}
-              <div className="border-t pt-2 flex items-center justify-between font-semibold">
-                <span>Total:</span>
-                <span>{formatTablePrice(Math.round(selectedTotal * 100))}</span>
+              <div className="border-t pt-3 flex items-center justify-between font-semibold">
+                <span>Total Payment:</span>
+                <span className="text-lg text-orange-900">{formatTablePrice(Math.round(selectedTotal * 100))}</span>
               </div>
             </div>
 
