@@ -43,7 +43,7 @@ export async function GET(req: NextRequest) {
     const status = searchParams.get('status'); // active, inactive, on_leave, terminated
     const department = searchParams.get('department');
     const page = parseInt(searchParams.get('page') || '1');
-    const limit = parseInt(searchParams.get('limit') || '10');
+    const limit = parseInt(searchParams.get('limit') || '30');
     const skip = (page - 1) * limit;
 
     // Build filter
