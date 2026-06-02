@@ -99,21 +99,80 @@ export async function GET(
 
     const unpaidCharges = charges
       .filter((ch) => ch.status === 'pending' || ch.status === 'partially_paid')
-      .map((ch) => ({
-        id: ch.id,
-        chargeType: ch.chargeType,
-        amount: ch.amount.toNumber(),
-        paidAmount: ch.paidAmount.toNumber(),
-        status: ch.status,
-        date: ch.date.toISOString(),
-        description: ch.description,
-      }));
+      .map((ch) => {
+        const outstanding = ch.amount.toNumber() - ch.paidAmount.toNumber();
+        return {
+          id: ch.id,
+          chargeType: ch.chargeType,
+          amount: ch.amount.toNumber(),
+          paidAmount: ch.paidAmount.toNumber(),
+          outstanding: outstanding,
+          status: ch.status,
+          date: ch.date.toISOString(),
+          description: ch.description,
+        };
+      });
+
+    const monthStart = new Date(new Date().getFullYear(), new Date().getMonth(), 1);
+    const monthEnd = new Date(new Date().getFullYear(), new Date().getMonth() + 1, 0, 23, 59, 59, 999);
+
+    const currentMonthCharges = charges.filter(
+      (ch) => ch.date >= monthStart && ch.date <= monthEnd
+    );
+
+    const currentMonthUnpaid = currentMonthCharges.filter(
+      (ch) => ch.status === 'pending' || ch.status === 'partially_paid'
+    );
+
+    const carryoverCharges = charges.filter(
+      (ch) => ch.date < monthStart && (ch.status === 'pending' || ch.status === 'partially_paid')
+    );
+
+    const carryoverUnpaid = carryoverCharges.map((ch) => ({
+      id: ch.id,
+      chargeType: ch.chargeType,
+      amount: ch.amount.toNumber(),
+      paidAmount: ch.paidAmount.toNumber(),
+      outstanding: ch.amount.toNumber() - ch.paidAmount.toNumber(),
+      status: ch.status,
+      date: ch.date.toISOString(),
+      description: ch.description,
+    }));
 
     const chargesSummary = {
       total: charges.length,
       totalAmount: charges.reduce((sum, ch) => sum + ch.amount.toNumber(), 0),
       totalPaid: charges.reduce((sum, ch) => sum + ch.paidAmount.toNumber(), 0),
-      totalPending: unpaidCharges.reduce((sum, ch) => sum + (ch.amount - ch.paidAmount), 0),
+      totalPending: unpaidCharges.reduce((sum, ch) => sum + ch.outstanding, 0),
+      currentMonth: {
+        totalCharges: currentMonthCharges.length,
+        totalAmount: currentMonthCharges.reduce((sum, ch) => sum + ch.amount.toNumber(), 0),
+        outstanding: currentMonthUnpaid.reduce(
+          (sum, ch) => sum + (ch.amount.toNumber() - ch.paidAmount.toNumber()),
+          0
+        ),
+        paid: currentMonthCharges.reduce((sum, ch) => sum + ch.paidAmount.toNumber(), 0),
+        charges: currentMonthCharges.map((ch) => ({
+          id: ch.id,
+          chargeType: ch.chargeType,
+          amount: ch.amount.toNumber(),
+          paidAmount: ch.paidAmount.toNumber(),
+          outstanding: ch.amount.toNumber() - ch.paidAmount.toNumber(),
+          status: ch.status,
+          date: ch.date.toISOString(),
+          description: ch.description,
+        })),
+      },
+      carryover: {
+        totalCharges: carryoverCharges.length,
+        totalAmount: carryoverCharges.reduce((sum, ch) => sum + ch.amount.toNumber(), 0),
+        outstanding: carryoverCharges.reduce(
+          (sum, ch) => sum + (ch.amount.toNumber() - ch.paidAmount.toNumber()),
+          0
+        ),
+        paid: carryoverCharges.reduce((sum, ch) => sum + ch.paidAmount.toNumber(), 0),
+        charges: carryoverUnpaid,
+      },
       byStatus: {
         pending: charges.filter((ch) => ch.status === 'pending').length,
         paid: charges.filter((ch) => ch.status === 'paid').length,
@@ -128,7 +187,6 @@ export async function GET(
         },
         {} as Record<string, number>
       ),
-      recent: charges.slice(0, 5), // Last 5 charges
       unpaid: unpaidCharges,
     };
 

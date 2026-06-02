@@ -14,6 +14,14 @@ import { z } from 'zod';
 const PayChargesSchema = z.object({
   chargeIds: z.array(z.string().min(1)),
   totalAmount: z.coerce.number().positive(),
+  paymentDetails: z
+    .array(
+      z.object({
+        chargeId: z.string().min(1),
+        amount: z.coerce.number().nonnegative(),
+      })
+    )
+    .optional(),
   paymentMethod: z.string().min(1),
   notes: z.string().optional(),
 });
@@ -64,6 +72,26 @@ export async function POST(
     // Parse and validate request body
     const body = await request.json();
     const validated = PayChargesSchema.parse(body);
+
+    const paymentDetailsMap = new Map(
+      (validated.paymentDetails || []).map((item) => [item.chargeId, Number(item.amount)])
+    );
+
+    if (
+      validated.paymentDetails &&
+      Math.abs(
+        validated.paymentDetails.reduce((sum, item) => sum + Number(item.amount), 0) -
+          validated.totalAmount
+      ) > 0.0001
+    ) {
+      return NextResponse.json(
+        errorResponse(
+          ErrorCodes.BAD_REQUEST,
+          'Payment details total must match totalAmount'
+        ),
+        { status: getStatusCode(ErrorCodes.BAD_REQUEST) }
+      );
+    }
 
     // Verify employee exists
     const employee = await prisma.pluginUsersPermissionsUser.findUnique({
@@ -124,9 +152,21 @@ export async function POST(
 
     for (const charge of chargesWithNumbers) {
       const amountOwed = charge.amountNum - charge.paidAmountNum;
-      const proportion = amountOwed / totalOutstanding;
-      const paymentForThisCharge = validated.totalAmount * proportion;
-      const newPaidAmount = charge.paidAmountNum + paymentForThisCharge;
+      const paymentForThisCharge = paymentDetailsMap.has(charge.id)
+        ? paymentDetailsMap.get(charge.id)!
+        : validated.totalAmount * (amountOwed / totalOutstanding);
+
+      if (paymentForThisCharge > amountOwed + 0.0001) {
+        return NextResponse.json(
+          errorResponse(
+            ErrorCodes.BAD_REQUEST,
+            `Payment amount for charge ${charge.id} exceeds outstanding amount`
+          ),
+          { status: getStatusCode(ErrorCodes.BAD_REQUEST) }
+        );
+      }
+
+      const newPaidAmount = Math.min(charge.paidAmountNum + paymentForThisCharge, charge.amountNum);
 
       const updatedCharge = await prisma.employeeCharge.update({
         where: { id: charge.id },
@@ -138,7 +178,7 @@ export async function POST(
               : newPaidAmount > 0
                 ? 'partially_paid'
                 : 'pending',
-          paymentDate: new Date(),
+          paymentDate: paymentForThisCharge > 0 ? new Date() : undefined,
           paymentMethod: validated.paymentMethod,
           notes: validated.notes,
         },

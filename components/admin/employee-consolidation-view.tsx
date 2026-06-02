@@ -31,6 +31,36 @@ interface ConsolidatedEmployee {
     totalAmount: number;
     totalPaid: number;
     totalPending: number;
+    currentMonth: {
+      totalCharges: number;
+      totalAmount: number;
+      outstanding: number;
+      paid: number;
+      charges: Array<{
+        id: string;
+        chargeType: string;
+        amount: number;
+        paidAmount: number;
+        status: string;
+        date: string;
+        description?: string;
+      }>;
+    };
+    carryover: {
+      totalCharges: number;
+      totalAmount: number;
+      outstanding: number;
+      paid: number;
+      charges: Array<{
+        id: string;
+        chargeType: string;
+        amount: number;
+        paidAmount: number;
+        status: string;
+        date: string;
+        description?: string;
+      }>;
+    };
     byStatus: Record<string, number>;
     byType: Record<string, number>;
     recent: Array<{
@@ -423,41 +453,75 @@ export function EmployeeConsolidationView({ employeeId }: EmployeeConsolidationV
             </CardHeader>
             <CardContent>
               <div className="space-y-4">
-                {/* Charge Summary */}
-                <div className="grid grid-cols-4 gap-4">
-                  <div className="p-4 bg-gray-50 rounded-lg">
-                    <p className="text-sm text-gray-600">Total Charges</p>
-                    <p className="text-2xl font-bold">{charges.total}</p>
-                  </div>
-                  <div className="p-4 bg-red-50 rounded-lg">
-                    <p className="text-sm text-gray-600">Total Amount</p>
-                    <p className="text-2xl font-bold text-red-700">
-                      {formatTablePrice(charges.totalAmount * 100)}
-                    </p>
-                  </div>
-                  <div className="p-4 bg-yellow-50 rounded-lg">
-                    <p className="text-sm text-gray-600">Outstanding</p>
-                    <p className="text-2xl font-bold text-yellow-700">
-                      {formatTablePrice(Math.round(charges.totalPending) * 100)}
-                    </p>
-                  </div>
-                  <div className="p-4 bg-green-50 rounded-lg">
-                    <p className="text-sm text-gray-600">Paid</p>
-                    <p className="text-2xl font-bold text-green-700">
-                      {formatTablePrice(Math.round(charges.totalPaid) * 100)}
-                    </p>
+                {/* Charge Summary - Current Month */}
+                <div className="p-4 bg-blue-50 border border-blue-200 rounded-lg">
+                  <h5 className="font-semibold text-blue-900 mb-3">Current Month</h5>
+                  <div className="grid grid-cols-4 gap-3">
+                    <div>
+                      <p className="text-xs text-blue-600">Charges</p>
+                      <p className="text-lg font-bold text-blue-900">{charges.currentMonth?.totalCharges ?? 0}</p>
+                    </div>
+                    <div>
+                      <p className="text-xs text-blue-600">Total</p>
+                      <p className="text-lg font-bold text-blue-900">
+                        {formatTablePrice((charges.currentMonth?.totalAmount ?? 0) * 100)}
+                      </p>
+                    </div>
+                    <div>
+                      <p className="text-xs text-blue-600">Outstanding</p>
+                      <p className="text-lg font-bold text-red-600">
+                        {formatTablePrice((charges.currentMonth?.outstanding ?? 0) * 100)}
+                      </p>
+                    </div>
+                    <div>
+                      <p className="text-xs text-blue-600">Paid</p>
+                      <p className="text-lg font-bold text-green-600">
+                        {formatTablePrice((charges.currentMonth?.paid ?? 0) * 100)}
+                      </p>
+                    </div>
                   </div>
                 </div>
 
-                {/* Charges by Status */}
-                {charges.unpaid.length > 0 && (
+                {/* Charge Summary - Carryover */}
+                {(charges.carryover?.totalCharges ?? 0) > 0 && (
+                  <div className="p-4 bg-red-50 border border-red-200 rounded-lg">
+                    <h5 className="font-semibold text-red-900 mb-3">Carryover (Previous Months)</h5>
+                    <div className="grid grid-cols-4 gap-3">
+                      <div>
+                        <p className="text-xs text-red-600">Charges</p>
+                        <p className="text-lg font-bold text-red-900">{charges.carryover?.totalCharges ?? 0}</p>
+                      </div>
+                      <div>
+                        <p className="text-xs text-red-600">Total</p>
+                        <p className="text-lg font-bold text-red-900">
+                          {formatTablePrice((charges.carryover?.totalAmount ?? 0) * 100)}
+                        </p>
+                      </div>
+                      <div>
+                        <p className="text-xs text-red-600">Outstanding</p>
+                        <p className="text-lg font-bold text-red-700">
+                          {formatTablePrice((charges.carryover?.outstanding ?? 0) * 100)}
+                        </p>
+                      </div>
+                      <div>
+                        <p className="text-xs text-red-600">Paid</p>
+                        <p className="text-lg font-bold text-green-600">
+                          {formatTablePrice((charges.carryover?.paid ?? 0) * 100)}
+                        </p>
+                      </div>
+                    </div>
+                  </div>
+                )}
+
+                {/* Current Month Charges */}
+                {charges.currentMonth?.charges && charges.currentMonth.charges.length > 0 && (
                   <div className="mt-6">
-                    <h4 className="font-semibold mb-3">Unpaid Charges (All Periods)</h4>
+                    <h4 className="font-semibold mb-3 text-blue-900">Current Month Charges</h4>
                     <div className="space-y-2 max-h-72 overflow-y-auto">
-                      {charges.unpaid.map((charge) => (
+                      {charges.currentMonth.charges.map((charge) => (
                         <div
                           key={charge.id}
-                          className="flex items-center justify-between p-3 border rounded-lg"
+                          className="flex items-center justify-between p-3 border rounded-lg bg-blue-50"
                         >
                           <div className="flex-1">
                             <p className="font-semibold text-sm">{charge.chargeType}</p>
@@ -481,25 +545,16 @@ export function EmployeeConsolidationView({ employeeId }: EmployeeConsolidationV
                     </div>
                   </div>
                 )}
-                {charges.recent.length > 0 && (
+
+                {/* Carryover Charges (Previous Months - Unpaid) */}
+                {charges.carryover?.charges && charges.carryover.charges.length > 0 && (
                   <div className="mt-6">
-                    <h4 className="font-semibold mb-3">Recent Charges (Last 30 Days)</h4>
+                    <h4 className="font-semibold mb-3 text-red-900">Carryover Charges (Previous Months)</h4>
                     <div className="space-y-2 max-h-72 overflow-y-auto">
-                      {charges.recent
-                        .filter((charge) => {
-                          // Only show paid charges from the last 30 days
-                          if (charge.status === 'paid') {
-                            const chargeDate = new Date(charge.date);
-                            const thirtyDaysAgo = new Date();
-                            thirtyDaysAgo.setDate(thirtyDaysAgo.getDate() - 30);
-                            return chargeDate >= thirtyDaysAgo;
-                          }
-                          return true;
-                        })
-                        .map((charge) => (
+                      {charges.carryover.charges.map((charge) => (
                         <div
                           key={charge.id}
-                          className="flex items-center justify-between p-3 border rounded-lg"
+                          className="flex items-center justify-between p-3 border rounded-lg bg-red-50"
                         >
                           <div className="flex-1">
                             <p className="font-semibold text-sm">{charge.chargeType}</p>
@@ -510,7 +565,7 @@ export function EmployeeConsolidationView({ employeeId }: EmployeeConsolidationV
                           <div className="text-right mr-3">
                             <p className="font-semibold">{formatTablePrice(Math.round(charge.amount * 100))}</p>
                             <p className="text-xs text-gray-500">
-                              Paid: {formatTablePrice(Math.round(charge.paidAmount * 100))} 
+                              Paid: {formatTablePrice(Math.round(charge.paidAmount * 100))}
                             </p>
                           </div>
                           <span

@@ -56,6 +56,7 @@ export function OutstandingChargesPayment({
   const [paymentMethod, setPaymentMethod] = useState<string>('cash');
   const [notes, setNotes] = useState('');
   const [customPaymentAmounts, setCustomPaymentAmounts] = useState<Record<string, number>>({});
+  const [autoOpened, setAutoOpened] = useState(false);
 
   // Fetch charges on mount
   useEffect(() => {
@@ -69,12 +70,18 @@ export function OutstandingChargesPayment({
       const data = await res.json();
 
       if (data.success && data.data?.charges) {
-        // Filter for pending/partially_paid charges
-        const pendingCharges = data.data.charges.filter(
-          (c: Charge) =>
-            c.status === 'pending' ||
-            (c.status === 'partially_paid' && c.paidAmount < c.amount)
-        );
+        // Convert string amounts to numbers and filter for pending/partially_paid charges
+        const pendingCharges = data.data.charges
+          .map((c: any) => ({
+            ...c,
+            amount: Number(c.amount),
+            paidAmount: Number(c.paidAmount),
+          }))
+          .filter(
+            (c: Charge) =>
+              c.status === 'pending' ||
+              (c.status === 'partially_paid' && c.paidAmount < c.amount)
+          );
         setAllCharges(pendingCharges);
       }
     } catch (err) {
@@ -90,6 +97,16 @@ export function OutstandingChargesPayment({
     (sum, c) => sum + (c.amount - c.paidAmount),
     0
   );
+
+  // Auto-select outstanding charges when they load
+  useEffect(() => {
+    if (!loading && outstandingCharges.length > 0 && !autoOpened) {
+      const chargeIds = new Set(outstandingCharges.map((c) => c.id));
+      setSelectedCharges(chargeIds);
+      setShowDialog(true);
+      setAutoOpened(true);
+    }
+  }, [loading, autoOpened]);
 
   const selectedTotal = Array.from(selectedCharges)
     .map((id) => {
@@ -221,8 +238,20 @@ export function OutstandingChargesPayment({
     }
   };
 
-  if (loading || outstandingCharges.length === 0) {
-    return null;
+  if (loading) {
+    return (
+      <Card className="border-orange-200 bg-orange-50">
+        <CardHeader>
+          <CardTitle className="text-orange-900">Outstanding Charges</CardTitle>
+          <CardDescription className="text-orange-700">Loading charges...</CardDescription>
+        </CardHeader>
+        <CardContent>
+          <div className="text-center py-6">
+            <Loader2 className="animate-spin mx-auto" />
+          </div>
+        </CardContent>
+      </Card>
+    );
   }
 
   return (

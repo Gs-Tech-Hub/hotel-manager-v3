@@ -112,9 +112,9 @@ export async function GET(req: NextRequest) {
             chargesBreakdown[charge.chargeType].total += Number(charge.amount);
 
             if (charge.status === 'pending' || charge.status === 'partially_paid') {
-              totalOutstandingCharges += Number(charge.amount) - Number(charge.paidAmount || 0);
-            }
-            if (charge.status === 'paid') {
+              const outstanding = Number(charge.amount) - Number(charge.paidAmount || 0);
+              totalOutstandingCharges += outstanding;
+            } else if (charge.status === 'paid') {
               totalPaidCharges += Number(charge.amount);
             }
           });
@@ -160,10 +160,26 @@ export async function GET(req: NextRequest) {
 
           // Include financial data only if user has appropriate permissions
           if (canViewCharges) {
-            employeeObj.totalCharges = allCharges.reduce((sum, c) => sum + Number(c.amount), 0);
-            employeeObj.totalOutstandingCharges = totalOutstandingCharges;
+            // Compute current month range
+            const now = new Date();
+            const monthStart = new Date(now.getFullYear(), now.getMonth(), 1);
+            const monthEnd = new Date(now.getFullYear(), now.getMonth() + 1, 0, 23, 59, 59, 999);
+
+            const monthCharges = allCharges.filter((ch) => {
+              const chDate = new Date(ch.date);
+              return chDate >= monthStart && chDate <= monthEnd;
+            });
+
+            // totalCharges now represents this month's charges (resets if none)
+            employeeObj.totalCharges = monthCharges.reduce((sum, c) => sum + Number(c.amount), 0);
+            employeeObj.totalOutstandingCharges = totalOutstandingCharges; // outstanding across all periods
             employeeObj.totalPaidCharges = totalPaidCharges;
             employeeObj.chargesBreakdown = chargesBreakdown;
+            employeeObj.monthCharges = {
+              total: monthCharges.length,
+              totalAmount: monthCharges.reduce((sum, c) => sum + Number(c.amount), 0),
+              outstanding: monthCharges.reduce((sum, c) => sum + (c.status !== 'paid' ? (Number(c.amount) - Number(c.paidAmount || 0)) : 0), 0),
+            };
           }
 
           if (canViewSalary) {
