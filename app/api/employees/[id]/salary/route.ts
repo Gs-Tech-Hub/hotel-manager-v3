@@ -9,6 +9,7 @@ import {
   getEmployeeSalaryHistory,
   getOutstandingSalary,
   getEmployeeDaysWorked,
+  getEmployeeAbsentDays,
 } from '@/src/services/salary.service';
 import { z } from 'zod';
 
@@ -64,8 +65,9 @@ export async function GET(
       const monthEnd = new Date(now.getFullYear(), now.getMonth() + 1, 0);
 
       const daysWorked = await getEmployeeDaysWorked(employeeId, monthStart, monthEnd);
+      const absentDays = await getEmployeeAbsentDays(employeeId, monthStart, monthEnd);
       
-      console.log(`[Salary Calculate] Days worked in current month: ${daysWorked} days for employee ${employeeId}`);
+      console.log(`[Salary Calculate] Days worked in current month: ${daysWorked} days, absent: ${absentDays} days for employee ${employeeId}`);
 
       const calculation = await calculateEmployeeSalaryByDays(
         employeeId,
@@ -80,8 +82,10 @@ export async function GET(
           data: { 
             salary: calculation, 
             daysWorked,
+            absentDays,
+            totalDays: daysWorked + absentDays,
             calculationMethod: 'days-worked', // Explicitly state the method
-            note: `Salary calculated from ${daysWorked} days of work at ₦${calculation.grossSalary.div(daysWorked).toFixed(0)}/day`
+            note: `Salary calculated from ${daysWorked} days of work with ${absentDays} absence day(s) in the current month`
           } 
         }),
         { status: 200 }
@@ -176,13 +180,20 @@ export async function POST(
     const body = await request.json();
     const validated = ProcessSalaryPaymentSchema.parse(body);
 
-    // Calculate salary
-    const calculation = await calculateEmployeeSalary({
-      employeeId,
-      payEarly: validated.payEarly,
-    });
+    // Calculate days worked and absent days for the current month
+    const now = new Date();
+    const monthStart = new Date(now.getFullYear(), now.getMonth(), 1);
+    const monthEnd = new Date(now.getFullYear(), now.getMonth() + 1, 0, 23, 59, 59, 999);
+    const daysWorked = await getEmployeeDaysWorked(employeeId, monthStart, monthEnd);
+    const absentDays = await getEmployeeAbsentDays(employeeId, monthStart, monthEnd);
 
-    // Create payment record
+    const calculation = await calculateEmployeeSalaryByDays(
+      employeeId,
+      daysWorked,
+      undefined
+    );
+
+    // Create payment record with days-based salary
     const payment = await prisma.salaryPayment.create({
       data: {
         userId: employeeId,
@@ -192,13 +203,13 @@ export async function POST(
         netSalary: calculation.netSalary,
         paymentMethod: validated.paymentMethod || 'transfer',
         status: 'completed',
-        notes: validated.notes || null,
+        notes: validated.notes || `Paid ${daysWorked} worked day(s), ${absentDays} absence day(s) in current month`,
         salaryDueDate: calculation.salaryDueDate,
       },
     });
 
     return NextResponse.json(
-      successResponse({ data: { payment, calculation } }),
+      successResponse({ data: { payment, calculation, daysWorked, absentDays } }),
       { status: 201 }
     );
   } catch (error: any) {

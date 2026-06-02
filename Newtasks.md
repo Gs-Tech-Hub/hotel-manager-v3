@@ -218,6 +218,65 @@ PosReceipt has now been formatted properly. No changes needed. But we need to ma
 - Test query with no date params returns same results as before
 
 ---
+## Employee Attendance & Salary Sprint Checklist
+
+### Scope
+- Update employee attendance so sign-in/sign-out is date-scoped, not limited by same-day logic
+- Support cross-day / cross-month / cross-year attendance cycles
+- Handle missed sign-out as absent or reset state with zero hours
+- Enable attendance search by month and custom date ranges
+- Convert salary payout tracking into a month-based ledger with paid/unpaid status
+
+### Implementation Checklist
+
+1. Audit current attendance and salary flows
+   - Review `app/api/employees/attendance/route.ts`
+   - Review `app/api/employees/[id]/salary/route.ts`
+   - Review attendance and salary helper/service implementations
+
+2. Fix attendance check-in/check-out logic
+   - Allow only one open active session per employee, not one check-in per calendar day
+   - Keep `checkInTime`/`checkOutTime` as exact timestamps
+   - Allow check-out to occur after midnight/month/year boundaries
+   - Accept optional custom clock-in/out timestamps for manual adjustments
+
+3. Implement missed sign-out handling
+   - Detect stale open sessions when a new attendance event begins
+   - Mark missed checkout as absent or zero-hour session according to business rule
+   - Reset the active timer state for the next attendance period
+
+4. Extend attendance query/reporting
+   - Add `fromDate`, `toDate`, `month`, and `year` filters to `GET /api/employees/attendance`
+   - Return derived fields: `hoursWorked`, `daysCounted`, `status`, `checkInTime`, `checkOutTime`
+   - Ensure cross-day sessions appear correctly in reporting
+
+5. Update salary payout tracking
+   - Track salary payment records by payroll period/month
+   - Add paid/unpaid status to salary history
+   - Ensure salary calculations use actual attended days for the selected period
+   - Expose month-based salary history in `app/api/employees/[id]/salary/route.ts`
+
+6. Update UI for employee attendance and salary
+   - Add attendance month/custom range filters on employee detail pages
+   - Add monthly salary payout view with payment status indicators
+   - Keep existing employee detail interactions stable while adding the new views
+
+7. Validate and test end-to-end
+   - Cross-month sign-in/check-out: Feb→Mar, Dec→Jan
+   - Missed checkout absent handling
+   - Month-based attendance retrieval
+   - Salary month payment status and ledger accuracy
+   - Manual time entry and adjustment flows
+
+### Testing Checklist
+
+- [ ] Cross-day / cross-month sign-in and checkout works
+- [ ] Missed checkout is handled as absent/reset state
+- [ ] Attendance API supports month and custom date filters
+- [ ] Attendance history shows correct hours, status, and period boundaries
+- [ ] Salary payments show month-by-month ledger entries
+- [ ] Paid/unpaid status appears correctly in salary history
+- [ ] Employee detail UI includes stable attendance and salary reporting
 
 ## Priority for Refactoring
 

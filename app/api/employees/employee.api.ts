@@ -132,11 +132,23 @@ export const employeeApi = {
     amount: number;
     paymentMethod: string;
     notes: string;
+    salaryDueDate?: string;
   }) => {
-    const res = await fetch('/api/employees/salary-payment', {
+    const paymentAmount = payload.amount / 100;
+    const res = await fetch('/api/employees/salary-payments', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(payload),
+      body: JSON.stringify({
+        userId: payload.employeeId,
+        paymentDate: new Date().toISOString(),
+        grossSalary: paymentAmount,
+        deductions: 0,
+        netSalary: paymentAmount,
+        paymentMethod: payload.paymentMethod,
+        notes: payload.notes,
+        salaryDueDate: payload.salaryDueDate,
+        status: 'completed',
+      }),
     });
 
     if (!res.ok) {
@@ -157,10 +169,14 @@ export const employeeApi = {
     paymentMethod: string;
     notes: string;
   }) => {
+    const payloadBody = {
+      ...payload,
+      amount: payload.amount / 100,
+    };
     const res = await fetch('/api/employees/early-payment', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(payload),
+      body: JSON.stringify(payloadBody),
     });
 
     if (!res.ok) {

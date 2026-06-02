@@ -25,6 +25,19 @@ export interface SalaryCalculationResult {
   calculatedAt: Date;
 }
 
+export interface SalaryPeriod {
+  periodStart: Date;
+  periodEnd: Date;
+  salaryDueDate: Date;
+  grossSalary: Decimal;
+  deductions: Decimal;
+  netSalary: Decimal;
+  status: 'paid' | 'unpaid' | 'partial';
+  paymentDate?: Date;
+  paymentId?: string;
+  notes?: string | null;
+}
+
 /**
  * Calculate next salary due date based on frequency
  */
@@ -65,6 +78,43 @@ function calculateNextSalaryDueDate(
   }
 
   return dueDate;
+}
+
+function addSalaryPeriod(
+  baseDate: Date,
+  salaryFrequency: string
+): Date {
+  const nextDate = new Date(baseDate);
+
+  switch (salaryFrequency) {
+    case 'weekly':
+      nextDate.setDate(nextDate.getDate() + 7);
+      break;
+    case 'bi-weekly':
+      nextDate.setDate(nextDate.getDate() + 14);
+      break;
+    case 'monthly':
+    default:
+      nextDate.setMonth(nextDate.getMonth() + 1);
+      break;
+  }
+
+  return nextDate;
+}
+
+function calculateFrequencySalary(
+  baseSalary: Decimal,
+  salaryFrequency: string
+): Decimal {
+  switch (salaryFrequency) {
+    case 'weekly':
+      return baseSalary.div(4);
+    case 'bi-weekly':
+      return baseSalary.div(2);
+    case 'monthly':
+    default:
+      return baseSalary;
+  }
 }
 
 /**
@@ -322,9 +372,54 @@ export async function getEmployeeDaysWorked(
     where: whereFilter,
   });
 
-  // Count completed cycles as days
-  // Each completed check-in/check-out = 1 day
-  return records.length;
+  // Exclude absent / missed checkout records from days worked.
+  // Stale sessions are closed with checkOutTime === checkInTime.
+  return records.filter((record) => {
+    const checkInMs = new Date(record.checkInTime).getTime();
+    const checkOutMs = new Date(record.checkOutTime!).getTime();
+    return checkOutMs > checkInMs;
+  }).length;
+}
+
+export async function getEmployeeAbsentDays(
+  employeeId: string,
+  fromDate?: Date,
+  toDate?: Date
+): Promise<number> {
+  const employeeSummary = await prisma.employeeSummary.findUnique({
+    where: { userId: employeeId },
+  });
+
+  if (!employeeSummary) {
+    return 0;
+  }
+
+  const whereFilter: any = {
+    employeeSummaryId: employeeSummary.id,
+    checkOutTime: { not: null },
+  };
+
+  if (fromDate || toDate) {
+    whereFilter.checkOutTime = whereFilter.checkOutTime || {};
+    if (fromDate) {
+      whereFilter.checkOutTime.gte = fromDate;
+    }
+    if (toDate) {
+      const endDate = new Date(toDate);
+      endDate.setHours(23, 59, 59, 999);
+      whereFilter.checkOutTime.lte = endDate;
+    }
+  }
+
+  const records = await prisma.checkIn.findMany({
+    where: whereFilter,
+  });
+
+  return records.filter((record) => {
+    const checkInMs = new Date(record.checkInTime).getTime();
+    const checkOutMs = new Date(record.checkOutTime!).getTime();
+    return checkOutMs <= checkInMs;
+  }).length;
 }
 
 /**
@@ -364,6 +459,67 @@ export async function getEmployeeSalaryHistory(
       ? payment.paymentDate < payment.salaryDueDate
       : false,
   }));
+}
+
+export async function getEmployeeSalarySchedule(
+  employeeId: string,
+  upToDate?: Date
+): Promise<SalaryPeriod[]> {
+  const employmentData = await prisma.employmentData.findUnique({
+    where: { userId: employeeId },
+  });
+
+  if (!employmentData) {
+    throw new Error(`Employee not found: ${employeeId}`);
+  }
+
+  const salaryPayments = await prisma.salaryPayment.findMany({
+    where: { userId: employeeId },
+    orderBy: { salaryDueDate: 'asc' },
+  });
+
+  const schedule: SalaryPeriod[] = [];
+  const periodStart = new Date(employmentData.employmentDate);
+  const today = upToDate || new Date();
+  let currentStart = new Date(periodStart);
+  let nextDue = addSalaryPeriod(currentStart, employmentData.salaryFrequency);
+
+  while (currentStart <= today) {
+    const grossSalary = calculateFrequencySalary(employmentData.salary, employmentData.salaryFrequency);
+
+    const periodPayments = salaryPayments.filter((payment) => {
+      return (
+        payment.salaryDueDate &&
+        payment.salaryDueDate.getTime() === nextDue.getTime()
+      );
+    });
+
+    const payment = periodPayments.length > 0 ? periodPayments[0] : null;
+    const paidAmount = payment ? payment.netSalary : new Decimal(0);
+    const status: SalaryPeriod['status'] = payment
+      ? payment.status === 'completed'
+        ? 'paid'
+        : 'partial'
+      : 'unpaid';
+
+    schedule.push({
+      periodStart: new Date(currentStart),
+      periodEnd: new Date(nextDue),
+      salaryDueDate: new Date(nextDue),
+      grossSalary,
+      deductions: payment ? payment.deductions : new Decimal(0),
+      netSalary: payment ? payment.netSalary : new Decimal(0),
+      status,
+      paymentDate: payment ? payment.paymentDate : undefined,
+      paymentId: payment ? payment.id : undefined,
+      notes: payment ? payment.notes : undefined,
+    });
+
+    currentStart = new Date(nextDue);
+    nextDue = addSalaryPeriod(currentStart, employmentData.salaryFrequency);
+  }
+
+  return schedule;
 }
 
 /**

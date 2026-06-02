@@ -8,8 +8,9 @@ import {
   calculateEmployeeSalaryByDays,
   getOutstandingSalary,
   getEmployeeDaysWorked,
+  getEmployeeAbsentDays,
+  getEmployeeSalarySchedule,
 } from '@/src/services/salary.service';
-import { normalizeToCents } from '@/lib/price';
 
 /**
  * GET /api/employees/[id]/consolidated
@@ -96,16 +97,23 @@ export async function GET(
       orderBy: { date: 'desc' },
     });
 
+    const unpaidCharges = charges
+      .filter((ch) => ch.status === 'pending' || ch.status === 'partially_paid')
+      .map((ch) => ({
+        id: ch.id,
+        chargeType: ch.chargeType,
+        amount: ch.amount.toNumber(),
+        paidAmount: ch.paidAmount.toNumber(),
+        status: ch.status,
+        date: ch.date.toISOString(),
+        description: ch.description,
+      }));
+
     const chargesSummary = {
       total: charges.length,
       totalAmount: charges.reduce((sum, ch) => sum + ch.amount.toNumber(), 0),
       totalPaid: charges.reduce((sum, ch) => sum + ch.paidAmount.toNumber(), 0),
-      totalPending: charges.reduce((sum, ch) => {
-        if (ch.status === 'pending' || ch.status === 'partially_paid') {
-          return sum + (ch.amount.toNumber() - ch.paidAmount.toNumber());
-        }
-        return sum;
-      }, 0),
+      totalPending: unpaidCharges.reduce((sum, ch) => sum + (ch.amount - ch.paidAmount), 0),
       byStatus: {
         pending: charges.filter((ch) => ch.status === 'pending').length,
         paid: charges.filter((ch) => ch.status === 'paid').length,
@@ -121,6 +129,7 @@ export async function GET(
         {} as Record<string, number>
       ),
       recent: charges.slice(0, 5), // Last 5 charges
+      unpaid: unpaidCharges,
     };
 
     // 4. Get salary information (DAYS-BASED CALCULATION)
@@ -136,6 +145,7 @@ export async function GET(
         const monthEnd = new Date(now.getFullYear(), now.getMonth() + 1, 0);
         
         const daysWorked = await getEmployeeDaysWorked(employeeId, monthStart, monthEnd);
+        const absentDays = await getEmployeeAbsentDays(employeeId, monthStart, monthEnd);
         const salaryCalc = await calculateEmployeeSalaryByDays(
           employeeId,
           daysWorked
@@ -150,16 +160,18 @@ export async function GET(
         
         salaryInfo = {
           currentSalary: {
-            grossSalary: normalizeToCents(grossSalaryNum, 100), // Convert to cents
-            netSalary: normalizeToCents(netSalaryNum, 100), // Convert to cents
-            deductions: normalizeToCents(deductionsNum, 100), // Convert to cents
+            grossSalary: Math.round(grossSalaryNum * 100),
+            netSalary: Math.round(netSalaryNum * 100),
+            deductions: Math.round(deductionsNum * 100),
             payEarly: salaryCalc.payEarly,
             salaryDueDate: salaryCalc.salaryDueDate,
+            absentDays,
           },
           daysWorked,
+          absentDays,
           chargeDetails: {
-            pendingCharges: normalizeToCents(salaryCalc.chargeDetails?.pendingCharges?.toNumber() || 0, 100),
-            paidCharges: normalizeToCents(salaryCalc.chargeDetails?.paidCharges?.toNumber() || 0, 100),
+            pendingCharges: Math.round((salaryCalc.chargeDetails?.pendingCharges?.toNumber() || 0) * 100),
+            paidCharges: Math.round((salaryCalc.chargeDetails?.paidCharges?.toNumber() || 0) * 100),
           },
         };
       } catch (err) {
@@ -168,13 +180,41 @@ export async function GET(
     }
 
     // 5. Get salary payment history
+    const toCents = (value: any) => {
+      const amount = typeof value === 'object' && value?.toNumber ? value.toNumber() : Number(value || 0);
+      return Math.round(amount * 100);
+    };
+
     const salaryHistory = await prisma.salaryPayment.findMany({
       where: { userId: employeeId },
       orderBy: { paymentDate: 'desc' },
       take: 5, // Last 5 payments
     });
+    const serializedSalaryHistory = salaryHistory.map((payment) => ({
+      ...payment,
+      grossSalary: toCents(payment.grossSalary),
+      netSalary: toCents(payment.netSalary),
+    }));
 
-    // 6. Get attendance summary (last 30 days)
+    // 6. Get the employee salary schedule from employment start
+    let salaryPeriods: any[] = [];
+    try {
+      const schedule = await getEmployeeSalarySchedule(employeeId);
+      salaryPeriods = schedule.map((period) => ({
+        ...period,
+        periodStart: period.periodStart.toISOString(),
+        periodEnd: period.periodEnd.toISOString(),
+        salaryDueDate: period.salaryDueDate.toISOString(),
+        grossSalary: toCents(period.grossSalary),
+        deductions: toCents(period.deductions),
+        netSalary: toCents(period.netSalary),
+        paymentDate: period.paymentDate ? period.paymentDate.toISOString() : undefined,
+      }));
+    } catch (err) {
+      console.error('Error building salary schedule:', err);
+    }
+
+    // 7. Get attendance summary (last 30 days)
     const thirtyDaysAgo = new Date();
     thirtyDaysAgo.setDate(thirtyDaysAgo.getDate() - 30);
 
@@ -244,7 +284,7 @@ export async function GET(
       employee,
       employment: employmentData,
       charges: chargesSummary,
-      salaryHistory,
+      salaryHistory: serializedSalaryHistory,
       attendance: attendanceSummary,
       termination: terminationInfo,
       
@@ -252,16 +292,18 @@ export async function GET(
       salary: salaryInfo,
       currentSalary: salaryInfo?.currentSalary || null,
       daysWorked: salaryInfo?.daysWorked || 0,
+      absentDays: salaryInfo?.absentDays || 0,
       chargeDetails: salaryInfo?.chargeDetails || null,
       
       summary: {
         status: employmentData.employmentStatus,
         position: employmentData.position,
         baseSalary: employmentData.salary.toNumber(),
-        totalChargesOutstanding: chargesSummary?.totalPending || 0,
+        totalChargesOutstanding: Math.round((chargesSummary?.totalPending || 0) * 100),
         nextSalaryDue: salaryInfo?.currentSalary?.salaryDueDate || null,
         attendancePercentage: attendanceRecords.length > 0 ? attendanceSummary.totalCheckOuts / attendanceRecords.length : 0,
       },
+      salaryPeriods,
     };
 
     return NextResponse.json(

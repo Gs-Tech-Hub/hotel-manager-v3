@@ -42,6 +42,15 @@ interface ConsolidatedEmployee {
       date: string;
       description?: string;
     }>;
+    unpaid: Array<{
+      id: string;
+      chargeType: string;
+      amount: number;
+      paidAmount: number;
+      status: string;
+      date: string;
+      description?: string;
+    }>;
   };
   salary: {
     grossSalary: number;
@@ -55,6 +64,18 @@ interface ConsolidatedEmployee {
       totalCharges: number;
     };
   } | null;
+  salaryPeriods: Array<{
+    periodStart: string;
+    periodEnd: string;
+    salaryDueDate: string;
+    grossSalary: number;
+    deductions: number;
+    netSalary: number;
+    status: string;
+    paymentDate?: string;
+    paymentId?: string;
+    notes?: string;
+  }>;
   salaryHistory: Array<{
     id: string;
     paymentDate: string;
@@ -109,6 +130,7 @@ export function EmployeeConsolidationView({ employeeId }: EmployeeConsolidationV
   const [errorDetail, setErrorDetail] = useState<string | null>(null);
   const [isRetrying, setIsRetrying] = useState(false);
   const [processingEarlyPayment, setProcessingEarlyPayment] = useState(false);
+  const [processingSalaryDue, setProcessingSalaryDue] = useState<string | null>(null);
   const [showPayCharges, setShowPayCharges] = useState(false);
 
   useEffect(() => {
@@ -174,6 +196,58 @@ export function EmployeeConsolidationView({ employeeId }: EmployeeConsolidationV
   const handleRetry = async () => {
     setIsRetrying(true);
     await fetchConsolidatedData();
+  };
+
+  const handleProcessSalaryPeriod = async (period: {
+    periodStart: string;
+    periodEnd: string;
+    salaryDueDate: string;
+    grossSalary: number;
+    deductions: number;
+    netSalary: number;
+    status: string;
+    paymentDate?: string;
+    paymentId?: string;
+    notes?: string;
+  }) => {
+    if (!data) return;
+
+    try {
+      setProcessingSalaryDue(period.salaryDueDate);
+      setError(null);
+
+      const periodNetSalary = period.netSalary > 0
+        ? period.netSalary
+        : Math.max(period.grossSalary - period.deductions, 0);
+
+      const res = await fetch('/api/employees/salary-payments', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          userId: employeeId,
+          paymentDate: new Date().toISOString(),
+          grossSalary: period.grossSalary / 100,
+          deductions: period.deductions / 100,
+          netSalary: periodNetSalary / 100,
+          paymentMethod: 'bank_transfer',
+          status: 'completed',
+          notes: `Back payment for period ${new Date(period.periodStart).toLocaleDateString()} - ${new Date(period.periodEnd).toLocaleDateString()}`,
+          salaryDueDate: period.salaryDueDate,
+        }),
+      });
+
+      if (!res.ok) {
+        const errorBody = await res.json();
+        throw new Error(errorBody?.error || 'Failed to process salary payment for period');
+      }
+
+      await fetchConsolidatedData();
+    } catch (err: any) {
+      console.error('[Pay Salary Period] Error:', err);
+      setError(err.message || 'Unable to process salary period payment');
+    } finally {
+      setProcessingSalaryDue(null);
+    }
   };
 
   const handleEarlyPayment = async () => {
@@ -311,7 +385,7 @@ export function EmployeeConsolidationView({ employeeId }: EmployeeConsolidationV
     );
   }
 
-  const { charges, salaryHistory, attendance, summary } = data;
+  const { charges, salaryHistory, salaryPeriods, attendance, summary } = data;
   const outstandingCharges = charges.totalPending > 0;
 
   return (
@@ -376,6 +450,37 @@ export function EmployeeConsolidationView({ employeeId }: EmployeeConsolidationV
                 </div>
 
                 {/* Charges by Status */}
+                {charges.unpaid.length > 0 && (
+                  <div className="mt-6">
+                    <h4 className="font-semibold mb-3">Unpaid Charges (All Periods)</h4>
+                    <div className="space-y-2 max-h-72 overflow-y-auto">
+                      {charges.unpaid.map((charge) => (
+                        <div
+                          key={charge.id}
+                          className="flex items-center justify-between p-3 border rounded-lg"
+                        >
+                          <div className="flex-1">
+                            <p className="font-semibold text-sm">{charge.chargeType}</p>
+                            <p className="text-xs text-gray-500">
+                              {charge.description || new Date(charge.date).toLocaleDateString()}
+                            </p>
+                          </div>
+                          <div className="text-right mr-3">
+                            <p className="font-semibold">{formatTablePrice(Math.round(charge.amount * 100))}</p>
+                            <p className="text-xs text-gray-500">
+                              Paid: {formatTablePrice(Math.round(charge.paidAmount * 100))}
+                            </p>
+                          </div>
+                          <span
+                            className={`px-2 py-1 rounded text-xs font-semibold ${chargeStatusColors[charge.status] || chargeStatusColors.pending}`}
+                          >
+                            {charge.status.toUpperCase()}
+                          </span>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                )}
                 {charges.recent.length > 0 && (
                   <div className="mt-6">
                     <h4 className="font-semibold mb-3">Recent Charges (Last 30 Days)</h4>
@@ -535,9 +640,67 @@ export function EmployeeConsolidationView({ employeeId }: EmployeeConsolidationV
                 <TrendingUp className="h-5 w-5" />
                 Salary Payment History
               </CardTitle>
-              <CardDescription>Last 5 salary payments</CardDescription>
+              <CardDescription>Recent salary payments and full schedule from employment start</CardDescription>
             </CardHeader>
             <CardContent>
+              {salaryPeriods.length > 0 && (
+                <div className="space-y-4 mb-6">
+                  <h4 className="text-sm font-semibold">Salary Schedule</h4>
+                  <div className="space-y-2 max-h-80 overflow-y-auto">
+                    {salaryPeriods.slice(0, 8).map((period) => {
+                      const dueDate = new Date(period.salaryDueDate);
+                      const canPayPreviousMonth = period.status !== 'paid' && dueDate <= new Date();
+                      const isProcessing = processingSalaryDue === period.salaryDueDate;
+
+                      return (
+                      <div
+                        key={`${period.salaryDueDate}-${period.status}`}
+                        className="flex flex-col gap-3 p-4 border rounded-lg hover:bg-gray-50"
+                      >
+                        <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
+                          <div className="flex-1">
+                            <p className="text-sm font-semibold">
+                              {new Date(period.periodStart).toLocaleDateString()} - {new Date(period.periodEnd).toLocaleDateString()}
+                            </p>
+                            <p className="text-xs text-gray-500">
+                              Due on {dueDate.toLocaleDateString()}
+                            </p>
+                          </div>
+                          <div className="flex items-center gap-2">
+                            <p className="text-sm font-semibold">
+                              {formatTablePrice(period.grossSalary)}
+                            </p>
+                            <span
+                              className={`text-xs font-semibold px-2 py-1 rounded ${
+                                period.status === 'paid'
+                                  ? 'bg-green-100 text-green-800'
+                                  : period.status === 'partial'
+                                  ? 'bg-yellow-100 text-yellow-800'
+                                  : 'bg-red-100 text-red-800'
+                              }`}
+                            >
+                              {period.status.toUpperCase()}
+                            </span>
+                          </div>
+                        </div>
+
+                        {canPayPreviousMonth && (
+                          <button
+                            type="button"
+                            disabled={isProcessing}
+                            onClick={() => handleProcessSalaryPeriod(period)}
+                            className="self-start rounded bg-blue-600 px-3 py-2 text-sm font-semibold text-white hover:bg-blue-700 disabled:opacity-60 disabled:cursor-not-allowed"
+                          >
+                            {isProcessing ? 'Processing…' : 'Pay This Period'}
+                          </button>
+                        )}
+                      </div>
+                    );
+                    })}
+                  </div>
+                </div>
+              )}
+
               {salaryHistory.length > 0 ? (
                 <div className="space-y-2">
                   {salaryHistory.map((payment) => (

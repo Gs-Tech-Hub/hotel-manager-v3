@@ -144,6 +144,18 @@ export function SalaryModal({ employee, onClose }: SalaryModalProps) {
                 </div>
               </div>
 
+              <div className="space-y-4">
+                <div className="p-4 bg-white rounded-lg border border-gray-200">
+                  <div className="flex justify-between items-center">
+                    <span className="text-sm text-gray-600">Absent Days This Month</span>
+                    <span className="font-semibold text-lg text-red-600">{salaryData.absentDays || 0} days</span>
+                  </div>
+                  <p className="text-xs text-gray-500 mt-2">
+                    Missed check-out records are treated as absent days and do not contribute to salary days worked.
+                  </p>
+                </div>
+              </div>
+
               {/* Salary Calculation Details */}
               <div className="space-y-4">
                 <h3 className="font-semibold text-gray-900">Salary Calculation Details</h3>

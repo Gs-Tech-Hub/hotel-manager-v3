@@ -9,10 +9,12 @@ import { PERMISSIONS } from '@/lib/permissions';
 
 const CheckInSchema = z.object({
   employeeId: z.string().min(1),
+  checkInTime: z.string().datetime().optional(),
 });
 
 const CheckOutSchema = z.object({
   checkInId: z.string().min(1),
+  checkOutTime: z.string().datetime().optional(),
 });
 
 /**
@@ -33,6 +35,8 @@ export async function GET(request: NextRequest) {
     const employeeId = request.nextUrl.searchParams.get('employeeId');
     const fromDate = request.nextUrl.searchParams.get('fromDate');
     const toDate = request.nextUrl.searchParams.get('toDate');
+    const month = request.nextUrl.searchParams.get('month');
+    const year = request.nextUrl.searchParams.get('year');
 
     console.log('[Attendance GET] Parameters:', { employeeId, fromDate, toDate });
 
@@ -71,6 +75,18 @@ export async function GET(request: NextRequest) {
         whereFilter.checkInTime.lte = endDate;
       }
     }
+    if ((!fromDate && !toDate) && month && year) {
+      const monthNum = parseInt(month, 10) - 1;
+      const yearNum = parseInt(year, 10);
+      if (!Number.isNaN(monthNum) && !Number.isNaN(yearNum)) {
+        const startOfMonth = new Date(Date.UTC(yearNum, monthNum, 1, 0, 0, 0, 0));
+        const endOfMonth = new Date(Date.UTC(yearNum, monthNum + 1, 0, 23, 59, 59, 999));
+        whereFilter.checkInTime = {
+          gte: startOfMonth,
+          lte: endOfMonth,
+        };
+      }
+    }
 
     console.log('[Attendance GET] Where filter:', whereFilter);
 
@@ -97,24 +113,31 @@ export async function GET(request: NextRequest) {
 
     console.log('[Attendance GET] Found records:', records.length);
 
-    // Calculate hours worked for each record
+    // Calculate hours worked for each record and add status metadata
     const enrichedRecords = records.map((record) => {
       let hoursWorked = 0;
       let daysCounted = 0;
+      let status: 'present' | 'absent' | 'in-progress' = 'in-progress';
+      let missedCheckout = false;
 
       if (record.checkOutTime) {
-        // Calculate hours between check-in and check-out
-        const checkInTime = new Date(record.checkInTime).getTime();
-        const checkOutTime = new Date(record.checkOutTime).getTime();
-        const durationMs = checkOutTime - checkInTime;
-        hoursWorked = durationMs / (1000 * 60 * 60); // Convert milliseconds to hours
-        daysCounted = 1; // Each completed cycle = 1 day
+        const checkInTimeMs = new Date(record.checkInTime).getTime();
+        const checkOutTimeMs = new Date(record.checkOutTime).getTime();
+        const durationMs = Math.max(0, checkOutTimeMs - checkInTimeMs);
+        hoursWorked = durationMs / (1000 * 60 * 60);
+        missedCheckout = durationMs === 0;
+        daysCounted = missedCheckout ? 0 : 1;
+        status = missedCheckout ? 'absent' : 'present';
       }
 
       return {
         ...record,
+        attendanceDate: new Date(record.checkInTime).toISOString().slice(0, 10),
         hoursWorked: parseFloat(hoursWorked.toFixed(2)),
         daysCounted,
+        missedCheckout,
+        isAbsent: status === 'absent',
+        status,
       };
     });
 
@@ -190,11 +213,24 @@ export async function POST(request: NextRequest) {
       });
     }
 
-    // Check if there's an active check-in (not checked out)
+    // Close stale active sessions from prior days as missed sign-outs
+    const utcNow = new Date();
+    const utcToday = new Date(Date.UTC(utcNow.getUTCFullYear(), utcNow.getUTCMonth(), utcNow.getUTCDate(), 0, 0, 0, 0));
+    await prisma.$executeRaw`
+      UPDATE "check_ins"
+      SET "checkOutTime" = "checkInTime"
+      WHERE "employeeSummaryId" = ${employeeSummary.id}
+        AND "checkOutTime" IS NULL
+        AND "checkInTime" < ${utcToday}
+    `;
+
     const activeCheckIn = await prisma.checkIn.findFirst({
       where: {
         employeeSummaryId: employeeSummary.id,
         checkOutTime: null,
+      },
+      orderBy: {
+        checkInTime: 'desc',
       },
     });
 
@@ -208,52 +244,19 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    // CRITICAL: Prevent multiple check-ins on the same calendar date
-    // Use UTC dates to ensure consistency with database
-    const todayUTC = new Date();
-    const utcYear = todayUTC.getUTCFullYear();
-    const utcMonth = todayUTC.getUTCMonth();
-    const utcDate = todayUTC.getUTCDate();
-    
-    // Create UTC date range: today 00:00:00 to today 23:59:59 UTC
-    const todayStart = new Date(Date.UTC(utcYear, utcMonth, utcDate, 0, 0, 0, 0));
-    const todayEnd = new Date(Date.UTC(utcYear, utcMonth, utcDate, 23, 59, 59, 999));
-
-    console.log(`[Attendance Check-in] Checking for existing check-ins for employee ${employeeSummary.id} on ${todayStart.toISOString()} to ${todayEnd.toISOString()}`);
-
-    // Check if employee already has a check-in TODAY (completed or active)
-    const existingTodayCheckIn = await prisma.checkIn.findFirst({
-      where: {
-        employeeSummaryId: employeeSummary.id,
-        checkInTime: {
-          gte: todayStart,
-          lte: todayEnd,
-        },
-      },
-      select: {
-        id: true,
-        checkInTime: true,
-        checkOutTime: true,
-      },
-    });
-
-    if (existingTodayCheckIn) {
-      console.log(`[Attendance Check-in] BLOCKED: Employee already has check-in at ${existingTodayCheckIn.checkInTime.toISOString()}`);
+    const checkInTime = validated.checkInTime ? new Date(validated.checkInTime) : new Date();
+    if (isNaN(checkInTime.getTime())) {
       return NextResponse.json(
-        errorResponse(
-          ErrorCodes.CONFLICT,
-          `Employee already has a check-in for today (${existingTodayCheckIn.checkInTime.toLocaleTimeString()}). Only one check-in per calendar day allowed.`
-        ),
-        { status: getStatusCode(ErrorCodes.CONFLICT) }
+        errorResponse(ErrorCodes.BAD_REQUEST, 'Invalid checkInTime'),
+        { status: getStatusCode(ErrorCodes.BAD_REQUEST) }
       );
     }
 
-    console.log(`[Attendance Check-in] OK: No existing check-in found. Creating new check-in for employee ${employeeSummary.id}`);
+    console.log(`[Attendance Check-in] OK: Creating new check-in for employee ${employeeSummary.id} at ${checkInTime.toISOString()}`);
     
-    // Create check-in record
     const checkIn = await prisma.checkIn.create({
       data: {
-        checkInTime: new Date(),
+        checkInTime,
         employeeSummaryId: employeeSummary.id,
       },
       include: {
@@ -364,11 +367,25 @@ export async function PUT(request: NextRequest) {
       );
     }
 
+    const checkOutTime = validated.checkOutTime ? new Date(validated.checkOutTime) : new Date();
+    if (isNaN(checkOutTime.getTime())) {
+      return NextResponse.json(
+        errorResponse(ErrorCodes.BAD_REQUEST, 'Invalid checkOutTime'),
+        { status: getStatusCode(ErrorCodes.BAD_REQUEST) }
+      );
+    }
+    if (checkOutTime.getTime() < new Date(checkIn.checkInTime).getTime()) {
+      return NextResponse.json(
+        errorResponse(ErrorCodes.BAD_REQUEST, 'checkOutTime cannot be earlier than checkInTime'),
+        { status: getStatusCode(ErrorCodes.BAD_REQUEST) }
+      );
+    }
+
     // Update check-out time
     const updatedCheckIn = await prisma.checkIn.update({
       where: { id: validated.checkInId },
       data: {
-        checkOutTime: new Date(),
+        checkOutTime,
       },
       include: {
         employeeSummary: {
