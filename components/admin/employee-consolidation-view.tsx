@@ -123,6 +123,15 @@ interface ConsolidatedEmployee {
       checkInTime: string;
       checkOutTime?: string;
     }>;
+    records?: Array<{
+      id: string;
+      checkInTime: string;
+      checkOutTime?: string | null;
+      attendanceDate: string;
+      hoursWorked: number;
+      status: string;
+      missedCheckout: boolean;
+    }>;
   };
   summary: {
     status: string;
@@ -162,10 +171,18 @@ export function EmployeeConsolidationView({ employeeId }: EmployeeConsolidationV
   const [processingEarlyPayment, setProcessingEarlyPayment] = useState(false);
   const [processingSalaryDue, setProcessingSalaryDue] = useState<string | null>(null);
   const [showPayCharges, setShowPayCharges] = useState(false);
+  const [attendanceFrom, setAttendanceFrom] = useState(() => {
+    const now = new Date();
+    return new Date(now.getFullYear(), now.getMonth(), 1).toISOString().slice(0, 10);
+  });
+  const [attendanceTo, setAttendanceTo] = useState(() => {
+    const now = new Date();
+    return new Date(now.getFullYear(), now.getMonth(), now.getDate()).toISOString().slice(0, 10);
+  });
 
   useEffect(() => {
     fetchConsolidatedData();
-  }, [employeeId]);
+  }, [employeeId, attendanceFrom, attendanceTo]);
 
   const fetchConsolidatedData = async () => {
     try {
@@ -173,7 +190,10 @@ export function EmployeeConsolidationView({ employeeId }: EmployeeConsolidationV
       setError(null);
       setErrorDetail(null);
       
-      const response = await fetch(`/api/employees/${employeeId}/consolidated`);
+      const url = new URL(`/api/employees/${employeeId}/consolidated`, window.location.origin);
+      if (attendanceFrom) url.searchParams.set('fromDate', attendanceFrom);
+      if (attendanceTo) url.searchParams.set('toDate', attendanceTo);
+      const response = await fetch(url.toString());
 
       if (!response.ok) {
         let errorMsg = `Failed to fetch employee data (${response.status})`;
@@ -611,10 +631,42 @@ export function EmployeeConsolidationView({ employeeId }: EmployeeConsolidationV
             <CardHeader>
               <CardTitle className="flex items-center gap-2">
                 <Clock className="h-5 w-5" />
-                Attendance Summary (Last 30 Days)
+                Attendance Summary
               </CardTitle>
+              <CardDescription>
+                Filter attendance records by date range and view monthly sign-in / sign-out history.
+              </CardDescription>
             </CardHeader>
             <CardContent>
+              <div className="grid gap-3 md:grid-cols-[1fr_auto] mb-6">
+                <div className="grid grid-cols-2 gap-3">
+                  <label className="flex flex-col gap-2 text-sm text-gray-600">
+                    From
+                    <input
+                      type="date"
+                      value={attendanceFrom}
+                      onChange={(event) => setAttendanceFrom(event.target.value)}
+                      className="w-full rounded border border-gray-300 px-3 py-2 text-sm"
+                    />
+                  </label>
+                  <label className="flex flex-col gap-2 text-sm text-gray-600">
+                    To
+                    <input
+                      type="date"
+                      value={attendanceTo}
+                      onChange={(event) => setAttendanceTo(event.target.value)}
+                      className="w-full rounded border border-gray-300 px-3 py-2 text-sm"
+                    />
+                  </label>
+                </div>
+                <button
+                  type="button"
+                  onClick={fetchConsolidatedData}
+                  className="self-end inline-flex items-center justify-center rounded bg-blue-600 px-4 py-2 text-sm font-medium text-white hover:bg-blue-700"
+                >
+                  Refresh Date Range
+                </button>
+              </div>
               <div className="grid grid-cols-4 gap-4">
                 <div className="p-4 bg-blue-50 rounded-lg">
                   <p className="text-sm text-gray-600">Total Days</p>
@@ -634,54 +686,44 @@ export function EmployeeConsolidationView({ employeeId }: EmployeeConsolidationV
                 </div>
               </div>
 
-              {attendance.recent.length > 0 && (
+              {attendance.records && attendance.records.length > 0 ? (
                 <div className="mt-6">
-                  <h4 className="font-semibold mb-3">Recent Check-ins</h4>
-                  <div className="space-y-2 max-h-72 overflow-y-auto">
-                    {attendance.recent.map((record) => {
-                      const checkInTime = new Date(record.checkInTime);
-                      const checkOutTime = record.checkOutTime
-                        ? new Date(record.checkOutTime)
-                        : null;
-                      const hours = checkOutTime
-                        ? ((checkOutTime.getTime() - checkInTime.getTime()) / (1000 * 60 * 60)).toFixed(2)
-                        : 'ongoing';
-
-                      return (
-                        <div
-                          key={record.id}
-                          className="flex items-center justify-between p-3 border rounded-lg"
-                        >
-                          <div>
-                            <p className="text-sm font-semibold">
-                              {checkInTime.toLocaleDateString()}
-                            </p>
-                            <p className="text-xs text-gray-500">
-                              {checkInTime.toLocaleTimeString([], {
-                                hour: '2-digit',
-                                minute: '2-digit',
-                              })}
-                              {checkOutTime
-                                ? ` - ${checkOutTime.toLocaleTimeString([], {
-                                    hour: '2-digit',
-                                    minute: '2-digit',
-                                  })}`
-                                : ' - ongoing'}
-                            </p>
-                          </div>
-                          <div className="text-right">
-                            <p className="text-sm font-semibold">{hours} hrs</p>
-                            {checkOutTime ? (
-                              <CheckCircle2 className="h-4 w-4 text-green-600" />
-                            ) : (
-                              <Clock className="h-4 w-4 text-orange-600" />
-                            )}
-                          </div>
-                        </div>
-                      );
-                    })}
+                  <h4 className="font-semibold mb-3">Sign-in / Sign-out History</h4>
+                  <div className="overflow-x-auto rounded-lg border border-gray-200">
+                    <table className="min-w-full text-left text-sm text-gray-700">
+                      <thead className="bg-gray-50">
+                        <tr>
+                          <th className="px-4 py-3">Date</th>
+                          <th className="px-4 py-3">Check-in</th>
+                          <th className="px-4 py-3">Check-out</th>
+                          <th className="px-4 py-3">Hours</th>
+                          <th className="px-4 py-3">Status</th>
+                        </tr>
+                      </thead>
+                      <tbody className="divide-y divide-gray-200">
+                        {attendance.records.map((record) => {
+                          const checkIn = new Date(record.checkInTime);
+                          const checkOut = record.checkOutTime ? new Date(record.checkOutTime) : null;
+                          return (
+                            <tr key={record.id} className="hover:bg-gray-50">
+                              <td className="px-4 py-3 text-sm text-gray-900">{record.attendanceDate}</td>
+                              <td className="px-4 py-3 text-sm text-gray-900">{checkIn.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}</td>
+                              <td className="px-4 py-3 text-sm text-gray-900">{checkOut ? checkOut.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) : '—'}</td>
+                              <td className="px-4 py-3 text-sm text-gray-900">{record.hoursWorked.toFixed(2)}</td>
+                              <td className="px-4 py-3 text-sm">
+                                <span className={record.status === 'completed' ? 'inline-flex rounded-full bg-green-100 px-2 py-1 text-xs font-semibold text-green-800' : 'inline-flex rounded-full bg-yellow-100 px-2 py-1 text-xs font-semibold text-yellow-800'}>
+                                  {record.status === 'completed' ? 'Completed' : 'Active'}
+                                </span>
+                              </td>
+                            </tr>
+                          );
+                        })}
+                      </tbody>
+                    </table>
                   </div>
                 </div>
+              ) : (
+                <div className="mt-6 text-sm text-gray-600">No attendance records found for the selected date range.</div>
               )}
             </CardContent>
           </Card>

@@ -272,19 +272,44 @@ export async function GET(
       console.error('Error building salary schedule:', err);
     }
 
-    // 7. Get attendance summary (last 30 days)
-    const thirtyDaysAgo = new Date();
-    thirtyDaysAgo.setDate(thirtyDaysAgo.getDate() - 30);
+    // 7. Get attendance summary (optional date range or last 30 days)
+    const fromDate = request.nextUrl.searchParams.get('fromDate');
+    const toDate = request.nextUrl.searchParams.get('toDate');
+
+    let attendanceFrom: Date | undefined;
+    let attendanceTo: Date | undefined;
+
+    if (fromDate) {
+      attendanceFrom = new Date(fromDate);
+      attendanceFrom.setHours(0, 0, 0, 0);
+    }
+    if (toDate) {
+      attendanceTo = new Date(toDate);
+      attendanceTo.setHours(23, 59, 59, 999);
+    }
+
+    if (!attendanceFrom && !attendanceTo) {
+      attendanceFrom = new Date();
+      attendanceFrom.setDate(attendanceFrom.getDate() - 30);
+      attendanceFrom.setHours(0, 0, 0, 0);
+      attendanceTo = new Date();
+      attendanceTo.setHours(23, 59, 59, 999);
+    }
+
+    const attendanceQuery: any = {
+      employeeSummary: {
+        userId: employeeId,
+      },
+    };
+
+    if (attendanceFrom || attendanceTo) {
+      attendanceQuery.checkInTime = {};
+      if (attendanceFrom) attendanceQuery.checkInTime.gte = attendanceFrom;
+      if (attendanceTo) attendanceQuery.checkInTime.lte = attendanceTo;
+    }
 
     const attendanceRecords = await prisma.checkIn.findMany({
-      where: {
-        employeeSummary: {
-          userId: employeeId,
-        },
-        checkInTime: {
-          gte: thirtyDaysAgo,
-        },
-      },
+      where: attendanceQuery,
       orderBy: { checkInTime: 'desc' },
     });
 
@@ -308,6 +333,22 @@ export async function GET(
         return sum;
       }, 0),
       recent: attendanceRecords.slice(0, 10),
+      records: attendanceRecords.map((record) => {
+        const checkInTime = new Date(record.checkInTime);
+        const checkOutTime = record.checkOutTime ? new Date(record.checkOutTime) : null;
+        const duration = checkOutTime
+          ? Math.max(0, (checkOutTime.getTime() - checkInTime.getTime()) / (1000 * 60 * 60))
+          : 0;
+        return {
+          id: record.id,
+          checkInTime: checkInTime.toISOString(),
+          checkOutTime: checkOutTime ? checkOutTime.toISOString() : null,
+          attendanceDate: checkInTime.toISOString().slice(0, 10),
+          hoursWorked: parseFloat(duration.toFixed(2)),
+          status: record.checkOutTime ? 'completed' : 'active',
+          missedCheckout: record.checkOutTime ? false : true,
+        };
+      }),
     };
 
     // 7. Get termination info if applicable
